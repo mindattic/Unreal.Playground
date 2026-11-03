@@ -44,13 +44,20 @@ namespace
 		return (H ^ (H >> 16)) / 4294967295.f;
 	}
 
-	UInstancedStaticMeshComponent* MakeInstances(AActor* Owner, USceneComponent* Root, const TCHAR* Name, UStaticMesh* Mesh)
+	// Surfaces a shadow merge can enter: built stone, never terrain or loose boulders.
+	const FName MergeableTag(TEXT("Mergeable"));
+
+	UInstancedStaticMeshComponent* MakeInstances(AActor* Owner, USceneComponent* Root, const TCHAR* Name, UStaticMesh* Mesh, bool bMergeable)
 	{
 		UInstancedStaticMeshComponent* Instances = Owner->CreateDefaultSubobject<UInstancedStaticMeshComponent>(Name);
 		Instances->SetupAttachment(Root);
 		Instances->SetStaticMesh(Mesh);
 		Instances->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
 		Instances->SetMobility(EComponentMobility::Static);
+		if (bMergeable)
+		{
+			Instances->ComponentTags.Add(MergeableTag);
+		}
 		return Instances;
 	}
 }
@@ -83,11 +90,11 @@ AHebridesIsland::AHebridesIsland()
 	Sea->SetCastShadow(false);
 	Sea->SetRelativeScale3D(FVector(3000.f, 3000.f, 1.f));
 
-	StoneBlocks = MakeInstances(this, SceneRoot, TEXT("StoneBlocks"), Cube.Object);
-	Megaliths = MakeInstances(this, SceneRoot, TEXT("Megaliths"), Cube.Object);
-	Thatch = MakeInstances(this, SceneRoot, TEXT("Thatch"), Cube.Object);
-	Towers = MakeInstances(this, SceneRoot, TEXT("Towers"), Cylinder.Object);
-	Boulders = MakeInstances(this, SceneRoot, TEXT("Boulders"), Sphere.Object);
+	StoneBlocks = MakeInstances(this, SceneRoot, TEXT("StoneBlocks"), Cube.Object, true);
+	Megaliths = MakeInstances(this, SceneRoot, TEXT("Megaliths"), Cube.Object, true);
+	Thatch = MakeInstances(this, SceneRoot, TEXT("Thatch"), Cube.Object, false);
+	Towers = MakeInstances(this, SceneRoot, TEXT("Towers"), Cylinder.Object, true);
+	Boulders = MakeInstances(this, SceneRoot, TEXT("Boulders"), Sphere.Object, false);
 
 	Sun = CreateDefaultSubobject<UDirectionalLightComponent>(TEXT("Sun"));
 	Sun->SetupAttachment(SceneRoot);
@@ -223,6 +230,11 @@ void AHebridesIsland::BuildTerrain()
 			{
 				Color = Rock;
 			}
+			if (Above >= 0.f && Above < 0.06f)
+			{
+				const float Dune = Data.DuneWeight(X / float(N - 1), Y / float(N - 1));
+				Color = LerpColor(Color, LerpColor(Sand, Linear(226, 212, 170), Noise), Dune);
+			}
 			if (SlopeDegrees > 38.f && Above > 0.f)
 			{
 				Color = LerpColor(Color, Rock, (SlopeDegrees - 38.f) / 10.f);
@@ -268,6 +280,13 @@ void AHebridesIsland::BuildRuins()
 	{
 		Instances->ClearInstances();
 	}
+	for (const TPair<FName, TObjectPtr<UInstancedStaticMeshComponent>>& Pair : KitInstances)
+	{
+		if (Pair.Value)
+		{
+			Pair.Value->ClearInstances();
+		}
+	}
 	StoneBlocks->SetMaterial(0, MakeTinted(StoneMaterialPath, FLinearColor(0.32f, 0.31f, 0.29f)));
 	Towers->SetMaterial(0, MakeTinted(StoneMaterialPath, FLinearColor(0.30f, 0.29f, 0.27f)));
 	Megaliths->SetMaterial(0, MakeTinted(StoneMaterialPath, FLinearColor(0.18f, 0.19f, 0.2f)));
@@ -283,11 +302,20 @@ void AHebridesIsland::BuildRuins()
 	BuildBroch(Data.Broch, Random);
 	BuildStandingStones(Data.StandingStones, Random);
 	BuildKeep(Data.Keep, Random);
+	BuildBuriedRuins(Random);
+	BuildFieldWalls(Random);
+	BuildBridge();
 	ScatterBoulders(Random);
 }
 
 void AHebridesIsland::BuildCroft(const FVector2D& UV, FRandomStream& Random)
 {
+	const FName Cottage = Random.FRand() < 0.5f ? FName(TEXT("house_a")) : FName(TEXT("house_b"));
+	if (PlaceHouse(Cottage, UV, 700.f, 0.06f, 1.5f, Random))
+	{
+		return;
+	}
+
 	const FHebridesTerrain& Data = FHebridesTerrain::Get();
 	const FVector Base = Data.ToWorld(UV);
 	const FRotator Facing(0.f, Random.FRandRange(0.f, 360.f), 0.f);
@@ -408,6 +436,71 @@ void AHebridesIsland::BuildKeep(const FVector2D& UV, FRandomStream& Random)
 
 	// Sides in local space: +X faces the beach and holds the gate.
 	const FVector2D SideNormals[] = { FVector2D(1, 0), FVector2D(-1, 0), FVector2D(0, 1), FVector2D(0, -1) };
+
+	if (HasKit(TEXT("wall")))
+	{
+		// Five kit wall pieces per side, the middle one of the beach side being the gateway.
+		const int32 PerSide = 5;
+		const float Piece = Size / PerSide;
+		for (const FVector2D& SideNormal : SideNormals)
+		{
+			const FVector2D Along(-SideNormal.Y, SideNormal.X);
+			const float Yaw = Facing.Yaw + FMath::RadiansToDegrees(FMath::Atan2(Along.Y, Along.X));
+			for (int32 k = 0; k < PerSide; ++k)
+			{
+				const float T = -Size * 0.5f + Piece * (k + 0.5f);
+				const FVector2D Local2D = SideNormal * Size * 0.5f + Along * T;
+				FVector Bottom = Centre + Facing.RotateVector(FVector(Local2D.X, Local2D.Y, 0.f));
+				Bottom.Z = Ground(Bottom) - 80.f;
+
+				const bool bGate = SideNormal.X > 0.5f && k == PerSide / 2;
+				FName Name = bGate ? FName(TEXT("gate")) : (Random.FRand() < 0.2f ? FName(TEXT("wall_broken")) : FName(TEXT("wall")));
+				if (!HasKit(Name))
+				{
+					Name = TEXT("wall");
+					if (bGate)
+					{
+						continue;
+					}
+				}
+				const FBox Bounds = KitBounds(Name);
+				const float Height = bGate ? 900.f : 700.f + Random.FRandRange(-100.f, 300.f);
+				const FVector Scale(Piece / Bounds.GetSize().X, Thick / Bounds.GetSize().Y, Height / Bounds.GetSize().Z);
+				PlaceKit(Name, Bottom, FRotator(0.f, Yaw, 0.f), Scale);
+			}
+		}
+
+		int32 KitCorner = 0;
+		for (const FVector2D& Local2D : { FVector2D(1, 1), FVector2D(1, -1), FVector2D(-1, 1), FVector2D(-1, -1) })
+		{
+			FVector Bottom = Centre + Facing.RotateVector(FVector(Local2D.X, Local2D.Y, 0.f) * Size * 0.5f);
+			Bottom.Z = Ground(Bottom) - 80.f;
+			const float Height = KitCorner++ == 3 ? 900.f : 1600.f;
+			if (HasKit(TEXT("tower")))
+			{
+				const FBox Bounds = KitBounds(TEXT("tower"));
+				PlaceKit(TEXT("tower"), Bottom, FRotator(0.f, Random.FRandRange(0.f, 360.f), 0.f), FVector(Height / Bounds.GetSize().Z));
+			}
+			else
+			{
+				AddBox(Towers, Bottom + FVector(0.f, 0.f, Height * 0.5f), FVector(760.f, 760.f, Height), FRotator::ZeroRotator);
+			}
+		}
+
+		for (int32 i = 0; i < 7; ++i)
+		{
+			const float Angle = Random.FRandRange(0.f, 2.f * PI);
+			FVector Bottom = Centre + FVector(FMath::Cos(Angle), FMath::Sin(Angle), 0.f) * Random.FRandRange(1000.f, 1300.f);
+			Bottom.Z = Ground(Bottom) - 60.f;
+			const FName Name = HasKit(TEXT("wall_broken")) ? FName(TEXT("wall_broken")) : FName(TEXT("wall"));
+			const FBox Bounds = KitBounds(Name);
+			const float Length = Random.FRandRange(300.f, 600.f), Height = Random.FRandRange(250.f, 500.f);
+			PlaceKit(Name, Bottom, FRotator(0.f, FMath::RadiansToDegrees(Angle) + 90.f, 0.f),
+				FVector(Length / Bounds.GetSize().X, 150.f / Bounds.GetSize().Y, Height / Bounds.GetSize().Z));
+		}
+		return;
+	}
+
 	for (const FVector2D& SideNormal : SideNormals)
 	{
 		const FVector2D Along(-SideNormal.Y, SideNormal.X);
@@ -465,6 +558,14 @@ void AHebridesIsland::ScatterBoulders(FRandomStream& Random)
 	{
 		Keepouts.Add({ Croft, 0.035f });
 	}
+	for (const FVector2D& End : Data.Bridge)
+	{
+		Keepouts.Add({ End, 0.025f });
+	}
+	for (const TPair<FVector2D, FVector2D>& Wall : Data.FieldWalls)
+	{
+		Keepouts.Add({ (Wall.Key + Wall.Value) * 0.5f, FVector2D::Distance(Wall.Key, Wall.Value) * 0.5f + 0.01f });
+	}
 
 	int32 Placed = 0;
 	for (int32 Attempt = 0; Attempt < 600 && Placed < 160; ++Attempt)
@@ -493,6 +594,246 @@ void AHebridesIsland::ScatterBoulders(FRandomStream& Random)
 	}
 }
 
+UInstancedStaticMeshComponent* AHebridesIsland::Kit(FName Piece)
+{
+	if (const TObjectPtr<UInstancedStaticMeshComponent>* Found = KitInstances.Find(Piece))
+	{
+		return Found->Get();
+	}
+
+	UInstancedStaticMeshComponent* Instances = nullptr;
+	const FString* Path = FEnvironmentAssets::Get().Pieces.Find(Piece);
+	if (UStaticMesh* Mesh = Path ? LoadObject<UStaticMesh>(nullptr, **Path) : nullptr)
+	{
+		Instances = NewObject<UInstancedStaticMeshComponent>(this, FName(*FString::Printf(TEXT("Kit_%s"), *Piece.ToString())));
+		Instances->SetStaticMesh(Mesh);
+		Instances->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
+		Instances->ComponentTags.Add(MergeableTag);
+		Instances->SetupAttachment(RootComponent);
+		Instances->RegisterComponent();
+		AddInstanceComponent(Instances);
+	}
+	else if (Path)
+	{
+		UE_LOG(LogHebridesIsland, Warning, TEXT("Kit piece %s not found at %s; using boxes"), *Piece.ToString(), **Path);
+	}
+	KitInstances.Add(Piece, Instances);
+	return Instances;
+}
+
+FBox AHebridesIsland::KitBounds(FName Piece)
+{
+	UInstancedStaticMeshComponent* Instances = Kit(Piece);
+	UStaticMesh* Mesh = Instances ? Instances->GetStaticMesh() : nullptr;
+	if (!Mesh)
+	{
+		return FBox(FVector(-50.f), FVector(50.f));
+	}
+	const FBox Box = Mesh->GetBounds().GetBox();
+	return Box.GetSize().GetMin() > 0.1f ? Box : FBox(Box.Min, Box.Min + FVector::Max(Box.GetSize(), FVector(1.f)));
+}
+
+bool AHebridesIsland::PlaceKit(FName Piece, const FVector& BottomCentre, const FRotator& Rotation, const FVector& Scale)
+{
+	UInstancedStaticMeshComponent* Instances = Kit(Piece);
+	if (!Instances)
+	{
+		return false;
+	}
+	const FBox Bounds = KitBounds(Piece);
+	const FVector LocalBottomCentre(Bounds.GetCenter().X, Bounds.GetCenter().Y, Bounds.Min.Z);
+	const FVector Location = BottomCentre - Rotation.RotateVector(LocalBottomCentre * Scale);
+	Instances->AddInstance(FTransform(Rotation, Location, Scale), true);
+	return true;
+}
+
+float AHebridesIsland::GroundZ(const FVector& World) const
+{
+	const FHebridesTerrain& Data = FHebridesTerrain::Get();
+	const FVector2D UV = Data.ToUV(World);
+	return Data.SampleZ(UV.X, UV.Y);
+}
+
+bool AHebridesIsland::PlaceHouse(FName Piece, const FVector2D& UV, float Height, float SinkFraction, float MaxTilt, FRandomStream& Random)
+{
+	if (!HasKit(Piece))
+	{
+		return false;
+	}
+	const FBox Bounds = KitBounds(Piece);
+	const float Scale = Height / Bounds.GetSize().Z;
+	const FRotator Rotation(Random.FRandRange(-MaxTilt, MaxTilt), Random.FRandRange(0.f, 360.f), Random.FRandRange(-MaxTilt, MaxTilt));
+
+	// Rest on the lowest ground under the footprint so no corner floats on a dune slope.
+	FVector Bottom = FHebridesTerrain::Get().ToWorld(UV);
+	const FVector Half = Bounds.GetExtent() * Scale;
+	float Lowest = Bottom.Z;
+	for (const FVector2D& Corner : { FVector2D(1, 1), FVector2D(1, -1), FVector2D(-1, 1), FVector2D(-1, -1) })
+	{
+		Lowest = FMath::Min(Lowest, GroundZ(Bottom + Rotation.RotateVector(FVector(Corner.X * Half.X, Corner.Y * Half.Y, 0.f))));
+	}
+	Bottom.Z = Lowest - SinkFraction * Height;
+	return PlaceKit(Piece, Bottom, Rotation, FVector(Scale));
+}
+
+void AHebridesIsland::BuildWallRun(const FVector2D& A, const FVector2D& B, float Height, float Thickness, float SinkFraction, float MaxTilt, float BrokenChance, FRandomStream& Random)
+{
+	const FHebridesTerrain& Data = FHebridesTerrain::Get();
+	const FVector Start = Data.ToWorld(A);
+	FVector Direction = Data.ToWorld(B) - Start;
+	Direction.Z = 0.f;
+	const float Length = Direction.Size();
+	if (Length < 1.f)
+	{
+		return;
+	}
+	Direction /= Length;
+	const float Yaw = Direction.Rotation().Yaw;
+
+	const bool bKit = HasKit(TEXT("wall"));
+	const FBox WallBounds = KitBounds(TEXT("wall"));
+	// Keep the kit's proportions: a piece is as long as it is tall at this height.
+	const float NaturalLength = bKit ? WallBounds.GetSize().X * Height / WallBounds.GetSize().Z : 400.f;
+	const int32 Count = FMath::Max(1, FMath::RoundToInt(Length / NaturalLength));
+	const float Segment = Length / Count;
+
+	for (int32 i = 0; i < Count; ++i)
+	{
+		FVector Bottom = Start + Direction * Segment * (i + 0.5f);
+		Bottom.Z = GroundZ(Bottom) - SinkFraction * Height;
+		const FRotator Rotation(Random.FRandRange(-MaxTilt, MaxTilt), Yaw, Random.FRandRange(-MaxTilt, MaxTilt));
+
+		const FName Piece = Random.FRand() < BrokenChance && HasKit(TEXT("wall_broken")) ? FName(TEXT("wall_broken")) : FName(TEXT("wall"));
+		if (bKit)
+		{
+			const FBox Bounds = KitBounds(Piece);
+			PlaceKit(Piece, Bottom, Rotation, FVector(Segment / Bounds.GetSize().X, Thickness / Bounds.GetSize().Y, Height / Bounds.GetSize().Z));
+		}
+		else
+		{
+			AddBox(StoneBlocks, Bottom + Rotation.RotateVector(FVector(0.f, 0.f, Height * 0.5f)), FVector(Segment + 5.f, Thickness, Height), Rotation);
+		}
+	}
+}
+
+void AHebridesIsland::BuildBuriedRuins(FRandomStream& Random)
+{
+	const FHebridesTerrain& Data = FHebridesTerrain::Get();
+	static const FName Houses[] = { TEXT("house_a"), TEXT("house_b"), TEXT("ruin"), TEXT("house_b") };
+
+	for (int32 i = 0; i < Data.BuriedHouses.Num(); ++i)
+	{
+		const float Sink = Random.FRandRange(0.3f, 0.5f);
+		if (PlaceHouse(Houses[i % UE_ARRAY_COUNT(Houses)], Data.BuriedHouses[i], 800.f, Sink, 6.f, Random)
+			|| PlaceHouse(TEXT("house_a"), Data.BuriedHouses[i], 800.f, Sink, 6.f, Random))
+		{
+			continue;
+		}
+		const FVector Ground = Data.ToWorld(Data.BuriedHouses[i]);
+		const FVector Size(800.f, 550.f, 500.f);
+		const FRotator Rotation(Random.FRandRange(-6.f, 6.f), Random.FRandRange(0.f, 360.f), Random.FRandRange(-6.f, 6.f));
+		AddBox(StoneBlocks, Ground + FVector(0.f, 0.f, Size.Z * (0.5f - Sink)), Size, Rotation);
+	}
+
+	for (const TPair<FVector2D, FVector2D>& Wall : Data.BuriedWalls)
+	{
+		BuildWallRun(Wall.Key, Wall.Value, 400.f, 100.f, Random.FRandRange(0.3f, 0.5f), 6.f, 0.4f, Random);
+	}
+}
+
+void AHebridesIsland::BuildFieldWalls(FRandomStream& Random)
+{
+	for (const TPair<FVector2D, FVector2D>& Wall : FHebridesTerrain::Get().FieldWalls)
+	{
+		BuildWallRun(Wall.Key, Wall.Value, 140.f, 70.f, 0.1f, 1.5f, 0.25f, Random);
+	}
+}
+
+void AHebridesIsland::BuildBridge()
+{
+	const FHebridesTerrain& Data = FHebridesTerrain::Get();
+	if (!Data.HasBridge())
+	{
+		return;
+	}
+
+	const FVector SpanStart = Data.ToWorld(Data.Bridge[0]);
+	FVector Direction = Data.ToWorld(Data.Bridge[1]) - SpanStart;
+	Direction.Z = 0.f;
+	const float Span = Direction.Size();
+	if (Span < 1.f)
+	{
+		return;
+	}
+	Direction /= Span;
+	const FRotator Facing(0.f, Direction.Rotation().Yaw, 0.f);
+	const FVector Right = Facing.RotateVector(FVector::RightVector);
+
+	const float DeckTop = Data.BridgeDeckZ();
+	const float DeckWidth = 420.f, DeckThick = 200.f, RailHeight = 110.f, RailThick = 50.f, Extend = 300.f;
+	// The deck runs a little onto both level abutments so there is no step getting on.
+	const FVector Start = FVector(SpanStart.X, SpanStart.Y, 0.f) - Direction * Extend;
+	const float Length = Span + 2.f * Extend;
+	const int32 Count = FMath::Max(1, FMath::RoundToInt(Length / 400.f));
+	const float Segment = Length / Count;
+
+	for (int32 i = 0; i < Count; ++i)
+	{
+		const FVector Along = Start + Direction * Segment * (i + 0.5f);
+		if (HasKit(TEXT("bridge")))
+		{
+			const FBox Bounds = KitBounds(TEXT("bridge"));
+			PlaceKit(TEXT("bridge"), FVector(Along.X, Along.Y, DeckTop - DeckThick), Facing,
+				FVector(Segment / Bounds.GetSize().X, DeckWidth / Bounds.GetSize().Y, DeckThick / Bounds.GetSize().Z));
+		}
+		else
+		{
+			AddBox(StoneBlocks, FVector(Along.X, Along.Y, DeckTop - DeckThick * 0.5f), FVector(Segment + 2.f, DeckWidth, DeckThick), Facing);
+		}
+
+		for (const float Side : { -1.f, 1.f })
+		{
+			const FVector Rail = Along + Right * Side * (DeckWidth - RailThick) * 0.5f;
+			if (HasKit(TEXT("bridge_railing")))
+			{
+				const FBox Bounds = KitBounds(TEXT("bridge_railing"));
+				PlaceKit(TEXT("bridge_railing"), FVector(Rail.X, Rail.Y, DeckTop), Facing,
+					FVector(Segment / Bounds.GetSize().X, RailThick / Bounds.GetSize().Y, RailHeight / Bounds.GetSize().Z));
+			}
+			else
+			{
+				AddBox(StoneBlocks, FVector(Rail.X, Rail.Y, DeckTop + RailHeight * 0.5f), FVector(Segment + 2.f, RailThick, RailHeight), Facing);
+			}
+		}
+	}
+
+	// Pillars down into the loch wherever the bed falls away below the deck.
+	for (float T = 400.f; T < Span; T += 800.f)
+	{
+		const FVector At = SpanStart + Direction * T;
+		const float Bed = GroundZ(At);
+		if (Bed > DeckTop - DeckThick - 100.f)
+		{
+			continue;
+		}
+		const float Height = (DeckTop - DeckThick) - (Bed - 100.f);
+		for (const float Side : { -1.f, 1.f })
+		{
+			const FVector Foot = At + Right * Side * 120.f;
+			if (HasKit(TEXT("bridge_pillar")))
+			{
+				const FBox Bounds = KitBounds(TEXT("bridge_pillar"));
+				PlaceKit(TEXT("bridge_pillar"), FVector(Foot.X, Foot.Y, Bed - 100.f), Facing,
+					FVector(150.f / Bounds.GetSize().X, 150.f / Bounds.GetSize().Y, Height / Bounds.GetSize().Z));
+			}
+			else
+			{
+				AddBox(Towers, FVector(Foot.X, Foot.Y, Bed - 100.f + Height * 0.5f), FVector(150.f, 150.f, Height), FRotator::ZeroRotator);
+			}
+		}
+	}
+}
+
 void AHebridesIsland::SpawnEnemies()
 {
 	const FHebridesTerrain& Data = FHebridesTerrain::Get();
@@ -513,6 +854,28 @@ void AHebridesIsland::SpawnEnemies()
 		Skeleton->FinishSpawning(Transform);
 	}
 
+	// Bridge guards: unaware sentries pacing a few steps each, spread along the deck.
+	if (Data.HasBridge())
+	{
+		const FVector BridgeDirection = (Data.ToWorld(Data.Bridge[1]) - Data.ToWorld(Data.Bridge[0])).GetSafeNormal2D();
+		for (int32 i = 0; i < Data.BridgeGuards.Num(); ++i)
+		{
+			FVector Location = Data.ToWorld(Data.BridgeGuards[i]);
+			Location.Z = Data.BridgeDeckZ() + 110.f;
+			const float Yaw = BridgeDirection.Rotation().Yaw + (i % 2 == 0 ? 0.f : 180.f) + Random.FRandRange(-30.f, 30.f);
+			const FTransform Transform(FRotator(0.f, Yaw, 0.f), Location);
+			ASkeletonEnemy* Guard = World->SpawnActorDeferred<ASkeletonEnemy>(ASkeletonEnemy::StaticClass(), Transform, this, nullptr, ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
+			if (!Guard)
+			{
+				continue;
+			}
+			Guard->VisualIndex = (i + 1) % 3;
+			Guard->BlockChance = Guard->VisualIndex == 0 ? 0.3f : 0.f;
+			Guard->WanderRadius = 150.f;
+			Guard->FinishSpawning(Transform);
+		}
+	}
+
 	const FVector BossLocation = Data.ToWorld(Data.Boss) + FVector(0.f, 0.f, 170.f);
 	const FVector ToBeach = Data.ToWorld(Data.LandingBeach) - BossLocation;
 	const FTransform BossTransform(FRotator(0.f, ToBeach.Rotation().Yaw, 0.f), BossLocation, FVector(1.5f));
@@ -521,5 +884,5 @@ void AHebridesIsland::SpawnEnemies()
 		Boss->ConfigureAsBoss();
 		Boss->FinishSpawning(BossTransform);
 	}
-	UE_LOG(LogHebridesIsland, Log, TEXT("Spawned %d skeletons and the boss"), Data.SkeletonSpawns.Num());
+	UE_LOG(LogHebridesIsland, Log, TEXT("Spawned %d skeletons, %d bridge guards and the boss"), Data.SkeletonSpawns.Num(), Data.HasBridge() ? Data.BridgeGuards.Num() : 0);
 }

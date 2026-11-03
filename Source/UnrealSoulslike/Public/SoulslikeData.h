@@ -25,7 +25,24 @@ struct UNREALSOULSLIKE_API FHebridesTerrain
 	TArray<FVector2D> Crofts;
 	TArray<FVector2D> SkeletonSpawns;
 
+	// The loch bridge: deck from Bridge[0] to Bridge[1], guards standing along it.
+	TArray<FVector2D> Bridge;
+	TArray<FVector2D> BridgeGuards;
+	float BridgeDeckAboveSea = 0.0225f;
+
+	// Dune field (ellipse in UV) and the ruins half-buried in it.
+	FVector2D DunesCentre = FVector2D(0.5f, 0.84f);
+	FVector2D DunesRadius = FVector2D::ZeroVector;
+	TArray<FVector2D> BuriedHouses;
+	TArray<TPair<FVector2D, FVector2D>> BuriedWalls;
+	TArray<TPair<FVector2D, FVector2D>> FieldWalls;
+
 	bool IsValid() const { return Resolution > 1 && Heights.Num() == Resolution * Resolution; }
+	bool HasBridge() const { return Bridge.Num() == 2; }
+	float BridgeDeckZ() const { return BridgeDeckAboveSea * HeightScale; }
+
+	// 1 inside the dune field, fading to 0 at its edge.
+	float DuneWeight(float U, float V) const;
 	float WorldSize() const { return (Resolution - 1) * CellSize; }
 
 	// World Z (sea level = 0) of grid vertex (X, Y).
@@ -68,6 +85,18 @@ struct UNREALSOULSLIKE_API FSoulslikeAssets
 	FSoulslikeVisual Boss;
 	TArray<FSoulslikeVisual> Skeletons;
 	TMap<FName, FString> Anims;
+
+private:
+	void Load();
+};
+
+// Imported modular building kit, from Content/Environment/EnvironmentAssets.json
+// ({"pieces": {logical name: object path}}). Missing pieces fall back to primitive boxes.
+struct UNREALSOULSLIKE_API FEnvironmentAssets
+{
+	static const FEnvironmentAssets& Get();
+
+	TMap<FName, FString> Pieces;
 
 private:
 	void Load();

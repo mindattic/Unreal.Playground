@@ -64,6 +64,24 @@ namespace
 		}
 	}
 
+	void ReadSegments(const TSharedPtr<FJsonObject>& Root, const TCHAR* Field, TArray<TPair<FVector2D, FVector2D>>& Out)
+	{
+		const TArray<TSharedPtr<FJsonValue>>* List = nullptr;
+		if (!Root->TryGetArrayField(Field, List))
+		{
+			return;
+		}
+		for (const TSharedPtr<FJsonValue>& Item : *List)
+		{
+			const TArray<TSharedPtr<FJsonValue>>& Ends = Item->AsArray();
+			FVector2D A, B;
+			if (Ends.Num() == 2 && ReadUV(Ends[0]->AsArray(), A) && ReadUV(Ends[1]->AsArray(), B))
+			{
+				Out.Add({ A, B });
+			}
+		}
+	}
+
 	FSoulslikeVisual ReadVisual(const TSharedPtr<FJsonObject>& Object)
 	{
 		FSoulslikeVisual Visual;
@@ -140,6 +158,18 @@ void FHebridesTerrain::Load()
 		ReadPoints(Root, TEXT("player_starts"), PlayerStarts);
 		ReadPoints(Root, TEXT("crofts"), Crofts);
 		ReadPoints(Root, TEXT("skeleton_spawns"), SkeletonSpawns);
+		ReadPoints(Root, TEXT("bridge"), Bridge);
+		ReadPoints(Root, TEXT("bridge_guards"), BridgeGuards);
+		Root->TryGetNumberField(TEXT("bridge_deck_above_sea"), BridgeDeckAboveSea);
+		ReadPoints(Root, TEXT("buried_houses"), BuriedHouses);
+		ReadSegments(Root, TEXT("buried_walls"), BuriedWalls);
+		ReadSegments(Root, TEXT("field_walls"), FieldWalls);
+		const TSharedPtr<FJsonObject>* Dunes = nullptr;
+		if (Root->TryGetObjectField(TEXT("dunes"), Dunes))
+		{
+			ReadPoint(*Dunes, TEXT("centre"), DunesCentre);
+			ReadPoint(*Dunes, TEXT("radius"), DunesRadius);
+		}
 	}
 	if (PlayerStarts.IsEmpty())
 	{
@@ -180,6 +210,16 @@ FVector FHebridesTerrain::ToWorld(const FVector2D& UV) const
 {
 	const float Size = WorldSize();
 	return FVector((UV.X - 0.5f) * Size, (UV.Y - 0.5f) * Size, SampleZ(UV.X, UV.Y));
+}
+
+float FHebridesTerrain::DuneWeight(float U, float V) const
+{
+	if (DunesRadius.X <= 0.f || DunesRadius.Y <= 0.f)
+	{
+		return 0.f;
+	}
+	const float Ellipse = FMath::Sqrt(FMath::Square((U - DunesCentre.X) / DunesRadius.X) + FMath::Square((V - DunesCentre.Y) / DunesRadius.Y));
+	return 1.f - FMath::SmoothStep(0.75f, 1.f, Ellipse);
 }
 
 FVector2D FHebridesTerrain::ToUV(const FVector& World) const
@@ -236,4 +276,29 @@ void FSoulslikeAssets::Load()
 		}
 	}
 	UE_LOG(LogSoulslikeData, Log, TEXT("Character assets: knight=%s, %d skeletons, %d anims"), Knight.IsSet() ? TEXT("yes") : TEXT("no"), Skeletons.Num(), Anims.Num());
+}
+
+const FEnvironmentAssets& FEnvironmentAssets::Get()
+{
+	static FEnvironmentAssets Instance = []
+	{
+		FEnvironmentAssets Assets;
+		Assets.Load();
+		return Assets;
+	}();
+	return Instance;
+}
+
+void FEnvironmentAssets::Load()
+{
+	const TSharedPtr<FJsonObject> Root = LoadJson(TEXT("Environment/EnvironmentAssets.json"));
+	const TSharedPtr<FJsonObject>* Object = nullptr;
+	if (Root.IsValid() && Root->TryGetObjectField(TEXT("pieces"), Object))
+	{
+		for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : (*Object)->Values)
+		{
+			Pieces.Add(FName(*Pair.Key), Pair.Value->AsString());
+		}
+	}
+	UE_LOG(LogSoulslikeData, Log, TEXT("Environment kit: %d pieces"), Pieces.Num());
 }
