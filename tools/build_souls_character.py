@@ -335,13 +335,57 @@ def build_blueprints(montages, weapons):
     gm = duplicate_blueprint("/Game/Variant_Combat/Blueprints/BP_CombatGameMode", "BP_SoulsGameMode")
     gm_cdo = unreal.get_default_object(gm.generated_class())
     gm_cdo.set_editor_property("default_pawn_class", bp.generated_class())
+    gm_cdo.set_editor_property("hud_class", unreal.load_class(None, "/Script/UnrealSoulslike.SoulsHUD"))
     unreal.BlueprintEditorLibrary.compile_blueprint(gm)
     eal.save_loaded_asset(gm)
     log("BP_SoulsGameMode ready")
+    use_souls_game_mode_in("/Game/Variant_Combat/Lvl_Combat", gm.generated_class())
+
+
+def dump_input_mappings():
+    for path in ("/Game/Input/IMC_Default", "/Game/Input/IMC_MouseLook", "/Game/Variant_Combat/Input/IMC_Combat"):
+        imc = eal.load_asset(path)
+        if imc is None:
+            continue
+        try:
+            mappings = imc.get_editor_property("default_key_mappings").get_editor_property("mappings")
+        except Exception:
+            mappings = imc.get_editor_property("mappings")
+        log("IMC %s: %s" % (path, ", ".join("%s=%s" % (m.get_editor_property("action").get_name() if m.get_editor_property("action") else None,
+                                                        m.get_editor_property("key").get_editor_property("key_name")) for m in mappings)))
+
+
+# Template bindings that collide with the knight's scheme (RMB block, RB/R heal).
+TEMPLATE_UNBIND = [("/Game/Variant_Combat/Input/Actions/IA_ChargedAttack", "RightMouseButton"),
+                   ("/Game/Variant_Combat/Input/Actions/IA_ComboAttack", "Gamepad_RightShoulder"),
+                   ("/Game/Variant_Combat/Input/Actions/IA_ToggleCameraSide", "R")]
+
+
+def free_knight_keys():
+    imc = eal.load_asset("/Game/Variant_Combat/Input/IMC_Combat")
+    for action_path, key_name in TEMPLATE_UNBIND:
+        key = unreal.Key()
+        key.set_editor_property("key_name", key_name)
+        imc.unmap_key(eal.load_asset(action_path), key)
+    eal.save_loaded_asset(imc)
+    log("freed template keys: %s" % ", ".join(k for _, k in TEMPLATE_UNBIND))
+
+
+def use_souls_game_mode_in(level_path, game_mode_class):
+    les = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
+    if not les.load_level(level_path):
+        warn("could not load " + level_path)
+        return
+    world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_editor_world()
+    world.get_world_settings().set_editor_property("default_game_mode", game_mode_class)
+    les.save_current_level()
+    log("%s now uses %s" % (level_path, game_mode_class.get_name()))
 
 
 def main():
     ensure_dir(SOULS)
+    free_knight_keys()
+    dump_input_mappings()
     try:
         dump_blueprint_defaults()
     except Exception as exc:

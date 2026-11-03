@@ -151,6 +151,8 @@ protected:
 private:
 	void RunVerificationDemo();
 	void Shot(const TCHAR* Name);
+	void SpawnSparringEnemy();
+	void FaceSparringEnemy();
 	void EnsureKnightInput();
 	bool SpendStamina(float Cost);
 	bool IsBusy() const { return Action != EKnightAction::None; }
@@ -182,6 +184,9 @@ private:
 	bool bBlockHeld = false;
 	bool bVerificationDemo = false;
 	bool bDemoCameraSet = false;
+
+	UPROPERTY(Transient)
+	TObjectPtr<APawn> SparringEnemy;
 	float ActionElapsed = 0.f;
 	float ActionDuration = 0.f;
 	float StaminaIdleTime = 0.f;

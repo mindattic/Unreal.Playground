@@ -1,9 +1,12 @@
 [CmdletBinding()]
 param(
-  [switch]$SkipContent
+  [switch]$SkipContent,
+  [switch]$LegacyContent
 )
 
-# Compiles the UnrealSoulslikeEditor target, then imports SourceArt and builds the map via tools/build_content.py.
+# Compiles the UnrealSoulslikeEditor target, installs Epic's Third Person template content if it's
+# missing, then builds the sword knight (retargeted animations, weapons, blueprints) in the editor.
+# -LegacyContent also runs the old KayKit/island import (tools/build_content.py).
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'find-engine.ps1')
@@ -30,21 +33,33 @@ Write-Output "Compiling UnrealSoulslikeEditor Win64 Development..."
 if ($LASTEXITCODE -ne 0) { throw "Build.bat failed (exit $LASTEXITCODE)." }
 
 if ($SkipContent) {
-  Write-Output 'Skipping content import (-SkipContent).'
+  Write-Output 'Skipping content (-SkipContent).'
   return
 }
 
-$script = Join-Path $PSScriptRoot 'build_content.py'
-if ($script -match '\s') { throw "build_content.py path contains whitespace; the commandlet's -script argument can't take it: $script" }
 $editorCmd = Join-Path $engine 'Engine\Binaries\Win64\UnrealEditor-Cmd.exe'
-Write-Output 'Importing content and building the map (pythonscript commandlet)...'
-& $editorCmd $uproject -run=pythonscript "-script=$script" -unattended -nop4 -nosplash -stdout -FullStdOutLogOutput | Tee-Object -Variable captured
-$exit = $LASTEXITCODE
-$output = ($captured | Out-String)
-if ($exit -ne 0) { throw "Content commandlet failed (exit $exit)." }
-if ($output -notmatch 'BUILD_CONTENT_OK') {
-  throw 'Content commandlet finished without BUILD_CONTENT_OK; see the LogPython errors above.'
+
+if (-not (Test-Path -LiteralPath (Join-Path $repo 'Content\Variant_Combat\Lvl_Combat.umap'))) {
+  Write-Output 'Installing the Third Person template content...'
+  & python -I (Join-Path $PSScriptRoot 'install_thirdperson_template.py') $engine
+  if ($LASTEXITCODE -ne 0) { throw "install_thirdperson_template.py failed (exit $LASTEXITCODE)." }
 }
-$warnings = @($captured | Where-Object { $_ -match '\[build_content\]' -and $_ -match 'Warning' })
-if ($warnings.Count -gt 0) { Write-Warning "$($warnings.Count) content warning(s); see [build_content] lines above." }
+
+function Invoke-EditorScript([string]$Script, [string]$LogFile, [string]$OkMarker) {
+  Write-Output "Running $([IO.Path]::GetFileName($Script)) in the editor..."
+  & $editorCmd $uproject -run=pythonscript "-script=$Script" -unattended -nop4 -nosplash | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "$Script failed (exit $LASTEXITCODE)." }
+  $log = Get-Content -LiteralPath $LogFile -Raw
+  if ($log -notmatch $OkMarker) { throw "$Script did not finish ($OkMarker missing); see $LogFile" }
+  ($log -split "`n") | Where-Object { $_ -match 'WARNING' } | ForEach-Object { Write-Warning $_ }
+}
+
+Invoke-EditorScript (Join-Path $PSScriptRoot 'build_souls_character.py') (Join-Path $repo 'Saved\souls_character.log') 'SOULS_CHARACTER_OK'
+
+if ($LegacyContent) {
+  $script = Join-Path $PSScriptRoot 'build_content.py'
+  Write-Output 'Importing legacy KayKit content and the island map...'
+  & $editorCmd $uproject -run=pythonscript "-script=$script" -unattended -nop4 -nosplash | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "build_content.py failed (exit $LASTEXITCODE)." }
+}
 Write-Output 'Build complete.'

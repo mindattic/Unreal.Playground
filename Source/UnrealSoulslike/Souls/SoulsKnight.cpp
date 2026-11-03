@@ -15,6 +15,7 @@
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "UnrealClient.h"
+#include "Components/WidgetComponent.h"
 #include "Engine/Engine.h"
 #include "GameFramework/SpringArmComponent.h"
 
@@ -50,6 +51,11 @@ void ASoulsKnight::BeginPlay()
 	Super::BeginPlay();
 	Stamina = MaxStamina;
 	Flasks = MaxFlasks;
+	// The HUD shows the knight's own health; the template's floating bar would sit on his chest.
+	if (UWidgetComponent* FloatingBar = FindComponentByClass<UWidgetComponent>())
+	{
+		FloatingBar->SetVisibility(false);
+	}
 	// Souls-style camera: further out than the template's brawler framing.
 	DefaultCameraDistance = 400.f;
 	GetCameraBoom()->TargetArmLength = DefaultCameraDistance;
@@ -109,6 +115,13 @@ void ASoulsKnight::RunVerificationDemo()
 		{ 12.8f, [](ASoulsKnight* K) { K->Shot(TEXT("07_heal")); } },
 		{ 15.0f, [](ASoulsKnight* K) { K->Jump(); } },
 		{ 15.3f, [](ASoulsKnight* K) { K->Shot(TEXT("08_jump")); } },
+		{ 17.0f, [](ASoulsKnight* K) { K->SpawnSparringEnemy(); } },
+		{ 19.0f, [](ASoulsKnight* K) { K->Shot(TEXT("09_enemy")); } },
+		{ 19.2f, [](ASoulsKnight* K) { K->FaceSparringEnemy(); K->DoComboAttackStart(); } },
+		{ 19.4f, [](ASoulsKnight* K) { K->Shot(TEXT("10_hit")); K->DoComboAttackStart(); } },
+		{ 19.9f, [](ASoulsKnight* K) { K->DoComboAttackStart(); } },
+		{ 21.5f, [](ASoulsKnight* K) { K->Shot(TEXT("11_fight")); } },
+		{ 23.0f, [](ASoulsKnight* K) { K->Shot(TEXT("12_fight")); } },
 	};
 	for (const FStep& Step : Steps)
 	{
@@ -125,9 +138,34 @@ void ASoulsKnight::RunVerificationDemo()
 	}
 }
 
+void ASoulsKnight::SpawnSparringEnemy()
+{
+	UClass* EnemyClass = LoadClass<APawn>(nullptr, TEXT("/Game/Variant_Combat/Blueprints/AI/BP_CombatEnemy.BP_CombatEnemy_C"));
+	if (!EnemyClass)
+	{
+		return;
+	}
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+	const FVector Location = GetActorLocation() + GetActorForwardVector() * 450.f;
+	SparringEnemy = GetWorld()->SpawnActor<APawn>(EnemyClass, Location, (GetActorLocation() - Location).Rotation(), Params);
+	if (SparringEnemy)
+	{
+		SparringEnemy->SpawnDefaultController();
+	}
+}
+
+void ASoulsKnight::FaceSparringEnemy()
+{
+	if (SparringEnemy)
+	{
+		SetActorRotation(FRotator(0.f, (SparringEnemy->GetActorLocation() - GetActorLocation()).Rotation().Yaw, 0.f));
+	}
+}
+
 void ASoulsKnight::Shot(const TCHAR* Name)
 {
-	FScreenshotRequest::RequestScreenshot(FString::Printf(TEXT("Knight_%s"), Name), false, false);
+	FScreenshotRequest::RequestScreenshot(FString::Printf(TEXT("Knight_%s"), Name), true, false);
 }
 
 void ASoulsKnight::EnsureKnightInput()
