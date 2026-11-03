@@ -12,6 +12,7 @@ import unreal
 PROJECT_DIR = os.path.abspath(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_dir()))
 SOURCE_ART = os.path.join(PROJECT_DIR, "SourceArt")
 ASSETS_JSON = os.path.join(PROJECT_DIR, "Content", "Characters", "CharacterAssets.json")
+ENVIRONMENT_JSON = os.path.join(PROJECT_DIR, "Content", "Environment", "EnvironmentAssets.json")
 
 KNIGHT_DIR = "/Game/Characters/Knight"
 SKELETONS_DIR = "/Game/Characters/Skeletons"
@@ -23,6 +24,28 @@ SKELETON_NAMES = ["Skeleton_Warrior", "Skeleton_Minion", "Skeleton_Rogue"]
 PROPS = {
     "/Game/Props/Knight": ["sword_1handed", "shield_round"],
     "/Game/Props/Skeletons": ["Skeleton_Blade", "Skeleton_Axe", "Skeleton_Shield_Small_A", "Skeleton_Shield_Large_A"],
+}
+# logical piece name -> (SourceArt/Environment subfolder, FBX name, /Game destination). See SourceArt/Environment/MANIFEST.md.
+ENVIRONMENT_PIECES = {
+    "wall": ("KayKit_Dungeon", "wall", "/Game/Environment/Dungeon"),
+    "wall_broken": ("KayKit_Dungeon", "wall_broken", "/Game/Environment/Dungeon"),
+    "wall_cracked": ("KayKit_Dungeon", "wall_cracked", "/Game/Environment/Dungeon"),
+    "wall_corner": ("KayKit_Dungeon", "wall_corner", "/Game/Environment/Dungeon"),
+    "wall_half": ("KayKit_Dungeon", "wall_half", "/Game/Environment/Dungeon"),
+    "wall_arched": ("KayKit_Dungeon", "wall_arched", "/Game/Environment/Dungeon"),
+    "gate": ("KayKit_Dungeon", "wall_doorway", "/Game/Environment/Dungeon"),
+    "stairs": ("KayKit_Dungeon", "stairs", "/Game/Environment/Dungeon"),
+    "pillar": ("KayKit_Dungeon", "pillar", "/Game/Environment/Dungeon"),
+    "column": ("KayKit_Dungeon", "column", "/Game/Environment/Dungeon"),
+    "bridge": ("KayKit_Dungeon", "floor_foundation_front_and_back", "/Game/Environment/Dungeon"),
+    "bridge_pillar": ("KayKit_Dungeon", "pillar", "/Game/Environment/Dungeon"),
+    "bridge_railing": ("KayKit_Dungeon", "barrier", "/Game/Environment/Dungeon"),
+    "floor": ("KayKit_Dungeon", "floor_tile_large", "/Game/Environment/Dungeon"),
+    "house_a": ("KayKit_MedievalHexagon", "building_home_A_green", "/Game/Environment/Hexagon"),
+    "house_b": ("KayKit_MedievalHexagon", "building_home_B_green", "/Game/Environment/Hexagon"),
+    "tower": ("KayKit_MedievalHexagon", "building_tower_A_green", "/Game/Environment/Hexagon"),
+    "ruin": ("KayKit_MedievalHexagon", "building_destroyed", "/Game/Environment/Hexagon"),
+    "bridge_arched": ("KayKit_MedievalHexagon", "building_bridge_A", "/Game/Environment/Hexagon"),
 }
 ANIM_TAKES = {
     "idle": "Idle",
@@ -187,6 +210,45 @@ def import_props():
             else:
                 props[name] = mesh
     return props
+
+
+def use_complex_collision(mesh):
+    """Complex-as-simple: characters walk on bridge decks/stairs and traces hit the real wall faces."""
+    try:
+        body = mesh.get_editor_property("body_setup")
+        body.set_editor_property("collision_trace_flag", unreal.CollisionTraceFlag.CTF_USE_COMPLEX_AS_SIMPLE)
+        eal.save_loaded_asset(mesh)
+    except Exception as exc:
+        warn("could not set complex collision on %s (%s); keeping auto-generated collision" % (mesh.get_name(), exc))
+
+
+def import_environment():
+    """Import the modular building/wall/bridge kit and write EnvironmentAssets.json. Failures only warn."""
+    imported = {}
+    pieces = {}
+    for logical, (pack, name, folder) in ENVIRONMENT_PIECES.items():
+        key = (pack, name)
+        if key not in imported:
+            log("importing environment piece %s/%s" % (pack, name))
+            options = fbx_options(skeletal=False)
+            options.get_editor_property("static_mesh_import_data").set_editor_property("auto_generate_collision", True)
+            paths = run_import(os.path.join(SOURCE_ART, "Environment", pack, name + ".fbx"), folder, options)
+            mesh = find_imported(paths, unreal.StaticMesh)
+            if mesh is None:
+                candidate = eal.load_asset("%s/%s" % (folder, name))
+                mesh = candidate if isinstance(candidate, unreal.StaticMesh) else None
+            if mesh is None:
+                warn("environment piece %s not found after import" % name)
+            else:
+                use_complex_collision(mesh)
+            imported[key] = mesh
+        if imported[key] is not None:
+            pieces[logical] = object_path(imported[key])
+
+    os.makedirs(os.path.dirname(ENVIRONMENT_JSON), exist_ok=True)
+    with open(ENVIRONMENT_JSON, "w", encoding="utf-8") as f:
+        json.dump({"pieces": pieces}, f, indent=2)
+    log("wrote %s (%d of %d pieces)" % (ENVIRONMENT_JSON, len(pieces), len(ENVIRONMENT_PIECES)))
 
 
 def fresh_material(name):
@@ -354,6 +416,10 @@ def main():
     if shared_skeleton is None:
         warn("skipping skeleton enemies: no shared skeleton from Knight.fbx")
     props = import_props()
+    try:
+        import_environment()
+    except Exception as exc:  # the game falls back to primitive shapes without the kit
+        warn("environment import failed: %s" % exc)
     create_materials()
     create_map()
     data = write_assets_json(knight, skeletons, props)
