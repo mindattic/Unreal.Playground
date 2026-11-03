@@ -74,6 +74,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat|Timing")
 	float GuardBreakDuration = 1.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat|Timing")
+	float ExecutionDuration = 1.1f;
+
 	// False for the boss: ordinary hits don't interrupt it, only parries and guard breaks do.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat")
 	bool bCanBeHitStunned = true;
@@ -151,6 +154,10 @@ public:
 
 	// Server: puts this combatant into Staggered for Duration, cancelling whatever it was doing.
 	void ApplyStagger(float Duration);
+
+	// Server: play the stealth-execution finisher (heavy swing, no hit sweep: the kill is applied
+	// by the executor directly).
+	void StartExecution();
 
 	// Server: final state; clears every pending action.
 	void SetDead();

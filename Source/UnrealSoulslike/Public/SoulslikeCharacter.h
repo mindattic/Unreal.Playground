@@ -68,6 +68,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Soulslike|Combat")
 	float SoftLockRange = 450.f;
 
+	// Stealth executions reach this far.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Soulslike|Combat")
+	float ExecutionRange = 220.f;
+
+	// The skeleton a light-attack press would execute right now, if any (HUD prompt uses it).
+	class ASkeletonEnemy* FindExecutionTarget() const;
+
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void PawnClientRestart() override;
 
@@ -86,6 +93,12 @@ protected:
 	void OnLightAttack(const FInputActionValue& Value);
 	void OnHeavyAttack(const FInputActionValue& Value);
 	void OnHeal(const FInputActionValue& Value);
+
+	UFUNCTION(Server, Reliable)
+	void ServerExecute(class ASkeletonEnemy* Target);
+
+	// Light attack: an execution when one is available, else a normal swing.
+	void LightAttackOrExecute();
 
 private:
 	void EnsureDefaultInput();

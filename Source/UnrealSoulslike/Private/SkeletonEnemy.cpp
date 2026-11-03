@@ -366,6 +366,28 @@ float ASkeletonEnemy::TakeDamage(float DamageAmount, FDamageEvent const& DamageE
 	return Applied;
 }
 
+bool ASkeletonEnemy::CanBeExecutedBy(const AActor* Attacker) const
+{
+	if (!Attacker || bIsBoss || !IsAlive() || Awareness == EAwareness::Alerted || Combat->State == ECombatState::Staggered)
+	{
+		return false;
+	}
+	if (Awareness == EAwareness::Unaware)
+	{
+		return true;
+	}
+	const FVector ToAttacker = (Attacker->GetActorLocation() - GetActorLocation()).GetSafeNormal2D();
+	return FVector::DotProduct(GetActorForwardVector().GetSafeNormal2D(), ToAttacker) < -0.3f;
+}
+
+void ASkeletonEnemy::ReceiveExecution(AActor* Killer)
+{
+	if (IsAlive())
+	{
+		Vitality->ApplyDamage(Vitality->Health, Killer);
+	}
+}
+
 void ASkeletonEnemy::OnDied()
 {
 	Target = nullptr;

@@ -76,6 +76,13 @@ public:
 
 	bool IsUnaware() const { return Awareness == EAwareness::Unaware; }
 
+	// A stealth kill is possible on an unaware skeleton from any side, or a suspicious one from
+	// behind; never once it is alerted, and never on the boss.
+	bool CanBeExecutedBy(const AActor* Attacker) const;
+
+	// Server: die to a stealth execution without raising any alarm.
+	void ReceiveExecution(AActor* Killer);
+
 	virtual void Tick(float DeltaSeconds) override;
 	virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;

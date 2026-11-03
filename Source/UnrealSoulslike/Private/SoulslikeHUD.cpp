@@ -47,6 +47,11 @@ void ASoulslikeHUD::DrawHUD()
 		DrawPlayerVitals(Player);
 		DrawEnemyBars(Player);
 
+		if (Player->IsAlive() && Player->FindExecutionTarget())
+		{
+			DrawCentredText(TEXT("Execute  [X / LMB]"), Canvas->ClipY * 0.62f, Parchment, 1.2f);
+		}
+
 		if (!Player->IsAlive())
 		{
 			if (DeathTime < 0.f)

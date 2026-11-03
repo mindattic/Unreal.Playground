@@ -1,6 +1,8 @@
 #include "SoulslikeCharacter.h"
 #include "SoulslikeData.h"
 #include "SoulslikeGameMode.h"
+#include "SkeletonEnemy.h"
+#include "TimerManager.h"
 #include "Components/CombatComponent.h"
 #include "Components/VitalityComponent.h"
 #include "Camera/CameraComponent.h"
@@ -221,11 +223,65 @@ void ASoulslikeCharacter::OnParry(const FInputActionValue& Value)
 
 void ASoulslikeCharacter::OnLightAttack(const FInputActionValue& Value)
 {
-	if (IsAlive() && Combat->CanAct())
+	LightAttackOrExecute();
+}
+
+void ASoulslikeCharacter::LightAttackOrExecute()
+{
+	if (!IsAlive() || !Combat->CanAct())
 	{
-		SoftLockTowardsEnemy();
+		return;
 	}
+	if (ASkeletonEnemy* Victim = FindExecutionTarget())
+	{
+		SetActorRotation(FRotator(0.f, (Victim->GetActorLocation() - GetActorLocation()).Rotation().Yaw, 0.f));
+		ServerExecute(Victim);
+		return;
+	}
+	SoftLockTowardsEnemy();
 	Combat->TryLightAttack();
+}
+
+ASkeletonEnemy* ASoulslikeCharacter::FindExecutionTarget() const
+{
+	ASkeletonEnemy* Best = nullptr;
+	float BestDistSq = FMath::Square(ExecutionRange);
+	for (TActorIterator<ASkeletonEnemy> It(GetWorld()); It; ++It)
+	{
+		ASkeletonEnemy* Skeleton = *It;
+		const FVector ToSkeleton = Skeleton->GetActorLocation() - GetActorLocation();
+		const float DistSq = ToSkeleton.SizeSquared2D();
+		if (DistSq < BestDistSq && FMath::Abs(ToSkeleton.Z) < 150.f && Skeleton->CanBeExecutedBy(this))
+		{
+			BestDistSq = DistSq;
+			Best = Skeleton;
+		}
+	}
+	return Best;
+}
+
+void ASoulslikeCharacter::ServerExecute_Implementation(ASkeletonEnemy* Target)
+{
+	if (!Target || !IsAlive() || !Combat->CanAct() || !Target->CanBeExecutedBy(this)
+		|| FVector::Dist2D(Target->GetActorLocation(), GetActorLocation()) > ExecutionRange * 1.5f)
+	{
+		return;
+	}
+
+	SetActorRotation(FRotator(0.f, (Target->GetActorLocation() - GetActorLocation()).Rotation().Yaw, 0.f));
+	Combat->StartExecution();
+	Target->Combat->ApplyStagger(Combat->ExecutionDuration);
+
+	FTimerHandle Handle;
+	const TWeakObjectPtr<ASkeletonEnemy> WeakTarget(Target);
+	const TWeakObjectPtr<ASoulslikeCharacter> WeakSelf(this);
+	GetWorldTimerManager().SetTimer(Handle, [WeakTarget, WeakSelf]()
+	{
+		if (WeakTarget.IsValid())
+		{
+			WeakTarget->ReceiveExecution(WeakSelf.Get());
+		}
+	}, 0.45f, false);
 }
 
 void ASoulslikeCharacter::OnHeavyAttack(const FInputActionValue& Value)
@@ -329,9 +385,9 @@ void ASoulslikeCharacter::TickDemoBot(float DeltaSeconds)
 	{
 		SoftLockTowardsEnemy();
 		const float Roll = FMath::FRand();
-		if (Roll < 0.6f)
+		if (Roll < 0.6f || FindExecutionTarget())
 		{
-			Combat->TryLightAttack();
+			LightAttackOrExecute();
 		}
 		else if (Roll < 0.8f)
 		{

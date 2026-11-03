@@ -197,6 +197,15 @@ void UCombatComponent::ApplyStagger(float Duration)
 	BeginAction(ECombatState::Staggered, Duration);
 }
 
+void UCombatComponent::StartExecution()
+{
+	ClearTimers();
+	bIsInvulnerable = true;
+	CurrentAttack = EAttackType::Heavy;
+	BeginAction(ECombatState::Attacking, ExecutionDuration);
+	GetWorld()->GetTimerManager().SetTimer(InvulnerabilityTimerHandle, this, &UCombatComponent::ClearInvulnerability, ExecutionDuration, false);
+}
+
 void UCombatComponent::SetDead()
 {
 	ClearTimers();
