@@ -4,70 +4,104 @@ layer: design
 status: living
 ---
 
-# Design — Unreal.Soulslike
+# Design: Unreal.Soulslike
 
 ## Pitch
 
-A co-op souls-like demo. 1–4 players land on an isolated island in the Outer Hebrides and fight
-their way to its ruined keep. No PvP; every rule below applies identically to every human player
-and to AI enemies.
+A co-op souls-like demo on a fictional skerry in the Outer Hebrides. One to four players land on
+the beach and take the island from its skeletons, ending at the ruined keep and the Hollow Laird.
+You can fight through, climb around, or slip past unseen as a shadow. There's no PvP, and every
+rule applies the same way to every player.
 
-## Setting: the island
+It's also a test bed. The same game is built twice, in C++ and in C# (UnrealSharp), so the two
+can be compared on real numbers (UNR-T8).
 
-- **Place**: a fictional skerry off the Outer Hebrides — basalt cliffs, peat bog, standing stones,
-  a sea mist that never fully lifts. Weather is a constant: wind, rain, and fog that cuts draw
-  distance and hides enemies until they're close.
-- **The crofts**: a cluster of abandoned stone crofts and an Iron Age broch near the landing beach
-  — the demo's first area, mostly empty, teaching movement/dodge/light-attack against a couple of
-  weak enemies (feral sheep-things, driven mad by whatever happened here).
-  - A whole Unreal landscape, foliage pass, and handcrafted crofts/broch meshes are large,
-    editor-authored content outside what this scaffold can generate; the brief above is the spec
-    for whoever builds that level.
-- **The keep**: a ruined clifftop fortification at the island's center — the demo's combat proving
-  ground and its one mini-boss.
+## The island
+
+- Shape: a 257×257 heightmap from `tools/generate_heightmap.py`, at 3 m per cell. The island is
+  about 460 m across and peaks at about 45 m. It has a ragged coast, two headlands, a sea loch
+  winding in from the west, low machair and heather moor, and a rocky bowl in the middle that
+  holds the keep.
+- Data: `Content/Terrain/HebridesHeightmap.r16` (raw uint16) and `HebridesLandmarks.json`. The
+  landmarks file holds UV positions for the beach, player starts, crofts, broch, standing stones,
+  keep, boss, skeleton spawns, and the bridge and its guards. Every machine builds identical
+  terrain from these files, so co-op clients match the server exactly.
+- Areas, from the landing:
+  1. **Landing beach and dunes**: player starts and respawn point. Cottages and wall runs lie
+     half-buried in the sand, and all of them are merge-able.
+  2. **Crofts and field walls**: the first skeletons, and the first chance to practise stealth.
+  3. **The loch bridge**: a stone bridge crowded with skeletons. You can fight across it, climb
+     around, or merge into the bridge and crawl along it unseen.
+  4. **Standing stones**: a Callanish-style circle with an avenue running north.
+  5. **The broch**: a ruined Iron Age tower with a doorway facing the beach.
+  6. **The keep**: walls, towers and a gate facing the beach, with the boss arena inside.
+- Weather: an open sea out to the horizon, a low northern sun, a sky atmosphere, a real-time sky
+  light, and heavy volumetric mist that hides skeletons until they're close.
 
 ## Co-op model
 
-- Session-based, drop-in: any connected player's `ASoulslikeCharacter` is spawned and ticked the
-  same way, server-authoritative (listen server for the demo; dedicated server is a drop-in swap
-  of the same `ASoulslikeGameMode`/`ASoulslikePlayerController`).
-- No shared health pool, no friendly fire by default, no player-vs-player damage.
-- Vitals (`UVitalityComponent`) and combat state (`UCombatComponent`) are both replicated per
-  character, so every client renders every other player's health, stamina, heal charges, and
-  current action (idle/attacking/blocking/parrying/dodging/healing/staggered) correctly.
+- Listen server for the demo. A dedicated server would use the same game mode.
+- Combat state, vitals, awareness, climbing and merge state all replicate. Damage, stamina,
+  executions and enemy AI are decided by the server.
+- A dead player respawns on the beach after 6 seconds with full health and flasks.
+  Skeletons don't respawn.
 
-## Combat rules
+## Combat
 
-| Action | Input (gamepad) | Stamina cost | Effect |
-|---|---|---|---|
-| Move / look | Left stick / right stick | — | Standard third-person locomotion |
-| Light attack | **X** | 12 | Fast swing, 18 damage, short recovery |
-| Heavy attack | **Y** | 24 | Slow swing, 36 damage, longer recovery |
-| Dodge roll | **A** | 20 | ~0.35s invulnerability window, repositions the character |
-| Block | **LB** (hold) | per hit absorbed | Reduces incoming damage to 15% while held |
-| Parry | **LT** (tap while blocking) | 6 | 0.3s window: a landed hit in this window is fully
-negated and staggers the attacker instead |
-| Heal | **RB** | — (consumes 1 of 3 charges) | 1.6s interruptible cast, restores health |
+| Action | Pad | KB/M | Cost | Rule |
+|---|---|---|---|---|
+| Light attack | X | LMB | 12 st | 0.25 s wind-up, then one hit sweep (18 dmg) |
+| Heavy attack | Y | F | 24 st | 0.5 s wind-up (36 dmg) |
+| Dodge | B | Shift | 20 st | 0.35 s i-frames |
+| Block (hold) | LB | RMB | 1 st per damage | 85% reduction; running out of stamina breaks your guard |
+| Parry | LT | Q | 6 st | 0.3 s window; a hit landing in it is negated and staggers the attacker for 1.2 s |
+| Heal | RB | R | 1 of 3 flasks | 1.6 s cast; getting hit cancels it |
 
-Getting hit cancels an attack or a heal in progress (`UCombatComponent::InterruptOnHit`), so both
-are a real commitment, not a free action. Stamina regenerates after a short delay of not spending
-it, so stamina management (not just health) is the core resource loop.
+- A clean hit stuns for 0.4 s, so getting hit interrupts attacks and heals.
+- The boss can't be hit-stunned. Only a parry or a guard break opens it up.
+- Attacks soft-lock onto the nearest enemy within 4.5 m.
 
-## What's implemented vs. what's left
+## Skeletons
 
-**Implemented** (`Source/UnrealSoulslike/`): the full server-authoritative combat/vitality state
-machine described above, an Enhanced-Input-ready third-person character, a co-op game mode and
-player controller, and the config to wire the game mode in by default.
+- Perception: a 60° sight cone out to 22 m, with line of sight required. They hear you within
+  4.5 m if you're running or attacking, and notice you instantly within 1.2 m.
+- A suspicion meter builds while they sense you. Past 35% they're suspicious (?) and investigate;
+  at 100% they're alerted (!) and alert every skeleton within 12 m. They lose interest 8 seconds
+  after losing sight of you.
+- Fighting: telegraphed attacks (0.55 s / 0.85 s wind-ups), and shield-bearers sometimes block.
+  They leash back home 35 m from their spawn.
+- Stealth execution (UNR-T5): you can execute an unaware skeleton from any side, or a suspicious
+  one from behind. It dies silently. The boss can't be executed.
 
-**Left for the Unreal Editor** (binary/editor-only content this scaffold cannot generate as text):
-- The Enhanced Input assets themselves — an `Input Mapping Context` and one `Input Action` per row
-  in the table above, assigned on a Blueprint child of `ASoulslikeCharacter` (or on the class
-  defaults directly). The bindings above are the intended defaults for whoever creates them.
-- A skeletal mesh, animation blueprint, and montages for locomotion, the roll, block/parry poses,
-  light/heavy swings, and the heal cast.
-- The island level itself: landscape, foliage, the crofts/broch area, and the keep, per the
-  setting brief above, with `PlayerStart`s for co-op spawning and the enemies/mini-boss as
-  `ACharacter` subclasses reusing `UVitalityComponent` (and `UCombatComponent` where an enemy
-  should be parryable).
-- Network transport setup for actual multiplayer sessions beyond a LAN listen server (Steam/EOS
-  via `OnlineSubsystem`, currently left disabled in the `.uproject`).
+## Traversal
+
+- **Jump and free climbing (UNR-T4)**: you can climb any surface steeper than a walkable floor,
+  including cliffs, walls and stones. Climbing drains stamina, A climb-jumps, reaching a ledge
+  mantles you up, and B lets go.
+- **Shadow merge (UNR-T6)**: press R3 or E next to a merge-able surface (stone, brick, the
+  bridge) or a surface in shadow, and you become a black splotch. The splotch crawls across
+  floors, walls and ceilings and from one connected surface to the next, and nothing can see or
+  hear you. It drains shadow energy, faster in light, and you're forced out when the energy runs
+  out. A light attack next to an unaware skeleton pops you out straight into an execution.
+
+## Art
+
+- Characters: the CC0 KayKit Adventurers knight and KayKit Skeletons (warrior, minion, rogue;
+  the boss is a 1.5× warrior). They share one 41-bone rig, so one animation set drives them all.
+  Animations play directly in C++ (single-node), with no Animation Blueprint.
+- Environment: the CC0 KayKit Dungeon Remastered walls, gates, stairs, pillars and bridge
+  blocks, and KayKit Medieval Hexagon cottages, towers and ruins. If any of these are missing,
+  engine primitive shapes are used instead, so the game always runs.
+- Credits: `SourceArt/CREDITS.md` and `SourceArt/Environment/CREDITS.md`.
+
+## Pipeline
+
+1. `python -I tools/generate_heightmap.py` builds the terrain data and the preview image.
+2. `tools/build.ps1` compiles the editor target. It then runs `tools/build_content.py` in the
+   editor, which imports the art, creates the materials (and input assets for the C# twin),
+   builds the map and writes `CharacterAssets.json` and `EnvironmentAssets.json`.
+3. `tools/run.ps1 [-Players N]` plays the game, solo or as co-op on one machine.
+4. `tools/package.ps1` produces `Builds/Cpp/Unreal.Soulslike.Cpp.exe` and
+   `Builds/CSharp/Unreal.Soulslike.CSharp.exe`.
+5. `tools/compare.ps1` runs both builds with `-DemoBot -Benchmark=60` and writes
+   `docs/COMPARISON.md`.
