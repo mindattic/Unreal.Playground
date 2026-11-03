@@ -55,6 +55,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skeleton|AI")
 	float AttackRange = 190.f;
 
+	// How far an unaware skeleton wanders from home (bridge guards keep it small).
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skeleton|AI")
+	float WanderRadius = 600.f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skeleton|AI")
 	float LeashRadius = 3500.f;
 

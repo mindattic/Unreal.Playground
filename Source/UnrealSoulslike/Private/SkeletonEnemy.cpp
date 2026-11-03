@@ -276,7 +276,7 @@ void ASkeletonEnemy::UpdateBehaviour(float DeltaSeconds)
 		WanderTimer -= DeltaSeconds;
 		if (WanderTimer <= 0.f)
 		{
-			const FVector2D Offset = FMath::RandPointInCircle(600.f);
+			const FVector2D Offset = FMath::RandPointInCircle(WanderRadius);
 			WanderDestination = HomeLocation + FVector(Offset.X, Offset.Y, 0.f);
 			WanderTimer = FMath::FRandRange(4.f, 9.f);
 		}
