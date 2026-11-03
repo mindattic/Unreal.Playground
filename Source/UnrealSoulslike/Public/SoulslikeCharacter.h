@@ -1,19 +1,21 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/Character.h"
+#include "SoulslikeCombatant.h"
 #include "SoulslikeCharacter.generated.h"
 
 class USpringArmComponent;
 class UCameraComponent;
-class UCombatComponent;
-class UVitalityComponent;
 class UInputMappingContext;
 class UInputAction;
 struct FInputActionValue;
 
+// The player's knight. Input is built at runtime (no editor data assets needed):
+//   Gamepad: L-stick move, R-stick look, A dodge, LB block, LT parry, X light, Y heavy, RB heal
+//   Keyboard/mouse: WASD, mouse, Space dodge, RMB block, Q parry, LMB light, F heavy, R heal
+// Assigning DefaultMappingContext and the actions on a Blueprint child overrides all of it.
 UCLASS()
-class UNREALSOULSLIKE_API ASoulslikeCharacter : public ACharacter
+class UNREALSOULSLIKE_API ASoulslikeCharacter : public ASoulslikeCombatant
 {
 	GENERATED_BODY()
 
@@ -26,15 +28,6 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Soulslike|Camera")
 	TObjectPtr<UCameraComponent> FollowCamera;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Soulslike|Combat")
-	TObjectPtr<UCombatComponent> Combat;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Soulslike|Combat")
-	TObjectPtr<UVitalityComponent> Vitality;
-
-	// Assigned on a Blueprint child (or these class defaults) in the editor: Enhanced Input
-	// assets aren't text-editable config, so the demo ships the gameplay code and documents
-	// the intended gamepad scheme in docs/DESIGN.md instead of guessing binary .uasset bytes.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Soulslike|Input")
 	TObjectPtr<UInputMappingContext> DefaultMappingContext;
 
@@ -42,40 +35,50 @@ public:
 	TObjectPtr<UInputAction> MoveAction;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Soulslike|Input")
-	TObjectPtr<UInputAction> LookAction;
+	TObjectPtr<UInputAction> LookMouseAction;
 
-	// Default scheme: A = Dodge Roll
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Soulslike|Input")
+	TObjectPtr<UInputAction> LookStickAction;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Soulslike|Input")
 	TObjectPtr<UInputAction> DodgeAction;
 
-	// Default scheme: LB (hold) = Block
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Soulslike|Input")
 	TObjectPtr<UInputAction> BlockAction;
 
-	// Default scheme: LT (tap while blocking) = Parry
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Soulslike|Input")
 	TObjectPtr<UInputAction> ParryAction;
 
-	// Default scheme: X = Light Attack
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Soulslike|Input")
 	TObjectPtr<UInputAction> LightAttackAction;
 
-	// Default scheme: Y = Heavy Attack
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Soulslike|Input")
 	TObjectPtr<UInputAction> HeavyAttackAction;
 
-	// Default scheme: RB = Heal
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Soulslike|Input")
 	TObjectPtr<UInputAction> HealAction;
 
-	virtual float TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Soulslike|Input")
+	float MouseSensitivity = 0.12f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Soulslike|Input")
+	float StickDegreesPerSecond = 160.f;
+
+	// Attacks snap toward the nearest enemy within this range (a light "soft lock").
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Soulslike|Combat")
+	float SoftLockRange = 450.f;
+
+	virtual void Tick(float DeltaSeconds) override;
+	virtual void PawnClientRestart() override;
 
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+	virtual void OnDied() override;
 
 	void OnMove(const FInputActionValue& Value);
-	void OnLook(const FInputActionValue& Value);
+	void OnLookMouse(const FInputActionValue& Value);
+	void OnLookStick(const FInputActionValue& Value);
 	void OnDodge(const FInputActionValue& Value);
 	void OnBlockStarted(const FInputActionValue& Value);
 	void OnBlockCompleted(const FInputActionValue& Value);
@@ -85,5 +88,15 @@ protected:
 	void OnHeal(const FInputActionValue& Value);
 
 private:
-	FVector2D LastMoveInput;
+	void EnsureDefaultInput();
+	void AddLook(float YawDegrees, float PitchDegrees);
+	void MoveInCameraSpace(const FVector2D& Input);
+	void DodgeLocal();
+	void SoftLockTowardsEnemy();
+	class ASoulslikeCombatant* FindNearestEnemy(float MaxRange) const;
+	void TickDemoBot(float DeltaSeconds);
+
+	FVector2D LastMoveInput = FVector2D::ZeroVector;
+	bool bDemoBot = false;
+	float DemoBotCooldown = 0.f;
 };

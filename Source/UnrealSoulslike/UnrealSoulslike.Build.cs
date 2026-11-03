@@ -12,6 +12,12 @@ public class UnrealSoulslike : ModuleRules
 			"Engine",
 			"InputCore",
 			"EnhancedInput",
+			"AIModule",
+			"ProceduralMeshComponent",
+		});
+
+		PrivateDependencyModuleNames.AddRange(new string[] {
+			"Json",
 		});
 	}
 }

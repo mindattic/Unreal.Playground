@@ -23,3 +23,9 @@ _Nothing recorded yet._
 |---|---|---|---|---|---|
 | UNR-T1 | 2026-11-03 | docs | closed | Start the permanent ticket log in the ticket database | — |
 | UNR-T2 | 2026-11-03 | feature | closed | Scaffold co-op souls-like demo: third-person combat on isolated Hebrides island (dodge roll, block, parry, X/Y light/heavy attacks, RB heal) | b21f31c |
+| UNR-T3 | 2026-11-03 | feature | open | Playable demo: terrain-shaped Hebrides island surrounded by water, free meshes, working battle system, skeleton enemies that attack the player | — |
+| UNR-T4 | 2026-11-03 | feature | open | Jump + free climbing (BotW/Genshin/Palworld style): climb any steep surface with stamina drain, climb-jump, ledge mantle, so challenges can be approached from any angle | — |
+| UNR-T5 | 2026-11-03 | feature | open | Stealth execution: skeletons have perception (vision cone, hearing, unaware/suspicious/alerted); attacking an unaware skeleton from behind executes it instantly | — |
+| UNR-T6 | 2026-11-03 | feature | open | Shadow merge (Ereban: Shadow Legacy / ALBW wall-merge): become a black shadow splotch that crawls along walls, ground and ceilings while in shadow, costs shadow energy, ejects in light | — |
+| UNR-T7 | 2026-11-03 | feature | open | Merge-able premade buildings and brick walls half-buried in sand; a skeleton-guarded bridge over the sea loch that can be crossed unseen merged into it as a shadow blob | — |
+| UNR-T8 | 2026-11-03 | feature | open | Build the same game twice for an informed choice: C++ (Unreal.Soulslike.Cpp.exe) and C# via UnrealSharp (Unreal.Soulslike.CSharp.exe), identical gameplay, plus a -Benchmark run comparing frame time, memory, build/iteration time and code size | — |

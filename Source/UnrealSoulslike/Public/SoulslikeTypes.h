@@ -10,10 +10,10 @@ enum class ECombatState : uint8
 	Attacking,
 	Blocking,
 	Parrying,
-	Parried,
 	Dodging,
 	Healing,
 	Staggered,
+	Dead,
 };
 
 UENUM(BlueprintType)
@@ -22,3 +22,9 @@ enum class EAttackType : uint8
 	Light,
 	Heavy,
 };
+
+namespace SoulslikeTeam
+{
+	constexpr uint8 Players = 0;
+	constexpr uint8 Skeletons = 1;
+}

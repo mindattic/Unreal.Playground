@@ -10,9 +10,19 @@ UVitalityComponent::UVitalityComponent()
 void UVitalityComponent::BeginPlay()
 {
 	Super::BeginPlay();
+	if (GetOwner() && GetOwner()->HasAuthority())
+	{
+		ResetVitals();
+	}
+}
+
+void UVitalityComponent::ResetVitals()
+{
 	Health = MaxHealth;
 	Stamina = MaxStamina;
 	HealCharges = MaxHealCharges;
+	TimeSinceLastStaminaSpend = StaminaRegenDelay;
+	OnHealthChanged.Broadcast(Health, MaxHealth);
 }
 
 void UVitalityComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -39,7 +49,7 @@ void UVitalityComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 	}
 }
 
-void UVitalityComponent::ApplyDamage(float Amount, AActor* Instigator)
+void UVitalityComponent::ApplyDamage(float Amount, AActor* DamageCauser)
 {
 	if (!GetOwner() || !GetOwner()->HasAuthority() || Amount <= 0.f || !IsAlive())
 	{

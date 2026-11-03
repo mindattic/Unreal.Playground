@@ -1,4 +1,6 @@
 #include "SoulslikeCharacter.h"
+#include "SoulslikeData.h"
+#include "SoulslikeGameMode.h"
 #include "Components/CombatComponent.h"
 #include "Components/VitalityComponent.h"
 #include "Camera/CameraComponent.h"
@@ -6,39 +8,106 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "InputAction.h"
+#include "InputMappingContext.h"
+#include "InputModifiers.h"
 #include "InputActionValue.h"
+#include "EngineUtils.h"
+#include "Misc/CommandLine.h"
 
 ASoulslikeCharacter::ASoulslikeCharacter()
 {
-	bUseControllerRotationYaw = false;
-	GetCharacterMovement()->bOrientRotationToMovement = true;
-	GetCharacterMovement()->RotationRate = FRotator(0.f, 500.f, 0.f);
+	DisplayName = NSLOCTEXT("Soulslike", "Knight", "Knight");
 
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
-	CameraBoom->TargetArmLength = 400.f;
+	CameraBoom->TargetArmLength = 380.f;
+	CameraBoom->SocketOffset = FVector(0.f, 0.f, 60.f);
 	CameraBoom->bUsePawnControlRotation = true;
+	CameraBoom->bEnableCameraLag = true;
+	CameraBoom->CameraLagSpeed = 12.f;
 
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
 
-	Combat = CreateDefaultSubobject<UCombatComponent>(TEXT("Combat"));
-	Vitality = CreateDefaultSubobject<UVitalityComponent>(TEXT("Vitality"));
+	Combat->Team = SoulslikeTeam::Players;
+	MouseSensitivity = 2.5f;
 }
 
 void ASoulslikeCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+	ApplyVisual(FSoulslikeAssets::Get().Knight);
+	bDemoBot = FParse::Param(FCommandLine::Get(), TEXT("DemoBot"));
+}
+
+void ASoulslikeCharacter::EnsureDefaultInput()
+{
+	if (DefaultMappingContext)
+	{
+		return;
+	}
+
+	auto MakeAction = [this](const TCHAR* Name, EInputActionValueType Type)
+	{
+		UInputAction* Action = NewObject<UInputAction>(this, Name);
+		Action->ValueType = Type;
+		return Action;
+	};
+
+	MoveAction = MakeAction(TEXT("IA_Move"), EInputActionValueType::Axis2D);
+	LookMouseAction = MakeAction(TEXT("IA_LookMouse"), EInputActionValueType::Axis2D);
+	LookStickAction = MakeAction(TEXT("IA_LookStick"), EInputActionValueType::Axis2D);
+	DodgeAction = MakeAction(TEXT("IA_Dodge"), EInputActionValueType::Boolean);
+	BlockAction = MakeAction(TEXT("IA_Block"), EInputActionValueType::Boolean);
+	ParryAction = MakeAction(TEXT("IA_Parry"), EInputActionValueType::Boolean);
+	LightAttackAction = MakeAction(TEXT("IA_LightAttack"), EInputActionValueType::Boolean);
+	HeavyAttackAction = MakeAction(TEXT("IA_HeavyAttack"), EInputActionValueType::Boolean);
+	HealAction = MakeAction(TEXT("IA_Heal"), EInputActionValueType::Boolean);
+
+	UInputMappingContext* Context = NewObject<UInputMappingContext>(this, TEXT("IMC_Soulslike"));
+
+	Context->MapKey(MoveAction, EKeys::Gamepad_Left2D).Modifiers.Add(NewObject<UInputModifierDeadZone>(this));
+	Context->MapKey(MoveAction, EKeys::D);
+	Context->MapKey(MoveAction, EKeys::A).Modifiers.Add(NewObject<UInputModifierNegate>(this));
+	Context->MapKey(MoveAction, EKeys::W).Modifiers.Add(NewObject<UInputModifierSwizzleAxis>(this));
+	{
+		FEnhancedActionKeyMapping& Back = Context->MapKey(MoveAction, EKeys::S);
+		Back.Modifiers.Add(NewObject<UInputModifierSwizzleAxis>(this));
+		Back.Modifiers.Add(NewObject<UInputModifierNegate>(this));
+	}
+
+	Context->MapKey(LookMouseAction, EKeys::Mouse2D);
+	Context->MapKey(LookStickAction, EKeys::Gamepad_Right2D).Modifiers.Add(NewObject<UInputModifierDeadZone>(this));
+
+	Context->MapKey(DodgeAction, EKeys::Gamepad_FaceButton_Bottom);
+	Context->MapKey(DodgeAction, EKeys::SpaceBar);
+	Context->MapKey(BlockAction, EKeys::Gamepad_LeftShoulder);
+	Context->MapKey(BlockAction, EKeys::RightMouseButton);
+	Context->MapKey(ParryAction, EKeys::Gamepad_LeftTrigger);
+	Context->MapKey(ParryAction, EKeys::Q);
+	Context->MapKey(LightAttackAction, EKeys::Gamepad_FaceButton_Left);
+	Context->MapKey(LightAttackAction, EKeys::LeftMouseButton);
+	Context->MapKey(HeavyAttackAction, EKeys::Gamepad_FaceButton_Top);
+	Context->MapKey(HeavyAttackAction, EKeys::F);
+	Context->MapKey(HealAction, EKeys::Gamepad_RightShoulder);
+	Context->MapKey(HealAction, EKeys::R);
+
+	DefaultMappingContext = Context;
+}
+
+void ASoulslikeCharacter::PawnClientRestart()
+{
+	EnsureDefaultInput();
+	Super::PawnClientRestart();
 
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
 	{
 		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
 		{
-			if (DefaultMappingContext)
-			{
-				Subsystem->AddMappingContext(DefaultMappingContext, 0);
-			}
+			Subsystem->ClearAllMappings();
+			Subsystem->AddMappingContext(DefaultMappingContext, 0);
 		}
 	}
 }
@@ -46,138 +115,233 @@ void ASoulslikeCharacter::BeginPlay()
 void ASoulslikeCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
+	EnsureDefaultInput();
 
-	UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(PlayerInputComponent);
-	if (!EnhancedInput)
+	UEnhancedInputComponent* Input = Cast<UEnhancedInputComponent>(PlayerInputComponent);
+	if (!Input)
 	{
 		return;
 	}
 
-	if (MoveAction) EnhancedInput->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ASoulslikeCharacter::OnMove);
-	if (LookAction) EnhancedInput->BindAction(LookAction, ETriggerEvent::Triggered, this, &ASoulslikeCharacter::OnLook);
-	if (DodgeAction) EnhancedInput->BindAction(DodgeAction, ETriggerEvent::Started, this, &ASoulslikeCharacter::OnDodge);
-	if (BlockAction)
-	{
-		EnhancedInput->BindAction(BlockAction, ETriggerEvent::Started, this, &ASoulslikeCharacter::OnBlockStarted);
-		EnhancedInput->BindAction(BlockAction, ETriggerEvent::Completed, this, &ASoulslikeCharacter::OnBlockCompleted);
-	}
-	if (ParryAction) EnhancedInput->BindAction(ParryAction, ETriggerEvent::Started, this, &ASoulslikeCharacter::OnParry);
-	if (LightAttackAction) EnhancedInput->BindAction(LightAttackAction, ETriggerEvent::Started, this, &ASoulslikeCharacter::OnLightAttack);
-	if (HeavyAttackAction) EnhancedInput->BindAction(HeavyAttackAction, ETriggerEvent::Started, this, &ASoulslikeCharacter::OnHeavyAttack);
-	if (HealAction) EnhancedInput->BindAction(HealAction, ETriggerEvent::Started, this, &ASoulslikeCharacter::OnHeal);
+	Input->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ASoulslikeCharacter::OnMove);
+	Input->BindAction(MoveAction, ETriggerEvent::Completed, this, &ASoulslikeCharacter::OnMove);
+	Input->BindAction(LookMouseAction, ETriggerEvent::Triggered, this, &ASoulslikeCharacter::OnLookMouse);
+	Input->BindAction(LookStickAction, ETriggerEvent::Triggered, this, &ASoulslikeCharacter::OnLookStick);
+	Input->BindAction(DodgeAction, ETriggerEvent::Started, this, &ASoulslikeCharacter::OnDodge);
+	Input->BindAction(BlockAction, ETriggerEvent::Started, this, &ASoulslikeCharacter::OnBlockStarted);
+	Input->BindAction(BlockAction, ETriggerEvent::Completed, this, &ASoulslikeCharacter::OnBlockCompleted);
+	Input->BindAction(ParryAction, ETriggerEvent::Started, this, &ASoulslikeCharacter::OnParry);
+	Input->BindAction(LightAttackAction, ETriggerEvent::Started, this, &ASoulslikeCharacter::OnLightAttack);
+	Input->BindAction(HeavyAttackAction, ETriggerEvent::Started, this, &ASoulslikeCharacter::OnHeavyAttack);
+	Input->BindAction(HealAction, ETriggerEvent::Started, this, &ASoulslikeCharacter::OnHeal);
 }
 
 void ASoulslikeCharacter::OnMove(const FInputActionValue& Value)
 {
-	if (!Combat || !Combat->CanAct())
+	LastMoveInput = Value.Get<FVector2D>();
+	if (IsAlive() && Combat->CanAct())
 	{
-		return;
-	}
-
-	const FVector2D Input = Value.Get<FVector2D>();
-	LastMoveInput = Input;
-
-	if (Controller)
-	{
-		const FRotator YawRotation(0.f, Controller->GetControlRotation().Yaw, 0.f);
-		const FVector Forward = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
-		const FVector Right = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
-		AddMovementInput(Forward, Input.Y);
-		AddMovementInput(Right, Input.X);
+		MoveInCameraSpace(LastMoveInput);
 	}
 }
 
-void ASoulslikeCharacter::OnLook(const FInputActionValue& Value)
+void ASoulslikeCharacter::MoveInCameraSpace(const FVector2D& Input)
+{
+	if (!Controller)
+	{
+		return;
+	}
+	const FRotator Yaw(0.f, Controller->GetControlRotation().Yaw, 0.f);
+	AddMovementInput(FRotationMatrix(Yaw).GetUnitAxis(EAxis::X), Input.Y);
+	AddMovementInput(FRotationMatrix(Yaw).GetUnitAxis(EAxis::Y), Input.X);
+}
+
+void ASoulslikeCharacter::AddLook(float YawDegrees, float PitchDegrees)
+{
+	if (!Controller)
+	{
+		return;
+	}
+	FRotator Rotation = Controller->GetControlRotation();
+	Rotation.Yaw += YawDegrees;
+	Rotation.Pitch = FMath::Clamp(FRotator::NormalizeAxis(Rotation.Pitch + PitchDegrees), -60.f, 35.f);
+	Controller->SetControlRotation(Rotation);
+}
+
+void ASoulslikeCharacter::OnLookMouse(const FInputActionValue& Value)
 {
 	const FVector2D Input = Value.Get<FVector2D>();
-	AddControllerYawInput(Input.X);
-	AddControllerPitchInput(Input.Y);
+	AddLook(Input.X * MouseSensitivity, Input.Y * MouseSensitivity);
+}
+
+void ASoulslikeCharacter::OnLookStick(const FInputActionValue& Value)
+{
+	const FVector2D Input = Value.Get<FVector2D>();
+	const float Step = StickDegreesPerSecond * GetWorld()->GetDeltaSeconds();
+	AddLook(Input.X * Step, Input.Y * Step);
 }
 
 void ASoulslikeCharacter::OnDodge(const FInputActionValue& Value)
 {
-	if (!Combat)
+	DodgeLocal();
+}
+
+void ASoulslikeCharacter::DodgeLocal()
+{
+	if (!IsAlive() || !Combat->CanAct() || !Vitality->HasStamina(Combat->DodgeStaminaCost))
 	{
 		return;
 	}
+	Combat->TryDodge();
 
-	Combat->TryDodge(LastMoveInput);
-
-	if (IsLocallyControlled())
+	FVector Direction = GetActorForwardVector();
+	if (!LastMoveInput.IsNearlyZero() && Controller)
 	{
-		FVector LaunchDirection = GetActorForwardVector();
-		if (!LastMoveInput.IsNearlyZero() && Controller)
-		{
-			const FRotator YawRotation(0.f, Controller->GetControlRotation().Yaw, 0.f);
-			const FVector Forward = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
-			const FVector Right = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
-			LaunchDirection = (Forward * LastMoveInput.Y + Right * LastMoveInput.X).GetSafeNormal();
-		}
-		LaunchCharacter(LaunchDirection * 900.f, true, false);
+		const FRotator Yaw(0.f, Controller->GetControlRotation().Yaw, 0.f);
+		Direction = (FRotationMatrix(Yaw).GetUnitAxis(EAxis::X) * LastMoveInput.Y + FRotationMatrix(Yaw).GetUnitAxis(EAxis::Y) * LastMoveInput.X).GetSafeNormal();
 	}
+	SetActorRotation(FRotator(0.f, Direction.Rotation().Yaw, 0.f));
+	LaunchCharacter(Direction * 950.f, true, false);
 }
 
 void ASoulslikeCharacter::OnBlockStarted(const FInputActionValue& Value)
 {
-	if (Combat)
-	{
-		Combat->StartBlocking();
-	}
+	Combat->StartBlocking();
 }
 
 void ASoulslikeCharacter::OnBlockCompleted(const FInputActionValue& Value)
 {
-	if (Combat)
-	{
-		Combat->StopBlocking();
-	}
+	Combat->StopBlocking();
 }
 
 void ASoulslikeCharacter::OnParry(const FInputActionValue& Value)
 {
-	if (Combat)
-	{
-		Combat->TryParry();
-	}
+	Combat->TryParry();
 }
 
 void ASoulslikeCharacter::OnLightAttack(const FInputActionValue& Value)
 {
-	if (Combat)
+	if (IsAlive() && Combat->CanAct())
 	{
-		Combat->TryLightAttack();
+		SoftLockTowardsEnemy();
 	}
+	Combat->TryLightAttack();
 }
 
 void ASoulslikeCharacter::OnHeavyAttack(const FInputActionValue& Value)
 {
-	if (Combat)
+	if (IsAlive() && Combat->CanAct())
 	{
-		Combat->TryHeavyAttack();
+		SoftLockTowardsEnemy();
 	}
+	Combat->TryHeavyAttack();
 }
 
 void ASoulslikeCharacter::OnHeal(const FInputActionValue& Value)
 {
-	if (Combat)
+	Combat->TryHeal();
+}
+
+ASoulslikeCombatant* ASoulslikeCharacter::FindNearestEnemy(float MaxRange) const
+{
+	ASoulslikeCombatant* Best = nullptr;
+	float BestDistSq = FMath::Square(MaxRange);
+	for (TActorIterator<ASoulslikeCombatant> It(GetWorld()); It; ++It)
 	{
-		Combat->TryHeal();
+		ASoulslikeCombatant* Other = *It;
+		if (Other == this || Other->GetTeam() == GetTeam() || !Other->IsAlive())
+		{
+			continue;
+		}
+		const float DistSq = FVector::DistSquared(Other->GetActorLocation(), GetActorLocation());
+		if (DistSq < BestDistSq)
+		{
+			BestDistSq = DistSq;
+			Best = Other;
+		}
+	}
+	return Best;
+}
+
+void ASoulslikeCharacter::SoftLockTowardsEnemy()
+{
+	if (const ASoulslikeCombatant* Enemy = FindNearestEnemy(SoftLockRange))
+	{
+		const FVector ToEnemy = Enemy->GetActorLocation() - GetActorLocation();
+		SetActorRotation(FRotator(0.f, ToEnemy.Rotation().Yaw, 0.f));
 	}
 }
 
-float ASoulslikeCharacter::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
+void ASoulslikeCharacter::OnDied()
 {
-	const float Applied = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
-
-	if (HasAuthority() && Vitality && Combat)
+	if (ASoulslikeGameMode* GameMode = GetWorld()->GetAuthGameMode<ASoulslikeGameMode>())
 	{
-		const float Resolved = Combat->ResolveIncomingDamage(Applied, DamageCauser);
-		if (Resolved > 0.f)
-		{
-			Vitality->ApplyDamage(Resolved, DamageCauser);
-			Combat->InterruptOnHit();
-		}
+		GameMode->NotifyPlayerDied(GetController());
+	}
+}
+
+void ASoulslikeCharacter::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	if (bDemoBot && IsLocallyControlled())
+	{
+		TickDemoBot(DeltaSeconds);
+	}
+}
+
+// -DemoBot: plays the character by itself (seek, fight, heal) so a run can be verified unattended.
+void ASoulslikeCharacter::TickDemoBot(float DeltaSeconds)
+{
+	DemoBotCooldown -= DeltaSeconds;
+	if (!IsAlive() || !Controller)
+	{
+		return;
 	}
 
-	return Applied;
+	const ASoulslikeCombatant* Target = FindNearestEnemy(20000.f);
+	if (!Target)
+	{
+		return;
+	}
+
+	const FVector ToTarget = Target->GetActorLocation() - GetActorLocation();
+	Controller->SetControlRotation(FRotator(-18.f, ToTarget.Rotation().Yaw - 25.f, 0.f));
+
+	if (!Combat->CanAct())
+	{
+		return;
+	}
+
+	if (Vitality->Health < Vitality->MaxHealth * 0.4f && Vitality->HasHealCharge() && DemoBotCooldown <= 0.f)
+	{
+		Combat->TryHeal();
+		DemoBotCooldown = 2.f;
+		return;
+	}
+
+	if (ToTarget.Size2D() > 200.f)
+	{
+		AddMovementInput(ToTarget.GetSafeNormal2D(), 1.f);
+		return;
+	}
+
+	if (DemoBotCooldown <= 0.f)
+	{
+		SoftLockTowardsEnemy();
+		const float Roll = FMath::FRand();
+		if (Roll < 0.6f)
+		{
+			Combat->TryLightAttack();
+		}
+		else if (Roll < 0.8f)
+		{
+			Combat->TryHeavyAttack();
+		}
+		else
+		{
+			LastMoveInput = FVector2D(1.f, -1.f).GetSafeNormal();
+			DodgeLocal();
+		}
+		DemoBotCooldown = FMath::FRandRange(0.7f, 1.1f);
+	}
 }

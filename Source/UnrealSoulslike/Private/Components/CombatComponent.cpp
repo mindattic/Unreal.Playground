@@ -1,7 +1,10 @@
 #include "Components/CombatComponent.h"
 #include "Components/VitalityComponent.h"
 #include "Net/UnrealNetwork.h"
-#include "GameFramework/Actor.h"
+#include "GameFramework/Pawn.h"
+#include "Engine/World.h"
+#include "Engine/OverlapResult.h"
+#include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
 
 UCombatComponent::UCombatComponent()
@@ -18,12 +21,7 @@ void UCombatComponent::BeginPlay()
 
 void UCombatComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	if (UWorld* World = GetWorld())
-	{
-		World->GetTimerManager().ClearTimer(StateTimerHandle);
-		World->GetTimerManager().ClearTimer(InvulnerabilityTimerHandle);
-		World->GetTimerManager().ClearTimer(HealTimerHandle);
-	}
+	ClearTimers();
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -31,43 +29,34 @@ void UCombatComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(UCombatComponent, State);
+	DOREPLIFETIME(UCombatComponent, CurrentAttack);
+	DOREPLIFETIME(UCombatComponent, ActionSerial);
 }
 
-void UCombatComponent::TryLightAttack() { ServerLightAttack(); }
-void UCombatComponent::TryHeavyAttack() { ServerHeavyAttack(); }
-void UCombatComponent::TryDodge(FVector2D MoveDirection) { ServerDodge(MoveDirection); }
-void UCombatComponent::StartBlocking() { bWantsToBlock = true; ServerStartBlocking(); }
-void UCombatComponent::StopBlocking() { bWantsToBlock = false; ServerStopBlocking(); }
+void UCombatComponent::TryLightAttack() { ServerAttack(EAttackType::Light); }
+void UCombatComponent::TryHeavyAttack() { ServerAttack(EAttackType::Heavy); }
+void UCombatComponent::TryDodge() { ServerDodge(); }
+void UCombatComponent::StartBlocking() { bWantsToBlock = true; ServerSetBlocking(true); }
+void UCombatComponent::StopBlocking() { bWantsToBlock = false; ServerSetBlocking(false); }
 void UCombatComponent::TryParry() { ServerParry(); }
 void UCombatComponent::TryHeal() { ServerHeal(); }
 
-void UCombatComponent::ServerLightAttack_Implementation()
+void UCombatComponent::ServerAttack_Implementation(EAttackType Attack)
 {
-	if (!CanAct() || !Vitality || !Vitality->HasStamina(LightAttackStaminaCost))
+	const float Cost = Attack == EAttackType::Heavy ? HeavyAttackStaminaCost : LightAttackStaminaCost;
+	if (!CanAct() || !Vitality || !Vitality->HasStamina(Cost))
 	{
 		return;
 	}
 
-	Vitality->SpendStamina(LightAttackStaminaCost);
-	SetState(ECombatState::Attacking);
-	MulticastAttackPerformed(EAttackType::Light);
-	GetWorld()->GetTimerManager().SetTimer(StateTimerHandle, this, &UCombatComponent::ReturnToIdleOrBlocking, LightAttackDuration, false);
+	Vitality->SpendStamina(Cost);
+	CurrentAttack = Attack;
+	BeginAction(ECombatState::Attacking, AttackDuration(Attack));
+	const float Windup = Attack == EAttackType::Heavy ? HeavyAttackWindup : LightAttackWindup;
+	GetWorld()->GetTimerManager().SetTimer(AttackTimerHandle, this, &UCombatComponent::PerformAttackSweep, Windup, false);
 }
 
-void UCombatComponent::ServerHeavyAttack_Implementation()
-{
-	if (!CanAct() || !Vitality || !Vitality->HasStamina(HeavyAttackStaminaCost))
-	{
-		return;
-	}
-
-	Vitality->SpendStamina(HeavyAttackStaminaCost);
-	SetState(ECombatState::Attacking);
-	MulticastAttackPerformed(EAttackType::Heavy);
-	GetWorld()->GetTimerManager().SetTimer(StateTimerHandle, this, &UCombatComponent::ReturnToIdleOrBlocking, HeavyAttackDuration, false);
-}
-
-void UCombatComponent::ServerDodge_Implementation(FVector2D MoveDirection)
+void UCombatComponent::ServerDodge_Implementation()
 {
 	if (!CanAct() || !Vitality || !Vitality->HasStamina(DodgeStaminaCost))
 	{
@@ -75,25 +64,19 @@ void UCombatComponent::ServerDodge_Implementation(FVector2D MoveDirection)
 	}
 
 	Vitality->SpendStamina(DodgeStaminaCost);
-	SetState(ECombatState::Dodging);
+	BeginAction(ECombatState::Dodging, DodgeDuration);
 	bIsInvulnerable = true;
 	GetWorld()->GetTimerManager().SetTimer(InvulnerabilityTimerHandle, this, &UCombatComponent::ClearInvulnerability, DodgeInvulnerabilityDuration, false);
-	GetWorld()->GetTimerManager().SetTimer(StateTimerHandle, this, &UCombatComponent::ReturnToIdleOrBlocking, DodgeDuration, false);
 }
 
-void UCombatComponent::ServerStartBlocking_Implementation()
+void UCombatComponent::ServerSetBlocking_Implementation(bool bBlock)
 {
-	if (!CanAct())
+	bWantsToBlock = bBlock;
+	if (bBlock && State == ECombatState::Idle)
 	{
-		return;
+		SetState(ECombatState::Blocking);
 	}
-
-	SetState(ECombatState::Blocking);
-}
-
-void UCombatComponent::ServerStopBlocking_Implementation()
-{
-	if (State == ECombatState::Blocking)
+	else if (!bBlock && State == ECombatState::Blocking)
 	{
 		SetState(ECombatState::Idle);
 	}
@@ -101,14 +84,13 @@ void UCombatComponent::ServerStopBlocking_Implementation()
 
 void UCombatComponent::ServerParry_Implementation()
 {
-	if (State != ECombatState::Blocking || !Vitality || !Vitality->HasStamina(ParryStaminaCost))
+	if (!CanAct() || !Vitality || !Vitality->HasStamina(ParryStaminaCost))
 	{
 		return;
 	}
 
 	Vitality->SpendStamina(ParryStaminaCost);
-	SetState(ECombatState::Parrying);
-	GetWorld()->GetTimerManager().SetTimer(StateTimerHandle, this, &UCombatComponent::ReturnToIdleOrBlocking, ParryWindowDuration, false);
+	BeginAction(ECombatState::Parrying, ParryWindowDuration);
 }
 
 void UCombatComponent::ServerHeal_Implementation()
@@ -118,25 +100,59 @@ void UCombatComponent::ServerHeal_Implementation()
 		return;
 	}
 
-	SetState(ECombatState::Healing);
-	GetWorld()->GetTimerManager().SetTimer(HealTimerHandle, [this]()
-	{
-		if (Vitality)
-		{
-			Vitality->ConsumeHealCharge();
-		}
-		ReturnToIdleOrBlocking();
-	}, HealCastDuration, false);
+	BeginAction(ECombatState::Healing, HealCastDuration + 0.1f);
+	GetWorld()->GetTimerManager().SetTimer(HealTimerHandle, this, &UCombatComponent::FinishHeal, HealCastDuration, false);
 }
 
-void UCombatComponent::MulticastAttackPerformed_Implementation(EAttackType Attack)
+void UCombatComponent::FinishHeal()
 {
-	OnAttackPerformed.Broadcast(Attack);
+	if (State == ECombatState::Healing && Vitality)
+	{
+		Vitality->ConsumeHealCharge();
+	}
+}
+
+void UCombatComponent::PerformAttackSweep()
+{
+	AActor* Owner = GetOwner();
+	if (!Owner || State != ECombatState::Attacking)
+	{
+		return;
+	}
+
+	const FVector Centre = Owner->GetActorLocation() + Owner->GetActorForwardVector() * AttackReach * Owner->GetActorScale3D().X;
+	const float Radius = AttackRadius * Owner->GetActorScale3D().X;
+
+	TArray<FOverlapResult> Overlaps;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(SoulslikeAttack), false, Owner);
+	GetWorld()->OverlapMultiByObjectType(Overlaps, Centre, FQuat::Identity, FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeSphere(Radius), Params);
+
+	const float Damage = (CurrentAttack == EAttackType::Heavy ? HeavyAttackDamage : LightAttackDamage) * DamageMultiplier;
+	APawn* OwnerPawn = Cast<APawn>(Owner);
+	AController* Instigator = OwnerPawn ? OwnerPawn->GetController() : nullptr;
+
+	TSet<AActor*> AlreadyHit;
+	for (const FOverlapResult& Overlap : Overlaps)
+	{
+		AActor* Target = Overlap.GetActor();
+		if (!Target || AlreadyHit.Contains(Target))
+		{
+			continue;
+		}
+		AlreadyHit.Add(Target);
+
+		const UCombatComponent* TargetCombat = Target->FindComponentByClass<UCombatComponent>();
+		if (!TargetCombat || TargetCombat->Team == Team || TargetCombat->IsDead())
+		{
+			continue;
+		}
+		UGameplayStatics::ApplyDamage(Target, Damage, Instigator, Owner, UDamageType::StaticClass());
+	}
 }
 
 float UCombatComponent::ResolveIncomingDamage(float RawDamage, AActor* Attacker)
 {
-	if (bIsInvulnerable)
+	if (IsDead() || bIsInvulnerable || RawDamage <= 0.f)
 	{
 		return 0.f;
 	}
@@ -145,28 +161,64 @@ float UCombatComponent::ResolveIncomingDamage(float RawDamage, AActor* Attacker)
 	{
 		if (UCombatComponent* AttackerCombat = Attacker ? Attacker->FindComponentByClass<UCombatComponent>() : nullptr)
 		{
-			AttackerCombat->SetState(ECombatState::Staggered);
-			AttackerCombat->GetWorld()->GetTimerManager().SetTimer(AttackerCombat->StateTimerHandle, AttackerCombat, &UCombatComponent::ReturnToIdleOrBlocking, AttackerCombat->StaggerDuration, false);
+			AttackerCombat->ApplyStagger(AttackerCombat->StaggerDuration);
 		}
 		return 0.f;
 	}
 
-	if (State == ECombatState::Blocking)
+	if (State == ECombatState::Blocking && Vitality)
 	{
-		return RawDamage * BlockDamageMultiplier;
+		const float Cost = RawDamage * BlockStaminaPerDamage;
+		if (Vitality->HasStamina(Cost))
+		{
+			Vitality->SpendStamina(Cost);
+			return RawDamage * BlockDamageMultiplier;
+		}
+		Vitality->SpendStamina(Vitality->Stamina);
+		ApplyStagger(GuardBreakDuration);
+		return RawDamage * 0.5f;
 	}
 
+	if (bCanBeHitStunned)
+	{
+		ApplyStagger(HitStunDuration);
+	}
 	return RawDamage;
 }
 
-void UCombatComponent::InterruptOnHit()
+void UCombatComponent::ApplyStagger(float Duration)
 {
-	if (State == ECombatState::Attacking || State == ECombatState::Healing)
+	if (IsDead())
 	{
-		GetWorld()->GetTimerManager().ClearTimer(StateTimerHandle);
-		GetWorld()->GetTimerManager().ClearTimer(HealTimerHandle);
-		SetState(bWantsToBlock ? ECombatState::Blocking : ECombatState::Idle);
+		return;
 	}
+	ClearTimers();
+	bIsInvulnerable = false;
+	BeginAction(ECombatState::Staggered, Duration);
+}
+
+void UCombatComponent::SetDead()
+{
+	ClearTimers();
+	bIsInvulnerable = false;
+	++ActionSerial;
+	SetState(ECombatState::Dead);
+}
+
+void UCombatComponent::ResetCombat()
+{
+	ClearTimers();
+	bIsInvulnerable = false;
+	bWantsToBlock = false;
+	++ActionSerial;
+	SetState(ECombatState::Idle);
+}
+
+void UCombatComponent::BeginAction(ECombatState NewState, float Duration)
+{
+	++ActionSerial;
+	SetState(NewState);
+	GetWorld()->GetTimerManager().SetTimer(StateTimerHandle, this, &UCombatComponent::ReturnToIdleOrBlocking, Duration, false);
 }
 
 void UCombatComponent::SetState(ECombatState NewState)
@@ -181,12 +233,28 @@ void UCombatComponent::SetState(ECombatState NewState)
 
 void UCombatComponent::ReturnToIdleOrBlocking()
 {
+	if (IsDead())
+	{
+		return;
+	}
 	SetState(bWantsToBlock ? ECombatState::Blocking : ECombatState::Idle);
 }
 
 void UCombatComponent::ClearInvulnerability()
 {
 	bIsInvulnerable = false;
+}
+
+void UCombatComponent::ClearTimers()
+{
+	if (UWorld* World = GetWorld())
+	{
+		FTimerManager& Timers = World->GetTimerManager();
+		Timers.ClearTimer(StateTimerHandle);
+		Timers.ClearTimer(AttackTimerHandle);
+		Timers.ClearTimer(InvulnerabilityTimerHandle);
+		Timers.ClearTimer(HealTimerHandle);
+	}
 }
 
 void UCombatComponent::OnRep_State(ECombatState OldState)

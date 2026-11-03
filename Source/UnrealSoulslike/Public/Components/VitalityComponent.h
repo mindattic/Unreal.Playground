@@ -57,9 +57,12 @@ public:
 
 	// Authority-only mutators; the owning character's combat component calls these
 	// from server-validated RPCs, never from client-predicted input directly.
-	void ApplyDamage(float Amount, AActor* Instigator);
+	void ApplyDamage(float Amount, AActor* DamageCauser);
 	void SpendStamina(float Amount);
 	bool ConsumeHealCharge();
+
+	// Authority: refill health, stamina and heal charges to their (possibly re-tuned) maxima.
+	void ResetVitals();
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
