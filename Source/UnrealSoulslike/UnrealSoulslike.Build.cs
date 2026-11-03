@@ -26,6 +26,7 @@ public class UnrealSoulslike : ModuleRules
 		});
 		PublicIncludePaths.AddRange(new string[] {
 			"UnrealSoulslike",
+			"UnrealSoulslike/Souls",
 			"UnrealSoulslike/ThirdPerson",
 			"UnrealSoulslike/ThirdPerson/Variant_Platforming",
 			"UnrealSoulslike/ThirdPerson/Variant_Platforming/Animation",
