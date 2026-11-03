@@ -304,6 +304,79 @@ def create_materials():
     finish_material(water)
 
 
+INPUT_DIR = "/Game/Input"
+
+# Same bindings the C++ character builds at runtime (SoulslikeCharacter.cpp EnsureDefaultInput);
+# the C# twin loads these assets because UnrealSharp can't attach input modifiers at runtime.
+INPUT_ACTIONS = {
+    "IA_Move": "AXIS2D", "IA_LookMouse": "AXIS2D", "IA_LookStick": "AXIS2D",
+    "IA_Jump": "BOOLEAN", "IA_Dodge": "BOOLEAN", "IA_Block": "BOOLEAN", "IA_Parry": "BOOLEAN",
+    "IA_LightAttack": "BOOLEAN", "IA_HeavyAttack": "BOOLEAN", "IA_Heal": "BOOLEAN", "IA_Merge": "BOOLEAN",
+}
+INPUT_BINDINGS = [
+    ("IA_Move", "Gamepad_Left2D", ["DeadZone"]), ("IA_Move", "D", []), ("IA_Move", "A", ["Negate"]),
+    ("IA_Move", "W", ["Swizzle"]), ("IA_Move", "S", ["Swizzle", "Negate"]),
+    ("IA_LookMouse", "Mouse2D", []), ("IA_LookStick", "Gamepad_Right2D", ["DeadZone"]),
+    ("IA_Jump", "Gamepad_FaceButton_Bottom", []), ("IA_Jump", "SpaceBar", []),
+    ("IA_Dodge", "Gamepad_FaceButton_Right", []), ("IA_Dodge", "LeftShift", []),
+    ("IA_Merge", "Gamepad_RightThumbstick", []), ("IA_Merge", "E", []),
+    ("IA_Block", "Gamepad_LeftShoulder", []), ("IA_Block", "RightMouseButton", []),
+    ("IA_Parry", "Gamepad_LeftTrigger", []), ("IA_Parry", "Q", []),
+    ("IA_LightAttack", "Gamepad_FaceButton_Left", []), ("IA_LightAttack", "LeftMouseButton", []),
+    ("IA_HeavyAttack", "Gamepad_FaceButton_Top", []), ("IA_HeavyAttack", "F", []),
+    ("IA_Heal", "Gamepad_RightShoulder", []), ("IA_Heal", "R", []),
+]
+MODIFIER_CLASSES = {"DeadZone": "InputModifierDeadZone", "Negate": "InputModifierNegate", "Swizzle": "InputModifierSwizzleAxis"}
+
+
+def input_asset(name, cls, factory):
+    path = "%s/%s" % (INPUT_DIR, name)
+    if eal.does_asset_exist(path):
+        eal.delete_asset(path)
+    return asset_tools.create_asset(name, INPUT_DIR, cls, factory)
+
+
+def make_key(name):
+    key = unreal.Key()
+    key.set_editor_property("key_name", name)
+    return key
+
+
+def mapping_list(imc):
+    try:
+        return imc.get_editor_property("mappings"), None
+    except Exception:  # newer engines keep them inside a DefaultKeyMappings struct
+        holder = imc.get_editor_property("default_key_mappings")
+        return holder.get_editor_property("mappings"), holder
+
+
+def create_input_assets():
+    actions = {}
+    for name, value_type in INPUT_ACTIONS.items():
+        action = input_asset(name, unreal.InputAction, unreal.InputAction_Factory())
+        action.set_editor_property("value_type", getattr(unreal.InputActionValueType, value_type))
+        eal.save_loaded_asset(action)
+        actions[name] = action
+
+    imc = input_asset("IMC_Soulslike", unreal.InputMappingContext, unreal.InputMappingContext_Factory())
+    for action_name, key_name, _ in INPUT_BINDINGS:
+        imc.map_key(actions[action_name], make_key(key_name))
+
+    mappings, holder = mapping_list(imc)
+    for index, (_, _, modifiers) in enumerate(INPUT_BINDINGS):
+        if modifiers:
+            mapping = mappings[index]
+            mapping.set_editor_property("modifiers", [unreal.new_object(getattr(unreal, MODIFIER_CLASSES[m]), outer=imc) for m in modifiers])
+            mappings[index] = mapping
+    if holder is None:
+        imc.set_editor_property("mappings", mappings)
+    else:
+        holder.set_editor_property("mappings", mappings)
+        imc.set_editor_property("default_key_mappings", holder)
+    eal.save_loaded_asset(imc)
+    log("input assets ready: %d actions, %d bindings" % (len(actions), len(INPUT_BINDINGS)))
+
+
 def load_island_class():
     try:
         return unreal.load_class(None, ISLAND_CLASS)
@@ -427,6 +500,10 @@ def main():
     except Exception as exc:  # the game falls back to primitive shapes without the kit
         warn("environment import failed: %s" % exc)
     create_materials()
+    try:
+        create_input_assets()
+    except Exception as exc:  # only the C# twin needs them; the C++ build makes input at runtime
+        warn("input asset creation failed: %s" % exc)
     create_map()
     data = write_assets_json(knight, skeletons, props)
 
