@@ -60,6 +60,12 @@ ANIM_TAKES = {
     "hit": "Hit_A",
     "death": "Death_A",
     "heal": "Use_Item",
+    # KayKit has no climbing clips; these are the closest stand-ins on the shared rig.
+    "jump": "Jump_Idle",
+    "climb": "Interact",
+    "climb_idle": "Jump_Idle",
+    "climb_jump": "Jump_Start",
+    "mantle": "Jump_Land",
 }
 
 asset_tools = unreal.AssetToolsHelpers.get_asset_tools()
