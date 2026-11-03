@@ -20,3 +20,12 @@ Saved/
 
 # Packaged/cooked content
 Content/**/*.uasset.bak
+
+# Binary content is generated: tools/install_thirdperson_template.py (Epic template + mannequins)
+# and tools/build_content.py (imports from SourceArt). Text data under Content/ stays tracked.
+Content/**/*.uasset
+Content/**/*.umap
+Content/__ExternalActors__/
+Content/__ExternalObjects__/
+Content/Characters/CharacterAssets.json
+Content/Environment/EnvironmentAssets.json

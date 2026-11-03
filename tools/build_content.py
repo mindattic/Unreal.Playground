@@ -343,11 +343,12 @@ def make_key(name):
 
 
 def mapping_list(imc):
+    # 5.6+ keeps MapKey's results in a DefaultKeyMappings struct (the old Mappings array stays empty).
     try:
-        return imc.get_editor_property("mappings"), None
-    except Exception:  # newer engines keep them inside a DefaultKeyMappings struct
         holder = imc.get_editor_property("default_key_mappings")
         return holder.get_editor_property("mappings"), holder
+    except Exception:
+        return imc.get_editor_property("mappings"), None
 
 
 def create_input_assets():
@@ -505,6 +506,10 @@ def main():
     except Exception as exc:  # only the C# twin needs them; the C++ build makes input at runtime
         warn("input asset creation failed: %s" % exc)
     create_map()
+    # Imports leave the skeleton, animations, materials and textures as dirty in-memory packages;
+    # anything not saved here doesn't exist when the game loads.
+    eal.save_directory("/Game", only_if_is_dirty=True, recursive=True)
+    log("saved all dirty /Game packages")
     data = write_assets_json(knight, skeletons, props)
 
     if problems:
