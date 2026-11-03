@@ -1,0 +1,17 @@
+Binaries/
+Build/
+DerivedDataCache/
+Intermediate/
+Saved/
+.vs/
+*.sln
+*.vcxproj*
+
+# Mirrored from the C++ project by tools/package.ps1 (robocopy /MIR) - one source of truth.
+Content/
+
+# UnrealSharp generates these on every build.
+Script/UnrealSoulslikeCSharp.Glue/
+Script/**/bin/
+Script/**/obj/
+Script/**/Properties/launchSettings.json
