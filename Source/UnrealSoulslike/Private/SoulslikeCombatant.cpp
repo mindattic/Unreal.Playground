@@ -28,10 +28,11 @@ namespace
 	const FName AnimHit(TEXT("hit"));
 	const FName AnimDeath(TEXT("death"));
 	const FName AnimHeal(TEXT("heal"));
+	const FName AnimJump(TEXT("jump"));
 
 	bool IsLocomotion(FName Key)
 	{
-		return Key == AnimIdle || Key == AnimWalk || Key == AnimRun || Key == AnimBlock;
+		return Key == AnimIdle || Key == AnimWalk || Key == AnimRun || Key == AnimBlock || Key == AnimJump;
 	}
 }
 
@@ -223,6 +224,7 @@ UAnimSequence* ASoulslikeCombatant::FindAnim(FName Key) const
 		{ AnimWalk, AnimIdle },
 		{ AnimHeal, AnimIdle },
 		{ AnimDodge, AnimRun },
+		{ AnimJump, AnimIdle },
 	};
 
 	for (int32 Hop = 0; Hop < 4 && !Key.IsNone(); ++Hop)
@@ -241,6 +243,12 @@ FName ASoulslikeCombatant::ChooseAnim(bool& bOutLoop, float& OutDuration) const
 {
 	bOutLoop = false;
 	OutDuration = 0.f;
+	const FName Override = GetAnimOverride(bOutLoop, OutDuration);
+	if (!Override.IsNone())
+	{
+		return Override;
+	}
+
 	switch (Combat->State)
 	{
 	case ECombatState::Dead:
@@ -267,6 +275,10 @@ FName ASoulslikeCombatant::ChooseAnim(bool& bOutLoop, float& OutDuration) const
 	}
 
 	bOutLoop = true;
+	if (GetCharacterMovement()->IsFalling())
+	{
+		return AnimJump;
+	}
 	const float Speed = GetVelocity().Size2D();
 	if (Speed > 380.f)
 	{

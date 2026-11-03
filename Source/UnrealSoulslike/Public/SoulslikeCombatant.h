@@ -75,6 +75,9 @@ protected:
 	// Rotate the actor to face Target over time (server for AI, owning client for players).
 	void FaceTowards(const FVector& Target, float DeltaSeconds, float DegreesPerSecond);
 
+	// Lets a subclass take over animation (climbing, merged); NAME_None = use combat state.
+	virtual FName GetAnimOverride(bool& bOutLoop, float& OutDuration) const { return NAME_None; }
+
 private:
 	void UpdateAnimation();
 	UAnimSequence* FindAnim(FName Key) const;

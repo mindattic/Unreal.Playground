@@ -27,12 +27,14 @@ standing stones, and take the ruined keep from the Hollow Laird. Play alone or w
 | Action | Gamepad | Mouse / keyboard |
 |---|---|---|
 | Move / look | L-stick / R-stick | WASD / mouse |
-| Light attack | X | LMB |
+| Light attack / stealth execute | X | LMB |
 | Heavy attack | Y | F |
-| Dodge | A | Space |
+| Jump / climb-jump | A | Space |
+| Dodge (let go while climbing) | B | Shift |
 | Block (hold) | LB | RMB |
 | Parry | LT | Q |
 | Heal | RB | R |
+| Shadow merge | R3 | E |
 
 ## Build and run
 

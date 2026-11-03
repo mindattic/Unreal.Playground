@@ -11,8 +11,10 @@ class UInputAction;
 struct FInputActionValue;
 
 // The player's knight. Input is built at runtime (no editor data assets needed):
-//   Gamepad: L-stick move, R-stick look, A dodge, LB block, LT parry, X light, Y heavy, RB heal
-//   Keyboard/mouse: WASD, mouse, Space dodge, RMB block, Q parry, LMB light, F heavy, R heal
+//   Gamepad: L-stick move, R-stick look, A jump/climb-jump, B dodge (lets go when climbing),
+//            LB block, LT parry, X light/execute, Y heavy, RB heal, R3 shadow merge
+//   Keyboard/mouse: WASD, mouse, Space jump, Shift dodge, RMB block, Q parry, LMB light/execute,
+//            F heavy, R heal, E shadow merge
 // Assigning DefaultMappingContext and the actions on a Blueprint child overrides all of it.
 UCLASS()
 class UNREALSOULSLIKE_API ASoulslikeCharacter : public ASoulslikeCombatant
@@ -27,6 +29,18 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Soulslike|Camera")
 	TObjectPtr<UCameraComponent> FollowCamera;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Soulslike|Traversal")
+	TObjectPtr<class UClimbComponent> Climb;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Soulslike|Traversal")
+	TObjectPtr<class UShadowMergeComponent> ShadowMerge;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Soulslike|Input")
+	TObjectPtr<UInputAction> JumpAction;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Soulslike|Input")
+	TObjectPtr<UInputAction> MergeAction;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Soulslike|Input")
 	TObjectPtr<UInputMappingContext> DefaultMappingContext;
@@ -77,12 +91,19 @@ public:
 
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void PawnClientRestart() override;
+	virtual bool IsConcealed() const override;
 
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 	virtual void OnDied() override;
+	virtual FName GetAnimOverride(bool& bOutLoop, float& OutDuration) const override;
 
+	// Neither climbing nor merged: free to fight, block and heal.
+	bool IsOnFoot() const;
+
+	void OnJump(const FInputActionValue& Value);
+	void OnMerge(const FInputActionValue& Value);
 	void OnMove(const FInputActionValue& Value);
 	void OnLookMouse(const FInputActionValue& Value);
 	void OnLookStick(const FInputActionValue& Value);

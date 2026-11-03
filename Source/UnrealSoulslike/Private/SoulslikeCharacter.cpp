@@ -5,6 +5,8 @@
 #include "TimerManager.h"
 #include "Components/CombatComponent.h"
 #include "Components/VitalityComponent.h"
+#include "Components/ClimbComponent.h"
+#include "Components/ShadowMergeComponent.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -33,8 +35,45 @@ ASoulslikeCharacter::ASoulslikeCharacter()
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
 
+	Climb = CreateDefaultSubobject<UClimbComponent>(TEXT("Climb"));
+	ShadowMerge = CreateDefaultSubobject<UShadowMergeComponent>(TEXT("ShadowMerge"));
+
+	GetCharacterMovement()->JumpZVelocity = 560.f;
+	GetCharacterMovement()->AirControl = 0.35f;
+
 	Combat->Team = SoulslikeTeam::Players;
 	MouseSensitivity = 2.5f;
+}
+
+bool ASoulslikeCharacter::IsOnFoot() const
+{
+	return !Climb->IsClimbing() && !ShadowMerge->IsMerged();
+}
+
+bool ASoulslikeCharacter::IsConcealed() const
+{
+	return ShadowMerge && ShadowMerge->IsMerged();
+}
+
+FName ASoulslikeCharacter::GetAnimOverride(bool& bOutLoop, float& OutDuration) const
+{
+	return Climb && Climb->IsClimbing() ? Climb->GetAnimOverride(bOutLoop, OutDuration) : NAME_None;
+}
+
+void ASoulslikeCharacter::OnJump(const FInputActionValue& Value)
+{
+	if (IsAlive() && !ShadowMerge->IsMerged() && (Combat->CanAct() || Climb->IsClimbing()))
+	{
+		Climb->HandleJumpPressed();
+	}
+}
+
+void ASoulslikeCharacter::OnMerge(const FInputActionValue& Value)
+{
+	if (IsAlive() && (Combat->CanAct() || ShadowMerge->IsMerged()) && !Climb->IsClimbing())
+	{
+		ShadowMerge->ToggleMerge();
+	}
 }
 
 void ASoulslikeCharacter::BeginPlay()
@@ -67,6 +106,8 @@ void ASoulslikeCharacter::EnsureDefaultInput()
 	LightAttackAction = MakeAction(TEXT("IA_LightAttack"), EInputActionValueType::Boolean);
 	HeavyAttackAction = MakeAction(TEXT("IA_HeavyAttack"), EInputActionValueType::Boolean);
 	HealAction = MakeAction(TEXT("IA_Heal"), EInputActionValueType::Boolean);
+	JumpAction = MakeAction(TEXT("IA_Jump"), EInputActionValueType::Boolean);
+	MergeAction = MakeAction(TEXT("IA_Merge"), EInputActionValueType::Boolean);
 
 	UInputMappingContext* Context = NewObject<UInputMappingContext>(this, TEXT("IMC_Soulslike"));
 
@@ -83,8 +124,12 @@ void ASoulslikeCharacter::EnsureDefaultInput()
 	Context->MapKey(LookMouseAction, EKeys::Mouse2D);
 	Context->MapKey(LookStickAction, EKeys::Gamepad_Right2D).Modifiers.Add(NewObject<UInputModifierDeadZone>(this));
 
-	Context->MapKey(DodgeAction, EKeys::Gamepad_FaceButton_Bottom);
-	Context->MapKey(DodgeAction, EKeys::SpaceBar);
+	Context->MapKey(JumpAction, EKeys::Gamepad_FaceButton_Bottom);
+	Context->MapKey(JumpAction, EKeys::SpaceBar);
+	Context->MapKey(DodgeAction, EKeys::Gamepad_FaceButton_Right);
+	Context->MapKey(DodgeAction, EKeys::LeftShift);
+	Context->MapKey(MergeAction, EKeys::Gamepad_RightThumbstick);
+	Context->MapKey(MergeAction, EKeys::E);
 	Context->MapKey(BlockAction, EKeys::Gamepad_LeftShoulder);
 	Context->MapKey(BlockAction, EKeys::RightMouseButton);
 	Context->MapKey(ParryAction, EKeys::Gamepad_LeftTrigger);
@@ -129,6 +174,8 @@ void ASoulslikeCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInput
 	Input->BindAction(MoveAction, ETriggerEvent::Completed, this, &ASoulslikeCharacter::OnMove);
 	Input->BindAction(LookMouseAction, ETriggerEvent::Triggered, this, &ASoulslikeCharacter::OnLookMouse);
 	Input->BindAction(LookStickAction, ETriggerEvent::Triggered, this, &ASoulslikeCharacter::OnLookStick);
+	Input->BindAction(JumpAction, ETriggerEvent::Started, this, &ASoulslikeCharacter::OnJump);
+	Input->BindAction(MergeAction, ETriggerEvent::Started, this, &ASoulslikeCharacter::OnMerge);
 	Input->BindAction(DodgeAction, ETriggerEvent::Started, this, &ASoulslikeCharacter::OnDodge);
 	Input->BindAction(BlockAction, ETriggerEvent::Started, this, &ASoulslikeCharacter::OnBlockStarted);
 	Input->BindAction(BlockAction, ETriggerEvent::Completed, this, &ASoulslikeCharacter::OnBlockCompleted);
@@ -141,7 +188,19 @@ void ASoulslikeCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInput
 void ASoulslikeCharacter::OnMove(const FInputActionValue& Value)
 {
 	LastMoveInput = Value.Get<FVector2D>();
-	if (IsAlive() && Combat->CanAct())
+	if (!IsAlive())
+	{
+		return;
+	}
+	if (ShadowMerge->IsMerged())
+	{
+		ShadowMerge->AddMergeInput(LastMoveInput);
+	}
+	else if (Climb->IsClimbing())
+	{
+		Climb->AddClimbInput(LastMoveInput);
+	}
+	else if (Combat->CanAct())
 	{
 		MoveInCameraSpace(LastMoveInput);
 	}
@@ -185,12 +244,17 @@ void ASoulslikeCharacter::OnLookStick(const FInputActionValue& Value)
 
 void ASoulslikeCharacter::OnDodge(const FInputActionValue& Value)
 {
+	if (Climb->IsClimbing())
+	{
+		Climb->Release();
+		return;
+	}
 	DodgeLocal();
 }
 
 void ASoulslikeCharacter::DodgeLocal()
 {
-	if (!IsAlive() || !Combat->CanAct() || !Vitality->HasStamina(Combat->DodgeStaminaCost))
+	if (!IsAlive() || !IsOnFoot() || !Combat->CanAct() || !Vitality->HasStamina(Combat->DodgeStaminaCost))
 	{
 		return;
 	}
@@ -208,7 +272,10 @@ void ASoulslikeCharacter::DodgeLocal()
 
 void ASoulslikeCharacter::OnBlockStarted(const FInputActionValue& Value)
 {
-	Combat->StartBlocking();
+	if (IsOnFoot())
+	{
+		Combat->StartBlocking();
+	}
 }
 
 void ASoulslikeCharacter::OnBlockCompleted(const FInputActionValue& Value)
@@ -218,7 +285,10 @@ void ASoulslikeCharacter::OnBlockCompleted(const FInputActionValue& Value)
 
 void ASoulslikeCharacter::OnParry(const FInputActionValue& Value)
 {
-	Combat->TryParry();
+	if (IsOnFoot())
+	{
+		Combat->TryParry();
+	}
 }
 
 void ASoulslikeCharacter::OnLightAttack(const FInputActionValue& Value)
@@ -228,11 +298,21 @@ void ASoulslikeCharacter::OnLightAttack(const FInputActionValue& Value)
 
 void ASoulslikeCharacter::LightAttackOrExecute()
 {
-	if (!IsAlive() || !Combat->CanAct())
+	if (!IsAlive() || !Combat->CanAct() || Climb->IsClimbing())
 	{
 		return;
 	}
-	if (ASkeletonEnemy* Victim = FindExecutionTarget())
+	ASkeletonEnemy* Victim = FindExecutionTarget();
+	if (ShadowMerge->IsMerged())
+	{
+		// Shadow strike: only an execution can pull you out of the wall mid-attack.
+		if (!Victim)
+		{
+			return;
+		}
+		ShadowMerge->ToggleMerge();
+	}
+	if (Victim)
 	{
 		SetActorRotation(FRotator(0.f, (Victim->GetActorLocation() - GetActorLocation()).Rotation().Yaw, 0.f));
 		ServerExecute(Victim);
@@ -286,6 +366,10 @@ void ASoulslikeCharacter::ServerExecute_Implementation(ASkeletonEnemy* Target)
 
 void ASoulslikeCharacter::OnHeavyAttack(const FInputActionValue& Value)
 {
+	if (!IsOnFoot())
+	{
+		return;
+	}
 	if (IsAlive() && Combat->CanAct())
 	{
 		SoftLockTowardsEnemy();
@@ -295,7 +379,10 @@ void ASoulslikeCharacter::OnHeavyAttack(const FInputActionValue& Value)
 
 void ASoulslikeCharacter::OnHeal(const FInputActionValue& Value)
 {
-	Combat->TryHeal();
+	if (IsOnFoot())
+	{
+		Combat->TryHeal();
+	}
 }
 
 ASoulslikeCombatant* ASoulslikeCharacter::FindNearestEnemy(float MaxRange) const

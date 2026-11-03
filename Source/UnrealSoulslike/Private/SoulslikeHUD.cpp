@@ -3,6 +3,7 @@
 #include "SkeletonEnemy.h"
 #include "Components/CombatComponent.h"
 #include "Components/VitalityComponent.h"
+#include "Components/ShadowMergeComponent.h"
 #include "Engine/Canvas.h"
 #include "Engine/Engine.h"
 #include "Engine/Font.h"
@@ -51,6 +52,10 @@ void ASoulslikeHUD::DrawHUD()
 		{
 			DrawCentredText(TEXT("Execute  [X / LMB]"), Canvas->ClipY * 0.62f, Parchment, 1.2f);
 		}
+		else if (Player->IsAlive() && !Player->ShadowMerge->IsMerged() && Player->ShadowMerge->CanMergeNow())
+		{
+			DrawCentredText(TEXT("Merge  [R3 / E]"), Canvas->ClipY * 0.62f, Parchment, 1.2f);
+		}
 
 		if (!Player->IsAlive())
 		{
@@ -87,6 +92,12 @@ void ASoulslikeHUD::DrawPlayerVitals(const ASoulslikeCharacter* Player)
 	const float X = 40.f, Y = 40.f;
 	DrawBar(X, Y, V->MaxHealth * 3.f, 14.f, V->Health / V->MaxHealth, HealthRed);
 	DrawBar(X, Y + 24.f, V->MaxStamina * 3.f, 10.f, V->Stamina / V->MaxStamina, StaminaGreen);
+
+	const float Energy = Player->ShadowMerge->GetEnergyFraction();
+	if (Player->ShadowMerge->IsMerged() || Energy < 1.f)
+	{
+		DrawBar(X, Y + 84.f, 200.f, 8.f, Energy, FLinearColor(0.35f, 0.2f, 0.55f));
+	}
 
 	for (int32 i = 0; i < V->MaxHealCharges; ++i)
 	{
@@ -164,8 +175,9 @@ void ASoulslikeHUD::DrawControlsHint()
 	static const TCHAR* Lines[] = {
 		TEXT("Move: L-stick / WASD     Look: R-stick / mouse"),
 		TEXT("Light attack: X / LMB     Heavy attack: Y / F"),
-		TEXT("Dodge: A / Space     Block (hold): LB / RMB     Parry: LT / Q"),
-		TEXT("Heal: RB / R"),
+		TEXT("Jump / climb-jump: A / Space     Dodge (let go when climbing): B / Shift"),
+		TEXT("Block (hold): LB / RMB     Parry: LT / Q     Heal: RB / R"),
+		TEXT("Shadow merge: R3 / E     Execute unaware skeletons: X / LMB"),
 	};
 	UFont* Font = GEngine->GetSmallFont();
 	float Y = Canvas->ClipY - 150.f;
