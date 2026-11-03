@@ -22,4 +22,4 @@ _Nothing recorded yet._
 | ID | Date | Type | Status | Summary | Ref |
 |---|---|---|---|---|---|
 | UNR-T1 | 2026-11-03 | docs | closed | Start the permanent ticket log in the ticket database | — |
-| UNR-T2 | 2026-11-03 | feature | open | Scaffold co-op souls-like demo: third-person combat on isolated Hebrides island (dodge roll, block, parry, X/Y light/heavy attacks, RB heal) | — |
+| UNR-T2 | 2026-11-03 | feature | closed | Scaffold co-op souls-like demo: third-person combat on isolated Hebrides island (dodge roll, block, parry, X/Y light/heavy attacks, RB heal) | b21f31c |
