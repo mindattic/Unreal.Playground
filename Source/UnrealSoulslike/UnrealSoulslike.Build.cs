@@ -18,6 +18,7 @@ public class UnrealSoulslike : ModuleRules
 
 		PrivateDependencyModuleNames.AddRange(new string[] {
 			"Json",
+			"RenderCore",
 		});
 	}
 }

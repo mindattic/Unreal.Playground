@@ -91,8 +91,8 @@ void ASoulslikeCombatant::BeginPlay()
 
 void ASoulslikeCombatant::ApplyVisual(const FSoulslikeVisual& Visual)
 {
-	USkeletalMesh* Mesh = Visual.IsSet() ? LoadObject<USkeletalMesh>(nullptr, *Visual.Mesh) : nullptr;
-	if (!Mesh)
+	USkeletalMesh* SkelMesh = Visual.IsSet() ? LoadObject<USkeletalMesh>(nullptr, *Visual.Mesh) : nullptr;
+	if (!SkelMesh)
 	{
 		if (Visual.IsSet())
 		{
@@ -102,8 +102,8 @@ void ASoulslikeCombatant::ApplyVisual(const FSoulslikeVisual& Visual)
 		return;
 	}
 
-	GetMesh()->SetSkeletalMeshAsset(Mesh);
-	const FBoxSphereBounds Bounds = Mesh->GetBounds();
+	GetMesh()->SetSkeletalMeshAsset(SkelMesh);
+	const FBoxSphereBounds Bounds = SkelMesh->GetBounds();
 	const float MeshHeight = FMath::Max(Bounds.BoxExtent.Z * 2.f, 1.f);
 	const float Scale = TargetMeshHeight / MeshHeight;
 	const float MinZ = Bounds.Origin.Z - Bounds.BoxExtent.Z;

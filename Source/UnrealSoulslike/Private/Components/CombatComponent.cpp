@@ -2,9 +2,11 @@
 #include "Components/VitalityComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/Character.h"
 #include "Engine/World.h"
 #include "Engine/OverlapResult.h"
 #include "Kismet/GameplayStatics.h"
+#include "GameFramework/DamageType.h"
 #include "TimerManager.h"
 
 UCombatComponent::UCombatComponent()
@@ -35,7 +37,7 @@ void UCombatComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 
 void UCombatComponent::TryLightAttack() { ServerAttack(EAttackType::Light); }
 void UCombatComponent::TryHeavyAttack() { ServerAttack(EAttackType::Heavy); }
-void UCombatComponent::TryDodge() { ServerDodge(); }
+void UCombatComponent::TryDodge(const FVector& Direction) { ServerDodge(Direction); }
 void UCombatComponent::StartBlocking() { bWantsToBlock = true; ServerSetBlocking(true); }
 void UCombatComponent::StopBlocking() { bWantsToBlock = false; ServerSetBlocking(false); }
 void UCombatComponent::TryParry() { ServerParry(); }
@@ -56,7 +58,7 @@ void UCombatComponent::ServerAttack_Implementation(EAttackType Attack)
 	GetWorld()->GetTimerManager().SetTimer(AttackTimerHandle, this, &UCombatComponent::PerformAttackSweep, Windup, false);
 }
 
-void UCombatComponent::ServerDodge_Implementation()
+void UCombatComponent::ServerDodge_Implementation(FVector_NetQuantizeNormal Direction)
 {
 	if (!CanAct() || !Vitality || !Vitality->HasStamina(DodgeStaminaCost))
 	{
@@ -67,6 +69,15 @@ void UCombatComponent::ServerDodge_Implementation()
 	BeginAction(ECombatState::Dodging, DodgeDuration);
 	bIsInvulnerable = true;
 	GetWorld()->GetTimerManager().SetTimer(InvulnerabilityTimerHandle, this, &UCombatComponent::ClearInvulnerability, DodgeInvulnerabilityDuration, false);
+
+	// The owning client launched itself already; a remote client's launch must also happen here
+	// or the server corrects the roll away.
+	ACharacter* Character = Cast<ACharacter>(GetOwner());
+	if (Character && !Character->IsLocallyControlled())
+	{
+		Character->SetActorRotation(FRotator(0.f, FVector(Direction).Rotation().Yaw, 0.f));
+		Character->LaunchCharacter(FVector(Direction) * DodgeLaunchSpeed, true, false);
+	}
 }
 
 void UCombatComponent::ServerSetBlocking_Implementation(bool bBlock)

@@ -28,3 +28,9 @@ namespace SoulslikeTeam
 	constexpr uint8 Players = 0;
 	constexpr uint8 Skeletons = 1;
 }
+
+namespace SoulslikeTags
+{
+	// Component tag on surfaces a shadow merge can enter (stone, brick, the bridge).
+	inline const FName Mergeable(TEXT("Mergeable"));
+}

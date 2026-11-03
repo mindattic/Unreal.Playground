@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "SoulslikeTypes.h"
+#include "Engine/NetSerialization.h"
 #include "CombatComponent.generated.h"
 
 class UVitalityComponent;
@@ -51,6 +52,9 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat|Timing")
 	float HeavyAttackDuration = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat")
+	float DodgeLaunchSpeed = 950.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat|Timing")
 	float DodgeDuration = 0.5f;
@@ -121,8 +125,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Combat")
 	void TryHeavyAttack();
 
-	UFUNCTION(BlueprintCallable, Category = "Combat")
-	void TryDodge();
+	// Direction is the world-space roll direction; the server applies the same launch.
+	void TryDodge(const FVector& Direction);
 
 	UFUNCTION(BlueprintCallable, Category = "Combat")
 	void StartBlocking();
@@ -175,7 +179,7 @@ protected:
 	void ServerAttack(EAttackType Attack);
 
 	UFUNCTION(Server, Reliable)
-	void ServerDodge();
+	void ServerDodge(FVector_NetQuantizeNormal Direction);
 
 	UFUNCTION(Server, Reliable)
 	void ServerSetBlocking(bool bBlock);

@@ -1,5 +1,6 @@
 #include "Components/ShadowMergeComponent.h"
 #include "SoulslikeCombatant.h"
+#include "SoulslikeTypes.h"
 #include "HebridesIsland.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -15,8 +16,6 @@
 
 namespace
 {
-	const FName MergeableTag(TEXT("Mergeable"));
-
 	// The (collisionless) actor hovers this far off the surface so the camera boom has room.
 	constexpr float ActorLift = 30.f;
 }
@@ -126,7 +125,7 @@ bool UShadowMergeComponent::IsAllowedSurface(const FHitResult& Hit) const
 		return false;
 	}
 	const UPrimitiveComponent* Component = Hit.GetComponent();
-	if (Component && Component->ComponentHasTag(MergeableTag))
+	if (Component && Component->ComponentHasTag(SoulslikeTags::Mergeable))
 	{
 		return true;
 	}
@@ -480,7 +479,7 @@ void UShadowMergeComponent::TickServerEnergy(float DeltaTime)
 		SurfaceCheckTimer = 0.25f;
 		FHitResult Hit;
 		bSpotMergeable = Trace(SurfacePoint + SurfaceNormal * 20.f, SurfacePoint - SurfaceNormal * 40.f, Hit)
-			&& Hit.GetComponent() && Hit.GetComponent()->ComponentHasTag(MergeableTag);
+			&& Hit.GetComponent() && Hit.GetComponent()->ComponentHasTag(SoulslikeTags::Mergeable);
 		bSpotLit = !IsInShadow(SurfacePoint + SurfaceNormal * 5.f);
 		if (bSpotLit && !bSpotMergeable)
 		{

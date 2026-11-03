@@ -5,6 +5,7 @@
 #include "SoulslikeData.h"
 #include "HebridesIsland.h"
 #include "EngineUtils.h"
+#include "GameFramework/Controller.h"
 #include "TimerManager.h"
 
 ASoulslikeGameMode::ASoulslikeGameMode()
@@ -49,6 +50,13 @@ APawn* ASoulslikeGameMode::SpawnDefaultPawnFor_Implementation(AController* NewPl
 		NewPlayer->SetControlRotation(Rotation);
 	}
 	return Pawn;
+}
+
+void ASoulslikeGameMode::FinishRestartPlayer(AController* NewPlayer, const FRotator& StartRotation)
+{
+	// With no PlayerStart the engine passes a zero rotation; keep the pawn's keep-facing one.
+	const APawn* Pawn = NewPlayer ? NewPlayer->GetPawn() : nullptr;
+	Super::FinishRestartPlayer(NewPlayer, Pawn ? Pawn->GetActorRotation() : StartRotation);
 }
 
 void ASoulslikeGameMode::NotifyPlayerDied(AController* Player)

@@ -18,6 +18,10 @@
 #include "InputActionValue.h"
 #include "EngineUtils.h"
 #include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
+#include "GameFramework/PlayerController.h"
+#include "GameFramework/Controller.h"
+#include "Engine/LocalPlayer.h"
 
 ASoulslikeCharacter::ASoulslikeCharacter()
 {
@@ -258,8 +262,6 @@ void ASoulslikeCharacter::DodgeLocal()
 	{
 		return;
 	}
-	Combat->TryDodge();
-
 	FVector Direction = GetActorForwardVector();
 	if (!LastMoveInput.IsNearlyZero() && Controller)
 	{
@@ -267,7 +269,8 @@ void ASoulslikeCharacter::DodgeLocal()
 		Direction = (FRotationMatrix(Yaw).GetUnitAxis(EAxis::X) * LastMoveInput.Y + FRotationMatrix(Yaw).GetUnitAxis(EAxis::Y) * LastMoveInput.X).GetSafeNormal();
 	}
 	SetActorRotation(FRotator(0.f, Direction.Rotation().Yaw, 0.f));
-	LaunchCharacter(Direction * 950.f, true, false);
+	LaunchCharacter(Direction * Combat->DodgeLaunchSpeed, true, false);
+	Combat->TryDodge(Direction);
 }
 
 void ASoulslikeCharacter::OnBlockStarted(const FInputActionValue& Value)

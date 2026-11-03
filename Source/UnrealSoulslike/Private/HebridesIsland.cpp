@@ -10,6 +10,8 @@
 #include "Components/ExponentialHeightFogComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
+#include "Engine/CollisionProfile.h"
+#include "SoulslikeTypes.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -45,8 +47,6 @@ namespace
 	}
 
 	// Surfaces a shadow merge can enter: built stone, never terrain or loose boulders.
-	const FName MergeableTag(TEXT("Mergeable"));
-
 	UInstancedStaticMeshComponent* MakeInstances(AActor* Owner, USceneComponent* Root, const TCHAR* Name, UStaticMesh* Mesh, bool bMergeable)
 	{
 		UInstancedStaticMeshComponent* Instances = Owner->CreateDefaultSubobject<UInstancedStaticMeshComponent>(Name);
@@ -56,7 +56,7 @@ namespace
 		Instances->SetMobility(EComponentMobility::Static);
 		if (bMergeable)
 		{
-			Instances->ComponentTags.Add(MergeableTag);
+			Instances->ComponentTags.Add(SoulslikeTags::Mergeable);
 		}
 		return Instances;
 	}
@@ -603,12 +603,20 @@ UInstancedStaticMeshComponent* AHebridesIsland::Kit(FName Piece)
 
 	UInstancedStaticMeshComponent* Instances = nullptr;
 	const FString* Path = FEnvironmentAssets::Get().Pieces.Find(Piece);
-	if (UStaticMesh* Mesh = Path ? LoadObject<UStaticMesh>(nullptr, **Path) : nullptr)
+	const FName ComponentName(*FString::Printf(TEXT("Kit_%s"), *Piece.ToString()));
+	// PIE duplicates editor-built kit components without this map, so reuse them by name.
+	if (UInstancedStaticMeshComponent* Existing = FindObjectFast<UInstancedStaticMeshComponent>(this, ComponentName))
 	{
-		Instances = NewObject<UInstancedStaticMeshComponent>(this, FName(*FString::Printf(TEXT("Kit_%s"), *Piece.ToString())));
-		Instances->SetStaticMesh(Mesh);
+		Existing->ClearInstances();
+		KitInstances.Add(Piece, Existing);
+		return Existing;
+	}
+	if (UStaticMesh* PieceMesh = Path ? LoadObject<UStaticMesh>(nullptr, **Path) : nullptr)
+	{
+		Instances = NewObject<UInstancedStaticMeshComponent>(this, ComponentName);
+		Instances->SetStaticMesh(PieceMesh);
 		Instances->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
-		Instances->ComponentTags.Add(MergeableTag);
+		Instances->ComponentTags.Add(SoulslikeTags::Mergeable);
 		Instances->SetupAttachment(RootComponent);
 		Instances->RegisterComponent();
 		AddInstanceComponent(Instances);

@@ -17,10 +17,10 @@ class UNREALSOULSLIKE_API UVitalityComponent : public UActorComponent
 public:
 	UVitalityComponent();
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Vitality")
+	UPROPERTY(Replicated, EditDefaultsOnly, BlueprintReadOnly, Category = "Vitality")
 	float MaxHealth = 100.f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Vitality")
+	UPROPERTY(Replicated, EditDefaultsOnly, BlueprintReadOnly, Category = "Vitality")
 	float MaxStamina = 100.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Vitality")

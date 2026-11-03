@@ -28,6 +28,8 @@ void UVitalityComponent::ResetVitals()
 void UVitalityComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME_CONDITION(UVitalityComponent, MaxHealth, COND_InitialOnly);
+	DOREPLIFETIME_CONDITION(UVitalityComponent, MaxStamina, COND_InitialOnly);
 	DOREPLIFETIME(UVitalityComponent, Health);
 	DOREPLIFETIME(UVitalityComponent, Stamina);
 	DOREPLIFETIME(UVitalityComponent, HealCharges);

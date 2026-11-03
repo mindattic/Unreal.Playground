@@ -20,6 +20,7 @@ public:
 
 	virtual void StartPlay() override;
 	virtual APawn* SpawnDefaultPawnFor_Implementation(AController* NewPlayer, AActor* StartSpot) override;
+	virtual void FinishRestartPlayer(AController* NewPlayer, const FRotator& StartRotation) override;
 
 	void NotifyPlayerDied(AController* Player);
 

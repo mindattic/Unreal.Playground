@@ -166,7 +166,7 @@ void UClimbComponent::StartClimbing(const FHitResult& Hit)
 	SetFlySpeed(ClimbSpeed);
 	FaceWall();
 
-	ServerSetClimbing(true, WallNormal);
+	ServerSetClimbing(true, WallNormal, false);
 }
 
 void UClimbComponent::ExitClimbing(bool bToWalking)
@@ -182,7 +182,8 @@ void UClimbComponent::ExitClimbing(bool bToWalking)
 		Movement->BrakingDecelerationFlying = DefaultBrakingFlying;
 		Movement->SetMovementMode(bToWalking ? MOVE_Walking : MOVE_Falling);
 	}
-	ServerSetClimbing(false, WallNormal);
+	ServerSetClimbing(false, WallNormal, bPushOffOnExit);
+	bPushOffOnExit = false;
 }
 
 void UClimbComponent::FaceWall()
@@ -378,6 +379,7 @@ void UClimbComponent::Release()
 		return;
 	}
 	const FVector PushOff = WallNormal * 300.f;
+	bPushOffOnExit = true;
 	ExitClimbing(false);
 	ReleaseCooldown = 0.4f;
 	Character->LaunchCharacter(PushOff, true, false);
@@ -395,23 +397,22 @@ void UClimbComponent::DrainStamina(float DeltaTime)
 	Vitality->SpendStamina((bMoving ? StaminaDrainMoving : StaminaDrainStill) * DeltaTime);
 	if (Vitality->Stamina <= 0.f)
 	{
+		// The host lets go itself (Release needs bClimbing still set to restore movement).
+		if (Character->IsLocallyControlled())
+		{
+			Release();
+			return;
+		}
 		bClimbing = false;
 		if (UCharacterMovementComponent* Movement = GetMovement())
 		{
 			Movement->SetMovementMode(MOVE_Falling);
 		}
-		if (Character->IsLocallyControlled())
-		{
-			Release();
-		}
-		else
-		{
-			ClientForceRelease();
-		}
+		ClientForceRelease();
 	}
 }
 
-void UClimbComponent::ServerSetClimbing_Implementation(bool bNewClimbing, FVector_NetQuantizeNormal Normal)
+void UClimbComponent::ServerSetClimbing_Implementation(bool bNewClimbing, FVector_NetQuantizeNormal Normal, bool bPushOff)
 {
 	ACharacter* Character = GetCharacter();
 	UCharacterMovementComponent* Movement = GetMovement();
@@ -437,6 +438,10 @@ void UClimbComponent::ServerSetClimbing_Implementation(bool bNewClimbing, FVecto
 		if (Movement->MovementMode == MOVE_Flying)
 		{
 			Movement->SetMovementMode(MOVE_Falling);
+		}
+		if (bPushOff)
+		{
+			Character->LaunchCharacter(FVector(Normal) * 300.f, true, false);
 		}
 	}
 }

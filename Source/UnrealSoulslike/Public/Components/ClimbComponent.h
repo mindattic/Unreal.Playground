@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Engine/NetSerialization.h"
 #include "ClimbComponent.generated.h"
 
 class ACharacter;
@@ -73,7 +74,7 @@ protected:
 	bool bClimbing = false;
 
 	UFUNCTION(Server, Reliable)
-	void ServerSetClimbing(bool bNewClimbing, FVector_NetQuantizeNormal Normal);
+	void ServerSetClimbing(bool bNewClimbing, FVector_NetQuantizeNormal Normal, bool bPushOff);
 
 	UFUNCTION(Server, Unreliable)
 	void ServerSetFacing(float Yaw);
@@ -115,6 +116,7 @@ private:
 	float DefaultMaxFlySpeed = 600.f;
 	float DefaultBrakingFlying = 0.f;
 	bool bMantling = false;
+	bool bPushOffOnExit = false;
 	bool bMantleRising = true;
 	bool bDefaultOrientToMovement = true;
 };
