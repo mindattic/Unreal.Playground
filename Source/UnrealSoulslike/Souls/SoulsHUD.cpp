@@ -105,16 +105,16 @@ void ASoulsHUD::DrawHUD()
 		const ASoulsPickup* Pickup = Knight->GetNearbyPickup();
 		if (Pickup || Knight->GetNearbyGrace())
 		{
-			const FString Prompt = Pickup ? FString::Printf(TEXT("Pick up  %s      [ E ]  /  D-pad Up"), *Pickup->GetItemName().ToString())
-				: FString(TEXT("Rest at Site of Grace      [ E ]  /  D-pad Up"));
+			const FString Prompt = Pickup ? FString::Printf(TEXT("Pick up  %s      [ F ]  /  D-pad Up"), *Pickup->GetItemName().ToString())
+				: FString(TEXT("Rest at Site of Grace      [ F ]  /  D-pad Up"));
 			DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.55f), Canvas->ClipX * 0.5f - 320.f * S, Canvas->ClipY * 0.74f - 10.f * S, 640.f * S, 50.f * S);
 			Text(Prompt, Canvas->ClipX * 0.5f, Canvas->ClipY * 0.74f, HudParchment, 1.1f * S, true);
 		}
 
 		DrawLockOn(Knight);
 
-		// Grapple: a hook glyph on whatever the grapple would catch.
-		if (const AActor* Hook = Knight->GetGrappleCandidate())
+		// Grapple: no button for it now (UNR-T46), so no hook glyph either.
+		if (const AActor* Hook = false ? Knight->GetGrappleCandidate() : nullptr)
 		{
 			const bool bPoint = Hook->IsA<AGrapplePoint>();
 			const FVector Screen = Project(Hook->GetActorLocation() + FVector(0.f, 0.f, bPoint ? 0.f : 60.f), false);
@@ -217,8 +217,8 @@ void ASoulsHUD::DrawHUD()
 		{
 			const float Alpha = FMath::Clamp((HintUntil - Now) / 3.f, 0.f, 1.f) * 0.9f;
 			static const TCHAR* Lines[] = {
-				TEXT("Attack  X / LMB     Shield  LB / RMB  (raise it just in time to parry)     Roll  B / Shift     Jump  A / Space"),
-				TEXT("Run  L3 / Ctrl  (toggle)     Crouch  R3 / Alt  (toggle)     Flask  RB / R     Use / whistle  D-pad up / E"),
+				TEXT("Attack  X / LMB     Shield  LB / RMB  (raise it just in time to parry)     Roll  B / E     Jump  A / Space"),
+				TEXT("Run  L3 / Shift  (toggle)     Crouch  R3 / Ctrl  (toggle)     Flask  RB / R     Use / whistle  D-pad up / F"),
 				TEXT("Shield up against a leaping foe to brace     Strike the unaware for an ambush"),
 			};
 			float LineY = Canvas->ClipY - 170.f * S;

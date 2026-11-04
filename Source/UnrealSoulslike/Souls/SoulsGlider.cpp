@@ -638,13 +638,10 @@ void USoulsGlider::EnsureInput()
 		GlideContext->MapKey(OpenAction, EKeys::SpaceBar);
 		// B (and the attacks) fold the umbrella.
 		GlideContext->MapKey(CloseAction, EKeys::Gamepad_FaceButton_Right);
-		GlideContext->MapKey(CloseAction, EKeys::LeftShift);
+		GlideContext->MapKey(CloseAction, EKeys::E);
 		GlideContext->MapKey(CloseAction, EKeys::Gamepad_FaceButton_Left);
 		GlideContext->MapKey(CloseAction, EKeys::Gamepad_FaceButton_Top);
 		GlideContext->MapKey(CloseAction, EKeys::LeftMouseButton);
-		GlideContext->MapKey(CloseAction, EKeys::F);
-		GlideContext->MapKey(TensionAction, EKeys::G);
-		GlideContext->MapKey(TensionAction, EKeys::ThumbMouseButton);
 	}
 	UEnhancedInputComponent* Input = Cast<UEnhancedInputComponent>(K->InputComponent.Get());
 	if (Input && Input != BoundInput.Get())

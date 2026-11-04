@@ -60,15 +60,14 @@ Warden in the stone circle and Morrigan of the Mire, a shade who melts into shad
 | Move / look | L-stick / R-stick | WASD / mouse |
 | Attack (also ripostes and backstabs; swings a torch in hand) | X | LMB |
 | Raise the shield (hold); raise it just as a blow lands to parry; brace against a leaper | LB | RMB |
-| Dodge roll | B | Shift |
+| Dodge roll | B | E |
 | Jump; open the umbrella in the air | A | Space |
-| Run (toggle) | L3 | Ctrl |
-| Crouch (toggle) | R3 | Alt |
+| Run (toggle) | L3 | Shift |
+| Crouch (toggle) | R3 | Ctrl / C |
 | Flask | RB | R |
-| Rest at grace / pick up / take a torch; elsewhere, whistle | D-pad up | E |
-| Keyboard only: lock on, parry, grapple, throw a torch | — | Q or MMB, C, G, F |
+| Rest at grace / pick up / take a torch; elsewhere, whistle | D-pad up | F |
 
-Y, LT and RT do nothing.
+The keyboard mirrors the controller exactly. Y, LT and RT do nothing.
 
 ## Build and run
 

@@ -66,4 +66,5 @@ _Nothing recorded yet._
 | UNR-T43 | 2026-11-04 | feature | closed | Tall grass to hide in | — |
 | UNR-T44 | 2026-11-04 | feature | closed | D-pad up whistles: nearby enemies come over curiously | — |
 | UNR-T45 | 2026-11-04 | feature | open | Grapple: fill in throw/reel/haul/land animation beats and timing (reopens UNR-T35) | — |
-| UNR-T46 | 2026-11-04 | fix | open | Rein in the pad: X = the one normal attack, LB shield, B roll, A jump, L3 run, R3 crouch; Y/LT/RT unbound | — |
+| UNR-T46 | 2026-11-04 | fix | closed | Rein in the pad: X = the one normal attack, LB shield, B roll, A jump, L3 run, R3 crouch; Y/LT/RT unbound | — |
+| UNR-T47 | 2026-11-04 | fix | open | Keyboard mirrors the pad: LMB attack, RMB shield/parry, E roll, Space jump | — |

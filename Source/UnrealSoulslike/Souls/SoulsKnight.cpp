@@ -593,8 +593,22 @@ void ASoulsKnight::RunInputTest()
 				Check(TEXT("the attack reaches a foe 3.3 m away"), Foe && Foe->GetHealth() < Probe->Key,
 					FString::Printf(TEXT("hp %.0f -> %.0f, stepped %.0f cm"), Probe->Key, Foe ? Foe->GetHealth() : -1.f, FVector::Dist2D(Probe->Value, K->GetActorLocation())));
 				K->DemoVictim = nullptr;
-				K->Shot(TEXT("Input_8_done"));
 			} },
+		// The keyboard mirrors the pad.
+		{ 17.0f, [Tap](ASoulsKnight* K) { Tap(K, EKeys::E, 0.1f); } },
+		{ 17.12f, [Check](ASoulsKnight* K) { Check(TEXT("E rolls"), K->Action == EKnightAction::Roll, FString::Printf(TEXT("action=%d"), (int32)K->Action)); } },
+		{ 18.0f, [](ASoulsKnight* K) { K->InputTestKey(EKeys::RightMouseButton, true); } },
+		{ 18.4f, [Check](ASoulsKnight* K) { Check(TEXT("RMB raises the shield"), K->bBlocking, FString::Printf(TEXT("blocking=%d"), K->bBlocking)); } },
+		{ 18.5f, [](ASoulsKnight* K) { K->InputTestKey(EKeys::RightMouseButton, false); } },
+		{ 18.9f, [Tap](ASoulsKnight* K) { Tap(K, EKeys::SpaceBar, 0.15f); } },
+		{ 19.15f, [Check](ASoulsKnight* K) { Check(TEXT("Space jumps"), K->GetCharacterMovement()->IsFalling(), FString::Printf(TEXT("vz=%.0f"), K->GetVelocity().Z)); } },
+		{ 20.2f, [Tap](ASoulsKnight* K) { Tap(K, EKeys::LeftControl, 0.08f); } },
+		{ 20.5f, [Check](ASoulsKnight* K) { Check(TEXT("Ctrl crouches"), K->Stance == EKnightStance::Crouched, FString::Printf(TEXT("stance=%d"), (int32)K->Stance)); } },
+		{ 20.7f, [Tap](ASoulsKnight* K) { Tap(K, EKeys::LeftShift, 0.08f); K->InputTestKey(EKeys::W, true); } },
+		{ 21.7f, [Check](ASoulsKnight* K) { Check(TEXT("Shift runs"), K->bSprinting, FString::Printf(TEXT("speed=%.0f"), K->GetVelocity().Size2D())); K->InputTestKey(EKeys::W, false); } },
+		{ 22.4f, [Tap](ASoulsKnight* K) { Tap(K, EKeys::LeftMouseButton, 0.08f); } },
+		{ 22.55f, [Check](ASoulsKnight* K) { Check(TEXT("LMB attacks"), K->Action == EKnightAction::HeavyAttack, FString::Printf(TEXT("action=%d"), (int32)K->Action)); } },
+		{ 24.0f, [](ASoulsKnight* K) { K->Shot(TEXT("Input_8_done")); } },
 	};
 	for (const FStep& Step : Steps)
 	{
@@ -860,32 +874,20 @@ void ASoulsKnight::EnsureKnightInput()
 	KnightMappingContext->MapKey(KnightJumpAction, EKeys::Gamepad_FaceButton_Bottom);
 	KnightMappingContext->MapKey(KnightJumpAction, EKeys::SpaceBar);
 	KnightMappingContext->MapKey(SprintAction, EKeys::Gamepad_LeftThumbstick);
-	KnightMappingContext->MapKey(SprintAction, EKeys::LeftControl);
+	KnightMappingContext->MapKey(SprintAction, EKeys::LeftShift);
 	KnightMappingContext->MapKey(DodgeAction, EKeys::Gamepad_FaceButton_Right);
-	KnightMappingContext->MapKey(DodgeAction, EKeys::LeftShift);
+	KnightMappingContext->MapKey(DodgeAction, EKeys::E);
 	KnightMappingContext->MapKey(BlockAction, EKeys::Gamepad_LeftShoulder);
 	KnightMappingContext->MapKey(BlockAction, EKeys::RightMouseButton);
 	KnightMappingContext->MapKey(HealAction, EKeys::Gamepad_RightShoulder);
 	KnightMappingContext->MapKey(HealAction, EKeys::R);
-	KnightMappingContext->MapKey(ParryAction, EKeys::C);
 	KnightMappingContext->MapKey(CrouchAction, EKeys::Gamepad_RightThumbstick);
-	KnightMappingContext->MapKey(CrouchAction, EKeys::LeftAlt);
+	KnightMappingContext->MapKey(CrouchAction, EKeys::LeftControl);
+	KnightMappingContext->MapKey(CrouchAction, EKeys::C);
 	KnightMappingContext->MapKey(AttackAction, EKeys::Gamepad_FaceButton_Left);
 	KnightMappingContext->MapKey(AttackAction, EKeys::LeftMouseButton);
-	KnightMappingContext->MapKey(LockOnAction, EKeys::MiddleMouseButton);
-	KnightMappingContext->MapKey(LockOnAction, EKeys::Q);
 	KnightMappingContext->MapKey(InteractAction, EKeys::Gamepad_DPad_Up);
-	KnightMappingContext->MapKey(InteractAction, EKeys::E);
-	KnightMappingContext->MapKey(GrappleAction, EKeys::G);
-	KnightMappingContext->MapKey(GrappleAction, EKeys::ThumbMouseButton);
-	// Light/heavy reuse the template's actions; these guarantee X/Y and LMB/F whatever its map says.
-	if (ComboAttackAction)
-	{
-	}
-	if (ChargedAttackAction)
-	{
-		KnightMappingContext->MapKey(ChargedAttackAction, EKeys::F);
-	}
+	KnightMappingContext->MapKey(InteractAction, EKeys::F);
 }
 
 void ASoulsKnight::NotifyControllerChanged()

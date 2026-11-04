@@ -442,7 +442,7 @@ bool ASoulsTorch::TryPickUp(ASoulsKnight* Knight)
 	{
 		if (ASoulsGameMode* GameMode = Knight->GetWorld()->GetAuthGameMode<ASoulsGameMode>())
 		{
-			GameMode->ShowToast(NSLOCTEXT("Souls", "TorchTaken", "Torch taken  (Y / F to throw)"));
+			GameMode->ShowToast(NSLOCTEXT("Souls", "TorchTaken", "Torch taken  (X / LMB to swing)"));
 			if (GameMode->PickupSound)
 			{
 				UGameplayStatics::PlaySound2D(Knight, GameMode->PickupSound, 0.6f);
