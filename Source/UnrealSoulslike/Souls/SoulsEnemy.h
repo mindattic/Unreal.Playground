@@ -46,6 +46,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy")
 	bool bIsBoss = false;
 
+	// While unaware it strolls between random spots this far from its post (0 = stands guard).
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy|AI")
+	float PatrolRadius = 1200.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy|AI")
+	float PatrolSpeed = 170.f;
+
 	// Leapers spring onto the player from range: brace (parry button) to impale them.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy|Pounce")
 	bool bCanPounce = false;
@@ -117,7 +124,17 @@ public:
 	void OnDamaged(AActor* Source);
 	EEnemyMind GetMind() const { return Mind; }
 
+	// Unaware foes stroll around their post; two that meet stop to talk, then go their own ways.
+	bool IsChatting() const { return ChatPartner.IsValid(); }
+	bool IsSpeaking() const { return IsChatting() && bSpeaking; }
+
 private:
+	void ThinkPatrol(float Now);
+	bool PickPatrolPoint(const FVector& Bias);
+	void StartChat(ASoulsEnemyController* Other, float Now);
+	void EndChat(float Now, bool bPartWays);
+	bool CanPatrol() const;
+
 	ASoulsEnemy* Knight() const;
 	bool CanSee(const AActor* Target) const;
 	void Engage(ASoulsKnight* Target);
@@ -134,4 +151,15 @@ private:
 	float LastSightCheck = 0.f;
 	float FleeUntil = 0.f;
 	float CowerUntil = 0.f;
+
+	FVector PatrolPoint = FVector::ZeroVector;
+	bool bHasPatrolPoint = false;
+	float PatrolWaitUntil = 0.f;
+	float PatrolStuckTime = 0.f;
+	float LastMeetCheck = 0.f;
+	TWeakObjectPtr<ASoulsEnemyController> ChatPartner;
+	float ChatUntil = 0.f;
+	float ChatCooldownUntil = 0.f;
+	float NextTurnSwap = 0.f;
+	bool bSpeaking = false;
 };

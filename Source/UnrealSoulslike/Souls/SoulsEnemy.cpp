@@ -3,8 +3,11 @@
 #include "CollisionQueryParams.h"
 #include "Components/CapsuleComponent.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "TimerManager.h"
+#include "UnrealClient.h"
 
 // ---------------------------------------------------------------------------------------------
 // Enemy knight
@@ -105,6 +108,7 @@ ASoulsBoss::ASoulsBoss()
 	RuneReward = 12000;
 	bIsBoss = true;
 	bFearless = true;
+	PatrolRadius = 0.f;
 	bFloatingLifeBar = false;
 	bCanBeBackstabbed = false;
 	SetActorScale3D(FVector(1.45f));
@@ -205,6 +209,214 @@ void ASoulsEnemyController::Steer(const FVector& Direction, float Scale)
 	}
 }
 
+// ---------------------------------------------------------------------------------------------
+// Patrol and idle talk
+// ---------------------------------------------------------------------------------------------
+
+bool ASoulsEnemyController::CanPatrol() const
+{
+	const ASoulsEnemy* Me = Knight();
+	// The scripted -KnightDemo stages foes where it wants them, so they stay put there.
+	static const bool bDemo = FParse::Param(FCommandLine::Get(), TEXT("KnightDemo"));
+	return Me && !bDemo && !Me->bIsBoss && Me->PatrolRadius > 0.f;
+}
+
+bool ASoulsEnemyController::PickPatrolPoint(const FVector& Bias)
+{
+	ASoulsEnemy* Me = Knight();
+	const FVector From = Me->GetActorLocation();
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(EnemyPatrol), false, Me);
+	for (int32 Attempt = 0; Attempt < 8; ++Attempt)
+	{
+		FVector Direction = Bias.IsNearlyZero() ? FMath::VRand() : Bias.RotateAngleAxis(FMath::FRandRange(-50.f, 50.f), FVector::UpVector);
+		Direction = Direction.GetSafeNormal2D();
+		FVector Candidate = From + Direction * FMath::FRandRange(400.f, 900.f);
+		// Stay within reach of the post.
+		const FVector FromHome = Candidate - Me->HomeLocation;
+		if (FromHome.Size2D() > Me->PatrolRadius)
+		{
+			Candidate = Me->HomeLocation + FromHome.GetSafeNormal2D() * Me->PatrolRadius * FMath::FRandRange(0.4f, 0.9f);
+		}
+		// Solid ground at roughly the same height (no cliffs, no wading into the sea)...
+		FHitResult Ground;
+		if (!GetWorld()->LineTraceSingleByChannel(Ground, Candidate + FVector(0, 0, 600), Candidate - FVector(0, 0, 900), ECC_Visibility, Params)
+			|| FMath::Abs(Ground.ImpactPoint.Z - (From.Z - Me->GetSimpleCollisionHalfHeight())) > 220.f
+			|| Ground.ImpactNormal.Z < 0.75f)
+		{
+			continue;
+		}
+		const FVector Feet = Ground.ImpactPoint;
+		// ...and a clear walk there.
+		FHitResult Wall;
+		if (GetWorld()->LineTraceSingleByChannel(Wall, From + FVector(0, 0, 40), Feet + FVector(0, 0, 120), ECC_Visibility, Params))
+		{
+			continue;
+		}
+		PatrolPoint = Feet;
+		bHasPatrolPoint = true;
+		PatrolStuckTime = 0.f;
+		return true;
+	}
+	return false;
+}
+
+void ASoulsEnemyController::StartChat(ASoulsEnemyController* Other, float Now)
+{
+	const float Length = FMath::FRandRange(5.f, 8.f);
+	for (ASoulsEnemyController* Side : { this, Other })
+	{
+		Side->ChatPartner = Side == this ? Other : this;
+		Side->ChatUntil = Now + Length;
+		Side->bHasPatrolPoint = false;
+		Side->PatrolWaitUntil = 0.f;
+	}
+	bSpeaking = FMath::RandBool();
+	Other->bSpeaking = !bSpeaking;
+	NextTurnSwap = Now + FMath::FRandRange(1.4f, 2.4f);
+	Other->NextTurnSwap = NextTurnSwap;
+	UE_LOG(LogTemp, Log, TEXT("Patrol: %s stops to talk with %s"), *GetPawn()->GetName(), *Other->GetPawn()->GetName());
+
+	// -PatrolDemo: watch the first conversation from the side, unseen, and screenshot it.
+	static bool bWatched = false;
+	if (!bWatched && FParse::Param(FCommandLine::Get(), TEXT("PatrolDemo")))
+	{
+		APawn* Player = UGameplayStatics::GetPlayerPawn(this, 0);
+		if (Player)
+		{
+			bWatched = true;
+			const FVector A = GetPawn()->GetActorLocation();
+			const FVector B = Other->GetPawn()->GetActorLocation();
+			const FVector Mid = (A + B) * 0.5f;
+			const FVector Side = FVector::CrossProduct(FVector::UpVector, (B - A).GetSafeNormal2D());
+			Player->SetActorLocation(Mid + Side * 750.f + FVector(0, 0, 60), false, nullptr, ETeleportType::TeleportPhysics);
+			const FRotator Look = (Mid - Player->GetActorLocation()).GetSafeNormal2D().Rotation();
+			Player->SetActorRotation(Look);
+			if (AController* PC = Player->GetController())
+			{
+				PC->SetControlRotation(FRotator(-6.f, Look.Yaw - 20.f, 0.f));
+			}
+			FTimerHandle Handle;
+			GetWorldTimerManager().SetTimer(Handle, []() { FScreenshotRequest::RequestScreenshot(TEXT("Patrol_1_chat"), true, false); }, 2.f, false);
+			FTimerHandle Handle2;
+			GetWorldTimerManager().SetTimer(Handle2, []() { FScreenshotRequest::RequestScreenshot(TEXT("Patrol_2_chat"), true, false); }, 3.4f, false);
+			FTimerHandle Handle3;
+			GetWorldTimerManager().SetTimer(Handle3, []() { FScreenshotRequest::RequestScreenshot(TEXT("Patrol_3_parted"), true, false); }, Length + 4.f, false);
+		}
+	}
+}
+
+void ASoulsEnemyController::EndChat(float Now, bool bPartWays)
+{
+	ASoulsEnemyController* Partner = ChatPartner.Get();
+	ChatPartner = nullptr;
+	bSpeaking = false;
+	ChatCooldownUntil = Now + FMath::FRandRange(18.f, 30.f);
+	if (bPartWays && Knight())
+	{
+		// Off in opposite directions.
+		const FVector Away = Partner && Partner->GetPawn()
+			? (GetPawn()->GetActorLocation() - Partner->GetPawn()->GetActorLocation()).GetSafeNormal2D()
+			: FMath::VRand().GetSafeNormal2D();
+		if (!PickPatrolPoint(Away))
+		{
+			PickPatrolPoint(FVector::ZeroVector);
+		}
+	}
+	if (Partner && Partner->ChatPartner.Get() == this)
+	{
+		Partner->EndChat(Now, bPartWays);
+	}
+}
+
+void ASoulsEnemyController::ThinkPatrol(float Now)
+{
+	ASoulsEnemy* Me = Knight();
+	if (!CanPatrol() || Me->IsBusy())
+	{
+		return;
+	}
+	UCharacterMovementComponent* Movement = Me->GetCharacterMovement();
+
+	if (ASoulsEnemyController* Partner = ChatPartner.Get())
+	{
+		APawn* Other = Partner->GetPawn();
+		if (!Other || Partner->Mind != EEnemyMind::Idle || Cast<ASoulsKnight>(Other)->IsDead())
+		{
+			EndChat(Now, false);
+			return;
+		}
+		// Face each other and take turns.
+		const FVector ToOther = (Other->GetActorLocation() - Me->GetActorLocation()).GetSafeNormal2D();
+		Me->SetActorRotation(FMath::RInterpTo(Me->GetActorRotation(), ToOther.Rotation(), GetWorld()->GetDeltaSeconds(), 5.f));
+		if (Now >= NextTurnSwap && this < Partner)
+		{
+			bSpeaking = !bSpeaking;
+			Partner->bSpeaking = !bSpeaking;
+			NextTurnSwap = Now + FMath::FRandRange(1.2f, 2.6f);
+			Partner->NextTurnSwap = NextTurnSwap;
+		}
+		if (Now >= ChatUntil && this < Partner)
+		{
+			UE_LOG(LogTemp, Log, TEXT("Patrol: %s and %s go their separate ways"), *Me->GetName(), *Other->GetName());
+			EndChat(Now, true);
+		}
+		return;
+	}
+
+	// Bumped into another wanderer? Stop for a word.
+	// (Only on the move: a pair posted side by side doesn't natter forever.)
+	if (bHasPatrolPoint && Me->GetVelocity().Size2D() > 40.f && Now - LastMeetCheck > 0.4f && Now >= ChatCooldownUntil)
+	{
+		LastMeetCheck = Now;
+		for (TActorIterator<ASoulsEnemy> It(GetWorld()); It; ++It)
+		{
+			ASoulsEnemy* Other = *It;
+			ASoulsEnemyController* OtherMind = Other != Me ? Cast<ASoulsEnemyController>(Other->GetController()) : nullptr;
+			if (OtherMind && !Other->IsDead() && !Other->IsBusy() && OtherMind->Mind == EEnemyMind::Idle && OtherMind->CanPatrol()
+				&& !OtherMind->IsChatting() && Now >= OtherMind->ChatCooldownUntil
+				&& FVector::Dist2D(Other->GetActorLocation(), Me->GetActorLocation()) < 360.f
+				&& FMath::Abs(Other->GetActorLocation().Z - Me->GetActorLocation().Z) < 150.f)
+			{
+				StartChat(OtherMind, Now);
+				return;
+			}
+		}
+	}
+
+	if (Me->IsSwimming())
+	{
+		PatrolPoint = Me->HomeLocation;
+		bHasPatrolPoint = true;
+	}
+	if (!bHasPatrolPoint)
+	{
+		if (Now >= PatrolWaitUntil && !PickPatrolPoint(FVector::ZeroVector))
+		{
+			PatrolWaitUntil = Now + 2.f;
+		}
+		return;
+	}
+
+	const FVector ToPoint = PatrolPoint - Me->GetActorLocation();
+	if (ToPoint.Size2D() < 90.f)
+	{
+		// Arrived: stand a while and look about.
+		bHasPatrolPoint = false;
+		PatrolWaitUntil = Now + FMath::FRandRange(2.f, 6.f);
+		return;
+	}
+	Movement->bOrientRotationToMovement = true;
+	Movement->MaxWalkSpeed = Me->PatrolSpeed;
+	Steer(ToPoint, 1.f);
+	// Walked into something: give up on this spot.
+	PatrolStuckTime = Me->GetVelocity().Size2D() < 30.f ? PatrolStuckTime + GetWorld()->GetDeltaSeconds() : 0.f;
+	if (PatrolStuckTime > 1.5f)
+	{
+		bHasPatrolPoint = false;
+		PatrolWaitUntil = Now + 1.f;
+	}
+}
+
 void ASoulsEnemyController::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
@@ -221,10 +433,28 @@ void ASoulsEnemyController::Tick(float DeltaSeconds)
 		Me->BlockReleased();
 	}
 
+	// The other half of a conversation was set upon: join the fight.
+	if (Mind != EEnemyMind::Idle && IsChatting())
+	{
+		EndChat(Now, false);
+	}
+	if (Mind == EEnemyMind::Idle && IsChatting())
+	{
+		const ASoulsEnemyController* Partner = ChatPartner.Get();
+		if (Partner && Partner->Mind == EEnemyMind::Engage && Partner->Target.IsValid())
+		{
+			ASoulsKnight* Foe = Partner->Target.Get();
+			EndChat(Now, false);
+			Engage(Foe);
+		}
+	}
+
 	switch (Mind)
 	{
 	case EEnemyMind::Idle:
-		if (Now - LastSightCheck > 0.25f)
+		ThinkPatrol(Now);
+		static const bool bPatrolDemo = FParse::Param(FCommandLine::Get(), TEXT("PatrolDemo"));
+		if (!bPatrolDemo && Now - LastSightCheck > 0.25f)
 		{
 			LastSightCheck = Now;
 			ASoulsKnight* Player = Cast<ASoulsKnight>(UGameplayStatics::GetPlayerPawn(this, 0));
