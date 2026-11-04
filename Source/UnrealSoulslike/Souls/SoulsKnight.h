@@ -11,6 +11,7 @@ class UStaticMeshComponent;
 class UInputAction;
 class UInputMappingContext;
 class ASiteOfGrace;
+class AGrapplePoint;
 
 UENUM(BlueprintType)
 enum class EKnightAction : uint8
@@ -25,6 +26,20 @@ enum class EKnightAction : uint8
 	Staggered,     // flinch, guard break, poise break
 	Parried,       // parried or stance broken: open to a riposte
 	Crippled,      // on the receiving end of a critical
+	Grapple,       // flying along the grapple line
+	Brace,         // weapon braced against a pouncing foe
+	Pounce,        // leaping onto a foe
+	Shocked,       // ambushed: frozen in surprise, open to a critical
+	Impaled,       // caught on a braced blade
+};
+
+UENUM(BlueprintType)
+enum class EGrappleMode : uint8
+{
+	None,
+	ToPoint,      // swing up to a grapple point's ledge
+	ToFoe,        // reel yourself in to a large foe, into an aerial strike
+	ReelFoe,      // drag a smaller foe to your blade
 };
 
 // A sword-and-shield knight in the Elden Ring mould, used for the player and (through ASoulsEnemy)
@@ -48,6 +63,10 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Knight")
 	TObjectPtr<UStaticMeshComponent> Shield;
+
+	// The grapple's line, stretched from the off hand to the hook while it's out.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Knight")
+	TObjectPtr<UStaticMeshComponent> GrappleLine;
 
 	// 0 = players, 1 = the island's enemies. Knights never hurt their own team.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight")
@@ -92,6 +111,15 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight|Animation")
 	TObjectPtr<UAnimMontage> CriticalMontage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight|Animation")
+	TObjectPtr<UAnimMontage> ThrowMontage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight|Animation")
+	TObjectPtr<UAnimMontage> SwimMontage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight|Animation")
+	TObjectPtr<UAnimMontage> SwimIdleMontage;
 
 	// Play-rate of every attack animation (enemies swing slower so their attacks read).
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight|Animation")
@@ -191,6 +219,32 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight|Heal")
 	float FlaskHealing = 55.f;
 
+	// ---- Grapple ----
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight|Grapple")
+	float GrappleRange = 3400.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight|Grapple")
+	float GrappleFoeRange = 1800.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight|Grapple")
+	float GrappleCost = 12.f;
+
+	// ---- Pounce (enemies that leap) / brace ----
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight|Pounce")
+	float PounceDamage = 38.f;
+
+	// ---- Swimming ----
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight|Swim")
+	float SwimStaminaPerSecond = 7.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight|Swim")
+	float DrownDamagePerSecond = 14.f;
+
+	// ---- Fear (enemies) ----
+	// 0..100. Shaken from 30 (slow, faltering swings), terrified from 60 (cowers or flees).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Knight|Fear")
+	float Fear = 0.f;
+
 	// Runes this foe is worth when felled.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight|Rewards")
 	int32 RuneReward = 0;
@@ -250,7 +304,16 @@ public:
 
 	bool IsBusy() const { return Action != EKnightAction::None; }
 	bool IsAttacking() const { return Action == EKnightAction::LightAttack || Action == EKnightAction::HeavyAttack; }
-	bool IsOpenToCritical() const { return Action == EKnightAction::Parried; }
+	bool IsOpenToCritical() const { return Action == EKnightAction::Parried || Action == EKnightAction::Shocked; }
+	bool IsShocked() const { return Action == EKnightAction::Shocked; }
+	bool IsBracing() const { return Action == EKnightAction::Brace; }
+	bool IsPouncing() const { return Action == EKnightAction::Pounce; }
+	bool IsSwimming() const;
+	bool IsShaken() const { return Fear >= 30.f; }
+	bool IsTerrified() const { return Fear >= 60.f; }
+	EGrappleMode GetGrappleMode() const { return GrappleMode; }
+	AActor* GetGrappleCandidate() const { return GrappleCandidate.Get(); }
+	float GetLastAmbushTime() const { return LastAmbushTime; }
 	float GetActionProgress() const { return ActionDuration > 0.f ? ActionElapsed / ActionDuration : 1.f; }
 	float GetLastDamagedTime() const { return LastDamagedTime; }
 	ASoulsKnight* GetLockTarget() const { return LockTarget.Get(); }
@@ -273,6 +336,19 @@ public:
 	void HealPressed();
 	void InteractPressed();
 	void ToggleLockOn();
+	void GrapplePressed();
+
+	// Fear and surprise (enemies).
+	void AddFear(float Amount);
+	void Shock(float Duration);
+	bool WasKilledByAmbush() const { return bKilledByAmbush; }
+
+	// Leaping attack (enemies): crouch, then launch onto Target.
+	void BeginPounce(ASoulsKnight* Target);
+	// Pounced on without a braced blade: knocked flat.
+	void GetPinned(ASoulsKnight* Pouncer);
+	// Pounced on with a braced blade: the pouncer is run through and rolls off dead.
+	void ImpalePouncer(ASoulsKnight* Pouncer);
 
 	// Rested at a Site of Grace: full health, stamina and flasks.
 	void RestoreAll();
@@ -333,6 +409,20 @@ private:
 	void LoseHealth(float Amount, AActor* Source);
 	void Interrupt();
 
+	// Grapple / brace / pounce / swim (SoulsKnightAbilities.cpp)
+	AActor* FindGrappleTarget() const;
+	void StartGrapple(AActor* Target);
+	void LaunchGrapple();
+	void TickGrapple(float DeltaSeconds);
+	void EndGrapple(bool bArrived);
+	void UpdateGrappleLine();
+	ASoulsKnight* FindIncomingPouncer() const;
+	void StartBrace();
+	void LaunchPounce();
+	void TickPounce(float DeltaSeconds);
+	void TickSwimming(float DeltaSeconds);
+	void TickFear(float DeltaSeconds);
+
 	// Lock-on
 	ASoulsKnight* FindLockTarget() const;
 	void UpdateLockOn(float DeltaSeconds);
@@ -357,6 +447,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> InteractAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> GrappleAction;
 
 	TWeakObjectPtr<ASoulsKnight> LockTarget;
 	TWeakObjectPtr<ASoulsKnight> CriticalVictim;
@@ -390,4 +483,25 @@ private:
 	FTimerHandle HealTimer;
 	FTimerHandle HitstopTimer;
 	FTimerHandle WhooshTimer;
+	FTimerHandle GrappleTimer;
+	FTimerHandle PounceTimer;
+
+	EGrappleMode GrappleMode = EGrappleMode::None;
+	TWeakObjectPtr<AActor> GrappleTarget;
+	TWeakObjectPtr<AActor> GrappleCandidate;
+	FVector GrappleStart = FVector::ZeroVector;
+	FVector GrappleEnd = FVector::ZeroVector;
+	FVector GrappleHook = FVector::ZeroVector;
+	float GrappleT = 0.f;
+	float GrappleDuration = 0.f;
+	bool bGrappleFlying = false;
+	float GrappleCandidateCheck = 0.f;
+
+	TWeakObjectPtr<ASoulsKnight> PounceTarget;
+	TWeakObjectPtr<ASoulsKnight> Impaler;
+	bool bPounceAirborne = false;
+	bool bWasSwimming = false;
+	bool bKilledByAmbush = false;
+	float LastFearTime = -100.f;
+	float LastAmbushTime = -100.f;
 };

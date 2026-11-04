@@ -43,6 +43,21 @@ void ASoulsEnemy::BeginPlay()
 	GetCharacterMovement()->MaxWalkSpeed = WalkSpeed;
 }
 
+void ASoulsEnemy::MakeLeaper()
+{
+	bCanPounce = true;
+	DisplayName = NSLOCTEXT("Souls", "Leaper", "Hollow Leaper");
+	MaxHealth = 80.f;
+	MaxHP = MaxHealth;
+	CurrentHP = MaxHealth;
+	ChaseSpeed = 560.f;
+	BlockChance = 0.1f;
+	MaxComboLength = 2;
+	RuneReward = 300;
+	SetActorScale3D(FVector(0.94f));
+	LastPounceTime = GetWorld()->GetTimeSeconds() - PounceCooldown + 1.5f;
+}
+
 void ASoulsEnemy::EnterPhaseTwo()
 {
 	if (bPhaseTwo)
@@ -89,6 +104,7 @@ ASoulsBoss::ASoulsBoss()
 	LeashRange = 4200.f;
 	RuneReward = 12000;
 	bIsBoss = true;
+	bFearless = true;
 	bFloatingLifeBar = false;
 	bCanBeBackstabbed = false;
 	SetActorScale3D(FVector(1.45f));
@@ -168,7 +184,7 @@ void ASoulsEnemyController::OnDanger(AActor* Source)
 	}
 	// Read the incoming swing: raise the shield, or now and then roll away from it.
 	const float Roll = FMath::FRand();
-	if (Roll < Me->BlockChance)
+	if (Roll < Me->BlockChance * (Me->IsShaken() ? 0.4f : 1.f))
 	{
 		Me->BlockPressed();
 		BlockUntil = GetWorld()->GetTimeSeconds() + FMath::FRandRange(0.7f, 1.3f);
@@ -214,6 +230,11 @@ void ASoulsEnemyController::Tick(float DeltaSeconds)
 			ASoulsKnight* Player = Cast<ASoulsKnight>(UGameplayStatics::GetPlayerPawn(this, 0));
 			if (Player && !Player->IsDead() && CanSee(Player))
 			{
+				// Turned round to find the player already at arm's length: startled stiff.
+				if (!Me->bFearless && FVector::Dist(Player->GetActorLocation(), Me->GetActorLocation()) < 520.f && !Me->IsBusy())
+				{
+					Me->Shock(1.3f);
+				}
 				Engage(Player);
 			}
 		}
@@ -294,6 +315,55 @@ void ASoulsEnemyController::ThinkCombat(ASoulsKnight* Foe, float DeltaSeconds)
 		return;
 	}
 
+	// Terrified: break and run, or cower where it stands; shaken: hesitant and wild.
+	if (!Me->bFearless && Me->IsTerrified())
+	{
+		if (Me->IsBlocking())
+		{
+			Me->BlockReleased();
+		}
+		if (FleeUntil < Now && CowerUntil < Now)
+		{
+			if (FMath::FRand() < 0.55f)
+			{
+				FleeUntil = Now + FMath::FRandRange(2.f, 3.5f);
+			}
+			else
+			{
+				CowerUntil = Now + FMath::FRandRange(1.5f, 2.5f);
+			}
+		}
+		if (FleeUntil > Now)
+		{
+			Me->GetCharacterMovement()->bOrientRotationToMovement = true;
+			Me->GetCharacterMovement()->MaxWalkSpeed = Me->ChaseSpeed;
+			Steer(-Dir + FVector::CrossProduct(FVector::UpVector, Dir) * StrafeSign * 0.4f, 1.f);
+			return;
+		}
+		if (CowerUntil > Now)
+		{
+			// Backs away, shield up and trembling, never committing to a swing.
+			Me->GetCharacterMovement()->bOrientRotationToMovement = false;
+			Me->SetActorRotation(FMath::RInterpConstantTo(Me->GetActorRotation(), FRotator(0.f, Dir.Rotation().Yaw, 0.f), DeltaSeconds, 200.f));
+			Me->GetCharacterMovement()->MaxWalkSpeed = Me->WalkSpeed * 0.5f;
+			Steer(-Dir, 0.4f);
+			return;
+		}
+	}
+
+	// Leapers spring from mid range when they have the moment.
+	if (Me->bCanPounce && !Me->IsShaken() && Now - Me->LastPounceTime > Me->PounceCooldown
+		&& Distance > Me->PounceRange.X && Distance < Me->PounceRange.Y && CanSee(Foe))
+	{
+		ASoulsGameMode* PounceMode = GetWorld()->GetAuthGameMode<ASoulsGameMode>();
+		if (!PounceMode || PounceMode->RequestAttackToken(Me))
+		{
+			Me->LastPounceTime = Now;
+			Me->BeginPounce(Foe);
+			return;
+		}
+	}
+
 	// Face the foe whenever not swinging.
 	const float Yaw = Dir.Rotation().Yaw;
 	Me->GetCharacterMovement()->bOrientRotationToMovement = Distance > Me->AttackRange * 2.2f;
@@ -358,5 +428,5 @@ void ASoulsEnemyController::ThinkCombat(ASoulsKnight* Foe, float DeltaSeconds)
 		Me->DoComboAttackStart();
 		SwingsLeft = FMath::RandRange(0, FMath::Max(Me->MaxComboLength - 1, 0));
 	}
-	NextDecision = Now + FMath::FRandRange(Me->AttackPause.X, Me->AttackPause.Y);
+	NextDecision = Now + FMath::FRandRange(Me->AttackPause.X, Me->AttackPause.Y) * (Me->IsShaken() ? 1.7f : 1.f);
 }

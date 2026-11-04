@@ -46,6 +46,25 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy")
 	bool bIsBoss = false;
 
+	// Leapers spring onto the player from range: brace (parry button) to impale them.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy|Pounce")
+	bool bCanPounce = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy|Pounce")
+	FVector2D PounceRange = FVector2D(450.f, 1000.f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy|Pounce")
+	float PounceCooldown = 6.f;
+
+	// Bosses don't scare.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy")
+	bool bFearless = false;
+
+	float LastPounceTime = -100.f;
+
+	// Turn this foe into a leaper (lighter, quicker, springs from range).
+	void MakeLeaper();
+
 	// Boss: second phase below this health fraction (faster, more aggressive).
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy|Boss")
 	float PhaseTwoAt = 0.5f;
@@ -113,4 +132,6 @@ private:
 	float BlockUntil = 0.f;
 	int32 SwingsLeft = 0;
 	float LastSightCheck = 0.f;
+	float FleeUntil = 0.f;
+	float CowerUntil = 0.f;
 };

@@ -3,6 +3,7 @@
 #include "SoulsHUD.h"
 #include "SoulsKnight.h"
 #include "SiteOfGrace.h"
+#include "GrapplePoint.h"
 #include "CombatEnemy.h"
 #include "CombatEnemySpawner.h"
 #include "CombatPlayerController.h"
@@ -61,11 +62,19 @@ void ASoulsGameMode::GatherSpawns()
 	for (TActorIterator<ATargetPoint> It(GetWorld()); It; ++It)
 	{
 		const FTransform Point = It->GetActorTransform();
-		if (It->ActorHasTag(TEXT("Enemy")))
+		if (It->ActorHasTag(TEXT("Enemy")) || It->ActorHasTag(TEXT("Leaper")))
 		{
 			FSoulsSpawn& Spawn = Spawns.AddDefaulted_GetRef();
 			Spawn.Class = EnemyClass;
 			Spawn.Transform = Point;
+			// Every third island knight (or any marked Leaper) springs from range.
+			Spawn.bLeaper = It->ActorHasTag(TEXT("Leaper")) || (Spawns.Num() % 3 == 0);
+		}
+		else if (It->ActorHasTag(TEXT("Grapple")))
+		{
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			GetWorld()->SpawnActor<AGrapplePoint>(AGrapplePoint::StaticClass(), Point.GetLocation(), FRotator(0.f, Point.Rotator().Yaw, 0.f), Params);
 		}
 		else if (It->ActorHasTag(TEXT("Boss")))
 		{
@@ -104,6 +113,13 @@ void ASoulsGameMode::GatherSpawns()
 		};
 		Add(FVector(900.f, -250.f, 0.f), false);
 		Add(FVector(1150.f, 300.f, 0.f), false);
+		Add(FVector(1250.f, -700.f, 0.f), false);
+		Spawns.Last().bLeaper = true;
+		// A hook point above the start, to try the grapple on.
+		FActorSpawnParameters HookParams;
+		HookParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		GetWorld()->SpawnActor<AGrapplePoint>(AGrapplePoint::StaticClass(), Origin - Fwd * 300.f + Right * 900.f + FVector(0.f, 0.f, 450.f),
+			(-Right).Rotation(), HookParams);
 		if (!FParse::Param(FCommandLine::Get(), TEXT("NoBoss")))
 		{
 			Add(FVector(1700.f, 0.f, 0.f), true);
@@ -134,6 +150,10 @@ ASoulsEnemy* ASoulsGameMode::SpawnFrom(FSoulsSpawn& Spawn)
 	const FVector Location = Spawn.Transform.GetLocation() + FVector(0.f, 0.f, HalfHeight + 5.f);
 	ASoulsEnemy* Enemy = GetWorld()->SpawnActor<ASoulsEnemy>(Spawn.Class, Location, FRotator(0.f, Spawn.Transform.Rotator().Yaw, 0.f), Params);
 	Spawn.Actor = Enemy;
+	if (Enemy && Spawn.bLeaper)
+	{
+		Enemy->MakeLeaper();
+	}
 	UE_LOG(LogUnrealSoulslike, Log, TEXT("Spawned %s at %s"), Enemy ? *Enemy->GetName() : TEXT("nothing"), *Location.ToString());
 	return Enemy;
 }
@@ -225,9 +245,30 @@ void ASoulsGameMode::KnightDied(ASoulsKnight* Knight)
 		return;
 	}
 
-	LastRunesGained = Knight->RuneReward;
+	// Surprise is rewarded: ambush kills pay half again, and the horror of it spreads.
+	const bool bAmbush = Knight->WasKilledByAmbush();
+	const int32 Reward = bAmbush ? Knight->RuneReward * 3 / 2 : Knight->RuneReward;
+	LastRunesGained = Reward;
 	LastRunesTime = GetWorld()->GetTimeSeconds();
-	Runes += Knight->RuneReward;
+	Runes += Reward;
+	if (bAmbush)
+	{
+		LastAmbushKillTime = LastRunesTime;
+	}
+	const float Radius = bAmbush ? 2000.f : 1100.f;
+	for (TActorIterator<ASoulsEnemy> It(GetWorld()); It; ++It)
+	{
+		if (*It == Knight || It->IsDead() || It->bFearless)
+		{
+			continue;
+		}
+		const float Distance = FVector::Dist(It->GetActorLocation(), Knight->GetActorLocation());
+		if (Distance < Radius)
+		{
+			const float Falloff = 1.f - 0.6f * Distance / Radius;
+			It->AddFear((bAmbush ? 62.f : 18.f) * Falloff);
+		}
+	}
 	const ASoulsEnemy* Enemy = Cast<ASoulsEnemy>(Knight);
 	if (Enemy && Enemy->bIsBoss)
 	{

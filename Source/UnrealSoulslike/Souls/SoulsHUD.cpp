@@ -3,6 +3,7 @@
 #include "SoulsGameMode.h"
 #include "SoulsKnight.h"
 #include "SiteOfGrace.h"
+#include "GrapplePoint.h"
 #include "Engine/Canvas.h"
 #include "Engine/Engine.h"
 #include "Engine/Font.h"
@@ -109,6 +110,70 @@ void ASoulsHUD::DrawHUD()
 
 		DrawLockOn(Knight);
 
+		// Grapple: a hook glyph on whatever the grapple would catch.
+		if (const AActor* Hook = Knight->GetGrappleCandidate())
+		{
+			const bool bPoint = Hook->IsA<AGrapplePoint>();
+			const FVector Screen = Project(Hook->GetActorLocation() + FVector(0.f, 0.f, bPoint ? 0.f : 60.f), false);
+			if (Screen.Z > 0.f)
+			{
+				const float R = 11.f * S;
+				const FLinearColor Teal(0.5f, 0.95f, 0.85f, 0.95f);
+				DrawLine(Screen.X, Screen.Y - R, Screen.X + R, Screen.Y, Teal, 2.f);
+				DrawLine(Screen.X + R, Screen.Y, Screen.X, Screen.Y + R, Teal, 2.f);
+				DrawLine(Screen.X, Screen.Y + R, Screen.X - R, Screen.Y, Teal, 2.f);
+				DrawLine(Screen.X - R, Screen.Y, Screen.X, Screen.Y - R, Teal, 2.f);
+				Text(TEXT("RT / G"), Screen.X, Screen.Y + R + 4.f * S, FLinearColor(Teal.R, Teal.G, Teal.B, 0.8f), 0.6f * S, true);
+			}
+		}
+
+		// Something is leaping at you: brace!
+		for (TActorIterator<ASoulsKnight> It(GetWorld()); It; ++It)
+		{
+			if (It->IsPouncing() && It->Team != Knight->Team && FVector::Dist(It->GetActorLocation(), Knight->GetActorLocation()) < 1400.f)
+			{
+				const float Pulse = 0.65f + 0.35f * FMath::Sin(Now * 18.f);
+				Text(TEXT("BRACE   [ LT / C ]"), Canvas->ClipX * 0.5f, Canvas->ClipY * 0.8f, FLinearColor(1.f, 0.85f, 0.5f, Pulse), 0.8f * S, true, TitleFont ? TitleFont.Get() : nullptr);
+				break;
+			}
+		}
+
+		// Shock and fear over enemies' heads.
+		for (TActorIterator<ASoulsEnemy> It(GetWorld()); It; ++It)
+		{
+			const ASoulsEnemy* Enemy = *It;
+			if (Enemy->IsDead() || FVector::Dist(Enemy->GetActorLocation(), Knight->GetActorLocation()) > 2500.f)
+			{
+				continue;
+			}
+			const TCHAR* Mark = nullptr;
+			FLinearColor MarkColor;
+			if (Enemy->IsShocked())
+			{
+				Mark = TEXT("!");
+				MarkColor = FLinearColor(1.f, 0.82f, 0.3f);
+			}
+			else if (Enemy->IsTerrified())
+			{
+				Mark = TEXT("!!");
+				MarkColor = FLinearColor(0.7f, 0.75f, 1.f);
+			}
+			else if (Enemy->IsShaken())
+			{
+				Mark = TEXT("?");
+				MarkColor = FLinearColor(0.75f, 0.78f, 0.95f, 0.8f);
+			}
+			if (Mark)
+			{
+				const FVector Screen = Project(Enemy->GetActorLocation() + FVector(0.f, 0.f, 150.f * Enemy->GetActorScale3D().Z), false);
+				if (Screen.Z > 0.f)
+				{
+					const float Bob = 3.f * FMath::Sin(Now * 6.f);
+					Text(Mark, Screen.X, Screen.Y - 20.f * S + Bob, MarkColor, 0.55f * S, true, TitleFont ? TitleFont.Get() : nullptr);
+				}
+			}
+		}
+
 		// Thin health bars over hurt (or targeted) enemies, as in the games.
 		for (TActorIterator<ASoulsEnemy> It(GetWorld()); It; ++It)
 		{
@@ -139,8 +204,9 @@ void ASoulsHUD::DrawHUD()
 				TEXT("Light  X / LMB     Heavy  Y / RT / F     Parry  LT / C"),
 				TEXT("Roll  tap B / Shift     Sprint  hold B / Shift     Jump  A / Space"),
 				TEXT("Guard  LB / RMB     Flask  RB / R     Lock on  R3 / MMB / Q"),
+				TEXT("Grapple  RT / G     Brace a leaping foe  LT / C     Strike the unaware for an ambush"),
 			};
-			float LineY = Canvas->ClipY - 140.f * S;
+			float LineY = Canvas->ClipY - 170.f * S;
 			for (const TCHAR* Line : Lines)
 			{
 				Text(Line, Canvas->ClipX - 60.f * S - 760.f * S, LineY, FLinearColor(HudParchment.R, HudParchment.G, HudParchment.B, Alpha), 0.8f * S, false);
@@ -160,6 +226,11 @@ void ASoulsHUD::DrawHUD()
 		GetTextSize(Runes, W, H, GEngine->GetLargeFont(), 1.1f * S);
 		Text(Runes, RX - W, RY, HudParchment, 1.1f * S, false);
 		DrawRect(HudGold, RX - 220.f * S, RY + 8.f * S, 14.f * S, 14.f * S);
+		if (Now - GameMode->LastAmbushKillTime < 2.5f)
+		{
+			Text(TEXT("Ambush"), RX - 230.f * S, RY - 40.f * S,
+				FLinearColor(1.f, 0.82f, 0.4f, FMath::Clamp(2.5f - (Now - GameMode->LastAmbushKillTime), 0.f, 1.f)), 0.45f * S, false, TitleFont ? TitleFont.Get() : nullptr);
+		}
 		if (Now - GameMode->LastRunesTime < 2.5f && GameMode->LastRunesGained > 0)
 		{
 			Text(FString::Printf(TEXT("+%d"), GameMode->LastRunesGained), RX, RY - 40.f * S,

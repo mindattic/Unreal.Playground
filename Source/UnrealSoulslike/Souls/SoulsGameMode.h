@@ -25,6 +25,7 @@ struct FSoulsSpawn
 	TWeakObjectPtr<ASoulsEnemy> Actor;
 
 	bool bBoss = false;
+	bool bLeaper = false;
 };
 
 // Runs the island: spawns enemies, the boss and Sites of Grace at the level's tagged TargetPoints
@@ -70,6 +71,7 @@ public:
 	float BossArenaRadius = 2600.f;
 
 	int32 Runes = 0;
+	float LastAmbushKillTime = -100.f;
 	int32 LastRunesGained = 0;
 	float LastRunesTime = -100.f;
 

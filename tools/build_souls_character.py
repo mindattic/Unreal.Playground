@@ -21,7 +21,8 @@ UAL2_GLB = os.path.join(PROJECT, "SourceArt", "Animations", "UAL", "UAL2", "UAL2
 
 # Clip (as named in the source file) -> name of the retargeted Manny animation.
 UAL1_CLIPS = {"Roll": "A_Roll", "Sword_Idle": "A_SwordIdle", "Hit_Chest": "A_HitChest", "Death01": "A_Death",
-              "Sword_Attack": "A_SwordAttack"}
+              "Sword_Attack": "A_SwordAttack", "Swim_Fwd_Loop": "A_SwimFwd", "Swim_Idle_Loop": "A_SwimIdle",
+              "Spell_Simple_Shoot": "A_Throw"}
 UAL2_CLIPS = {"Sword_Regular_A": "A_SwordA", "Sword_Regular_B": "A_SwordB", "Sword_Regular_C": "A_SwordC",
               "Sword_Block": "A_Block", "Consume": "A_Consume", "Idle_Shield_Break": "A_GuardBreak",
               "Shield_OneShot": "A_Parry", "Hit_Knockback": "A_Knockback"}
@@ -199,7 +200,8 @@ WEAPONS_SRC = os.path.join(PROJECT, "SourceArt", "Weapons")
 MONTAGES = [("A_SwordA", "AM_SwordA"), ("A_SwordB", "AM_SwordB"), ("A_SwordC", "AM_SwordC"),
             ("A_SwordAttack", "AM_SwordHeavy"), ("A_SwordAttack", "AM_Critical"), ("A_Roll", "AM_Roll"),
             ("A_Block", "AM_Block"), ("A_Consume", "AM_Heal"), ("A_HitChest", "AM_Hit"),
-            ("A_Parry", "AM_Parry"), ("A_Knockback", "AM_Stagger"), ("A_GuardBreak", "AM_GuardBreak")]
+            ("A_Parry", "AM_Parry"), ("A_Knockback", "AM_Stagger"), ("A_GuardBreak", "AM_GuardBreak"),
+            ("A_SwimFwd", "AM_Swim"), ("A_SwimIdle", "AM_SwimIdle"), ("A_Throw", "AM_Throw")]
 
 
 def import_texture(path, dest, normal=False):
@@ -418,7 +420,17 @@ def build_fx_materials():
     MEL.connect_material_expressions(const3(beam, (1.6, 1.0, 0.35), -400, 200), "", mul2, "B")
     MEL.connect_material_property(mul2, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
     finish(beam)
-    log("fx materials: M_GraceGlow, M_GraceBeam")
+    hook = new_material(folder, "M_GrappleGlow")
+    hook.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_UNLIT)
+    MEL.connect_material_property(const3(hook, (1.2, 4.5, 3.6), -400, 0), "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+    finish(hook)
+
+    line = new_material(folder, "M_GrappleLine")
+    MEL.connect_material_property(const3(line, (0.06, 0.05, 0.04), -400, 0), "", unreal.MaterialProperty.MP_BASE_COLOR)
+    MEL.connect_material_property(const1(line, 0.9, -400, 150), "", unreal.MaterialProperty.MP_METALLIC)
+    MEL.connect_material_property(const1(line, 0.45, -400, 250), "", unreal.MaterialProperty.MP_ROUGHNESS)
+    finish(line)
+    log("fx materials: M_GraceGlow, M_GraceBeam, M_GrappleGlow, M_GrappleLine")
 
 
 def import_audio():
@@ -482,7 +494,8 @@ def configure_knight(bp, montages, weapons, sounds, body_material=None):
     cdo.set_editor_property("SwordComboMontages", [montages[n] for n in ("AM_SwordA", "AM_SwordB", "AM_SwordC") if n in montages])
     for prop, name in (("HeavyAttackMontage", "AM_SwordHeavy"), ("RollMontage", "AM_Roll"), ("BlockMontage", "AM_Block"),
                        ("HealMontage", "AM_Heal"), ("HitMontage", "AM_Hit"), ("ParryMontage", "AM_Parry"),
-                       ("StaggerMontage", "AM_Stagger"), ("GuardBreakMontage", "AM_GuardBreak"), ("CriticalMontage", "AM_Critical")):
+                       ("StaggerMontage", "AM_Stagger"), ("GuardBreakMontage", "AM_GuardBreak"), ("CriticalMontage", "AM_Critical"),
+                       ("SwimMontage", "AM_Swim"), ("SwimIdleMontage", "AM_SwimIdle"), ("ThrowMontage", "AM_Throw")):
         if name in montages:
             cdo.set_editor_property(prop, montages[name])
     cdo.get_editor_property("mesh").set_editor_property("skeletal_mesh_asset", eal.load_asset(MANNY_MESH))
@@ -573,7 +586,8 @@ def dump_input_mappings():
 # Template bindings that collide with the knight's scheme (RMB block, RB/R heal).
 TEMPLATE_UNBIND = [("/Game/Variant_Combat/Input/Actions/IA_ChargedAttack", "RightMouseButton"),
                    ("/Game/Variant_Combat/Input/Actions/IA_ComboAttack", "Gamepad_RightShoulder"),
-                   ("/Game/Variant_Combat/Input/Actions/IA_ToggleCameraSide", "R")]
+                   ("/Game/Variant_Combat/Input/Actions/IA_ToggleCameraSide", "R"),
+                   ("/Game/Variant_Combat/Input/Actions/IA_ChargedAttack", "Gamepad_RightTriggerAxis")]
 
 
 def free_knight_keys():

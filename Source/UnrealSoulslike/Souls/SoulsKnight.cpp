@@ -2,6 +2,7 @@
 #include "SoulsEnemy.h"
 #include "SoulsGameMode.h"
 #include "SiteOfGrace.h"
+#include "GrapplePoint.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Camera/CameraComponent.h"
@@ -33,6 +34,8 @@
 #include "Sound/SoundBase.h"
 #include "TimerManager.h"
 #include "UnrealClient.h"
+#include "Engine/StaticMesh.h"
+#include "UObject/ConstructorHelpers.h"
 #include "UnrealSoulslike.h"
 
 namespace
@@ -67,6 +70,20 @@ ASoulsKnight::ASoulsKnight()
 	Shield->SetupAttachment(GetMesh(), KShieldSocket);
 	Shield->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
+	GrappleLine = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("GrappleLine"));
+	GrappleLine->SetupAttachment(RootComponent);
+	GrappleLine->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	GrappleLine->SetCastShadow(false);
+	GrappleLine->SetVisibility(false);
+	GrappleLine->SetUsingAbsoluteLocation(true);
+	GrappleLine->SetUsingAbsoluteRotation(true);
+	GrappleLine->SetUsingAbsoluteScale(true);
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> LineMesh(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	if (LineMesh.Succeeded())
+	{
+		GrappleLine->SetStaticMesh(LineMesh.Object);
+	}
+
 	RespawnTime = 5.f;
 	DeathCameraDistance = 520.f;
 	bUseControllerRotationYaw = false;
@@ -75,6 +92,8 @@ ASoulsKnight::ASoulsKnight()
 	Movement->RotationRate = FRotator(0.f, 720.f, 0.f);
 	Movement->MaxWalkSpeed = RunSpeed;
 	Movement->BrakingDecelerationWalking = 1600.f;
+	Movement->MaxSwimSpeed = 330.f;
+	Movement->Buoyancy = 1.04f;
 }
 
 void ASoulsKnight::BeginPlay()
@@ -90,6 +109,10 @@ void ASoulsKnight::BeginPlay()
 	GetCharacterMovement()->MaxWalkSpeed = RunSpeed;
 
 	ApplyBodyMaterials(BodyMaterials);
+	if (UMaterialInterface* LineMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Souls/FX/M_GrappleLine.M_GrappleLine")))
+	{
+		GrappleLine->SetMaterial(0, LineMaterial);
+	}
 	// The player's vitals are on the HUD; enemies show a bar over the head only once hurt.
 	if (UWidgetComponent* FloatingBar = FindComponentByClass<UWidgetComponent>())
 	{
@@ -147,19 +170,22 @@ void ASoulsKnight::RunVerificationDemo()
 		}
 		return Best;
 	};
-	auto Approach = [NearestFoe](ASoulsKnight* K, float Distance)
+	// Scripted scenes stage the knight at its start and bring the nearest foe to it, so the shots
+	// never wander off the edge of a small test map.
+	const FVector Origin = GetActorLocation();
+	const FVector OriginFwd = GetActorForwardVector().GetSafeNormal2D();
+	auto Approach = [NearestFoe, Origin, OriginFwd](ASoulsKnight* K, float Distance)
 	{
+		K->SetActorLocation(Origin, false, nullptr, ETeleportType::TeleportPhysics);
+		K->SetActorRotation(OriginFwd.Rotation());
 		if (ASoulsKnight* Foe = NearestFoe(K))
 		{
-			const FVector Dir = (K->GetActorLocation() - Foe->GetActorLocation()).GetSafeNormal2D();
-			FVector Spot = Foe->GetActorLocation() + Dir * Distance;
-			Spot.Z = K->GetActorLocation().Z;
-			K->SetActorLocation(Spot, false, nullptr, ETeleportType::TeleportPhysics);
-			K->FaceTowards(Foe->GetActorLocation());
-			if (K->Controller)
-			{
-				K->Controller->SetControlRotation(FRotator(-12.f, K->GetActorRotation().Yaw + 35.f, 0.f));
-			}
+			Foe->SetActorLocation(Origin + OriginFwd * Distance + FVector(0.f, 0.f, 5.f), false, nullptr, ETeleportType::TeleportPhysics);
+			Foe->FaceTowards(Origin);
+		}
+		if (K->Controller)
+		{
+			K->Controller->SetControlRotation(FRotator(-12.f, K->GetActorRotation().Yaw + 35.f, 0.f));
 		}
 	};
 	const TArray<FStep> Steps = {
@@ -174,7 +200,7 @@ void ASoulsKnight::RunVerificationDemo()
 		{ 8.75f, [](ASoulsKnight* K) { K->Shot(TEXT("05_roll")); } },
 		{ 10.0f, [](ASoulsKnight* K) { K->BlockPressed(); } },
 		{ 10.8f, [](ASoulsKnight* K) { K->Shot(TEXT("06_block")); } },
-		{ 11.5f, [](ASoulsKnight* K) { K->BlockReleased(); K->LoseHealth(50.f, nullptr); } },
+		{ 11.5f, [](ASoulsKnight* K) { K->BlockReleased(); K->LoseHealth(FMath::Min(50.f, K->CurrentHP - 30.f), nullptr); } },
 		{ 12.0f, [](ASoulsKnight* K) { K->HealPressed(); } },
 		{ 12.8f, [](ASoulsKnight* K) { K->Shot(TEXT("07_heal")); } },
 		{ 14.5f, [](ASoulsKnight* K) { K->Jump(); } },
@@ -189,6 +215,55 @@ void ASoulsKnight::RunVerificationDemo()
 		{ 24.0f, [](ASoulsKnight* K) { K->Shot(TEXT("12_fight")); } },
 		{ 27.0f, [](ASoulsKnight* K) { K->Shot(TEXT("13_fight")); } },
 		{ 30.0f, [](ASoulsKnight* K) { K->Shot(TEXT("14_fight")); } },
+		// Grapple to a hook point.
+		{ 31.0f, [](ASoulsKnight* K)
+			{
+				K->LockTarget = nullptr;
+				for (TActorIterator<AGrapplePoint> It(K->GetWorld()); It; ++It)
+				{
+					K->SetActorLocation(It->GetActorLocation() - It->GetActorForwardVector() * 900.f - FVector(0.f, 0.f, 330.f), false, nullptr, ETeleportType::TeleportPhysics);
+					if (K->Controller)
+					{
+						K->Controller->SetControlRotation((It->GetActorLocation() - K->GetFollowCamera()->GetComponentLocation()).Rotation());
+					}
+					break;
+				}
+			} },
+		{ 31.3f, [](ASoulsKnight* K) { K->GrapplePressed(); } },
+		{ 31.6f, [](ASoulsKnight* K) { K->Shot(TEXT("15_grapple_fly")); } },
+		{ 33.0f, [](ASoulsKnight* K) { K->Shot(TEXT("16_grapple_land")); } },
+		// Reel a foe in.
+		{ 34.0f, [Approach, NearestFoe](ASoulsKnight* K) { Approach(K, 1000.f); K->LockTarget = NearestFoe(K); } },
+		{ 34.3f, [](ASoulsKnight* K) { K->GrapplePressed(); } },
+		{ 34.65f, [](ASoulsKnight* K) { K->Shot(TEXT("17_reel")); } },
+		{ 35.3f, [](ASoulsKnight* K) { K->Shot(TEXT("18_reeled")); K->DoComboAttackStart(); } },
+		{ 36.0f, [](ASoulsKnight* K) { K->Shot(TEXT("19_reel_crit")); } },
+		// A foe pounces: brace and impale it.
+		{ 38.0f, [NearestFoe, Approach](ASoulsKnight* K)
+			{
+				K->LockTarget = nullptr;
+				Approach(K, 800.f);
+				if (ASoulsKnight* Foe = NearestFoe(K))
+				{
+					Foe->Interrupt();
+					Foe->EndAction();
+					Foe->BeginPounce(K);
+					if (K->Controller)
+					{
+						K->Controller->SetControlRotation(FRotator(-8.f, K->GetActorRotation().Yaw + 70.f, 0.f));
+					}
+				}
+			} },
+		{ 38.45f, [](ASoulsKnight* K) { K->ParryPressed(); } },
+		{ 38.9f, [](ASoulsKnight* K) { K->Shot(TEXT("20_pounce")); } },
+		{ 39.45f, [](ASoulsKnight* K) { K->Shot(TEXT("21_impaled")); } },
+		{ 40.4f, [](ASoulsKnight* K) { K->Shot(TEXT("22_rolled_off")); } },
+		// Ambush: a foe caught by surprise freezes; terror spreads.
+		{ 42.0f, [Approach, NearestFoe](ASoulsKnight* K) { Approach(K, 170.f); if (ASoulsKnight* Foe = NearestFoe(K)) { Foe->Shock(2.5f); } } },
+		{ 42.4f, [](ASoulsKnight* K) { K->Shot(TEXT("23_shocked")); K->DoComboAttackStart(); } },
+		{ 43.2f, [](ASoulsKnight* K) { K->Shot(TEXT("24_ambush_crit")); } },
+		{ 45.0f, [Approach, NearestFoe](ASoulsKnight* K) { Approach(K, 500.f); if (ASoulsKnight* Foe = NearestFoe(K)) { Foe->AddFear(80.f); } } },
+		{ 46.5f, [](ASoulsKnight* K) { K->Shot(TEXT("25_terrified")); } },
 	};
 	for (const FStep& Step : Steps)
 	{
@@ -233,6 +308,7 @@ void ASoulsKnight::EnsureKnightInput()
 	ParryAction = MakeAction(TEXT("IA_KnightParry"));
 	LockOnAction = MakeAction(TEXT("IA_KnightLockOn"));
 	InteractAction = MakeAction(TEXT("IA_KnightInteract"));
+	GrappleAction = MakeAction(TEXT("IA_KnightGrapple"));
 
 	KnightMappingContext = NewObject<UInputMappingContext>(this, TEXT("IMC_Knight"));
 	KnightMappingContext->MapKey(DodgeAction, EKeys::Gamepad_FaceButton_Right);
@@ -248,6 +324,9 @@ void ASoulsKnight::EnsureKnightInput()
 	KnightMappingContext->MapKey(LockOnAction, EKeys::Q);
 	KnightMappingContext->MapKey(InteractAction, EKeys::Gamepad_DPad_Up);
 	KnightMappingContext->MapKey(InteractAction, EKeys::E);
+	KnightMappingContext->MapKey(GrappleAction, EKeys::Gamepad_RightTrigger);
+	KnightMappingContext->MapKey(GrappleAction, EKeys::G);
+	KnightMappingContext->MapKey(GrappleAction, EKeys::ThumbMouseButton);
 	// Light/heavy reuse the template's actions; these guarantee X/Y and LMB/F whatever its map says.
 	if (ComboAttackAction)
 	{
@@ -288,6 +367,7 @@ void ASoulsKnight::SetupPlayerInputComponent(UInputComponent* PlayerInputCompone
 		Input->BindAction(ParryAction, ETriggerEvent::Started, this, &ASoulsKnight::ParryPressed);
 		Input->BindAction(LockOnAction, ETriggerEvent::Started, this, &ASoulsKnight::ToggleLockOn);
 		Input->BindAction(InteractAction, ETriggerEvent::Started, this, &ASoulsKnight::InteractPressed);
+		Input->BindAction(GrappleAction, ETriggerEvent::Started, this, &ASoulsKnight::GrapplePressed);
 	}
 }
 
@@ -439,6 +519,12 @@ void ASoulsKnight::EndAction()
 
 void ASoulsKnight::Interrupt()
 {
+	if (GrappleMode != EGrappleMode::None)
+	{
+		EndGrapple(false);
+	}
+	GetWorldTimerManager().ClearTimer(PounceTimer);
+	bPounceAirborne = false;
 	GetWorldTimerManager().ClearTimer(HealTimer);
 	GetWorldTimerManager().ClearTimer(HitTimer);
 	GetWorldTimerManager().ClearTimer(WhooshTimer);
@@ -451,7 +537,7 @@ void ASoulsKnight::Interrupt()
 
 void ASoulsKnight::DoComboAttackStart()
 {
-	if (IsDead() || SwordComboMontages.IsEmpty())
+	if (IsDead() || IsSwimming() || SwordComboMontages.IsEmpty())
 	{
 		return;
 	}
@@ -495,7 +581,7 @@ void ASoulsKnight::StartSwing(int32 Index)
 
 void ASoulsKnight::DoChargedAttackStart()
 {
-	if (IsDead() || IsBusy() || !HeavyAttackMontage || GetCharacterMovement()->IsFalling())
+	if (IsDead() || IsSwimming() || IsBusy() || !HeavyAttackMontage || GetCharacterMovement()->IsFalling())
 	{
 		return;
 	}
@@ -564,7 +650,7 @@ void ASoulsKnight::DodgeReleased()
 
 void ASoulsKnight::DodgeToward(const FVector& Direction)
 {
-	if (IsDead() || GetCharacterMovement()->IsFalling() || !RollMontage)
+	if (IsDead() || IsSwimming() || GetCharacterMovement()->IsFalling() || !RollMontage)
 	{
 		return;
 	}
@@ -585,7 +671,7 @@ void ASoulsKnight::DodgeToward(const FVector& Direction)
 void ASoulsKnight::BlockPressed()
 {
 	bBlockHeld = true;
-	if (!IsBusy())
+	if (!IsBusy() && !IsSwimming())
 	{
 		SetBlocking(true);
 	}
@@ -635,7 +721,13 @@ void ASoulsKnight::SetBlocking(bool bNewBlocking)
 
 void ASoulsKnight::ParryPressed()
 {
-	if (IsDead() || IsBusy() || GetCharacterMovement()->IsFalling() || !ParryMontage || !SpendStamina(KParryCost))
+	// Something leaping at you: set the blade instead of the shield.
+	if (!IsDead() && !IsSwimming() && (!IsBusy() || Action == EKnightAction::Parry) && FindIncomingPouncer())
+	{
+		StartBrace();
+		return;
+	}
+	if (IsDead() || IsSwimming() || IsBusy() || GetCharacterMovement()->IsFalling() || !ParryMontage || !SpendStamina(KParryCost))
 	{
 		return;
 	}
@@ -654,7 +746,7 @@ bool ASoulsKnight::IsInParryWindow() const
 
 void ASoulsKnight::HealPressed()
 {
-	if (IsDead() || IsBusy() || Flasks <= 0 || CurrentHP >= MaxHP || !HealMontage)
+	if (IsDead() || IsSwimming() || IsBusy() || Flasks <= 0 || CurrentHP >= MaxHP || !HealMontage)
 	{
 		return;
 	}
@@ -727,6 +819,11 @@ void ASoulsKnight::RestoreAll()
 
 void ASoulsKnight::MeleeSweep(float Damage, float PoiseDamage, float StanceHit, bool bHeavy)
 {
+	// Fear makes the hand shake: a shaken foe's swing can go wide.
+	if (Team != 0 && IsShaken() && FMath::FRand() < (IsTerrified() ? 0.5f : 0.3f))
+	{
+		return;
+	}
 	const float Scale = GetActorScale3D().X;
 	const float Reach = SwordReach * Scale;
 	const FVector Origin = GetActorLocation();
@@ -810,6 +907,27 @@ ASoulsKnight::EMeleeResult ASoulsKnight::ReceiveMelee(ASoulsKnight* Attacker, fl
 
 	const FVector ToAttacker = (Attacker->GetActorLocation() - GetActorLocation()).GetSafeNormal2D();
 	const bool bFacing = FVector::DotProduct(GetActorForwardVector(), ToAttacker) > 0.2f;
+
+	// Ambushed (never saw it coming, or still reeling from the shock): no guard, extra damage,
+	// and the surprise freezes it in place.
+	const ASoulsEnemyController* Mind = Cast<ASoulsEnemyController>(GetController());
+	const bool bUnaware = Mind && Mind->GetMind() == EEnemyMind::Idle;
+	if (bUnaware || IsShocked())
+	{
+		Damage *= 1.5f;
+		bKilledByAmbush = Damage >= CurrentHP;
+		PlayRandomSound(HitSounds, 1.f);
+		ReceivedDamage(Damage, ImpactPoint, -ToAttacker);
+		LoseHealth(Damage, Attacker);
+		if (!IsDead() && bUnaware)
+		{
+			Shock(1.9f);
+		}
+		Hitstop(0.12f);
+		KickCamera(0.6f);
+		Attacker->KickCamera(0.6f);
+		return EMeleeResult::Hit;
+	}
 
 	if (bFacing && IsInParryWindow())
 	{
@@ -1053,6 +1171,11 @@ void ASoulsKnight::HandleDeath()
 	GetWorldTimerManager().ClearTimer(HealTimer);
 	GetWorldTimerManager().ClearTimer(BlockHoldTimer);
 	GetWorldTimerManager().ClearTimer(WhooshTimer);
+	GetWorldTimerManager().ClearTimer(PounceTimer);
+	if (GrappleMode != EGrappleMode::None)
+	{
+		EndGrapple(false);
+	}
 	CustomTimeDilation = 1.f;
 	Action = EKnightAction::None;
 	bBlocking = false;
@@ -1253,11 +1376,15 @@ void ASoulsKnight::Tick(float DeltaSeconds)
 			: FVector::ZeroVector);
 	}
 
-	// Deep water drowns, as in the games.
-	if (Movement->MovementMode == MOVE_Swimming)
+	TickGrapple(DeltaSeconds);
+	UpdateGrappleLine();
+	TickPounce(DeltaSeconds);
+	TickSwimming(DeltaSeconds);
+	TickFear(DeltaSeconds);
+	if (IsPlayerControlled() && Now - GrappleCandidateCheck > 0.1f)
 	{
-		LoseHealth(CurrentHP, nullptr);
-		return;
+		GrappleCandidateCheck = Now;
+		GrappleCandidate = (IsBusy() || IsSwimming()) ? nullptr : FindGrappleTarget();
 	}
 
 	if (!IsBusy() && !bSprinting)
