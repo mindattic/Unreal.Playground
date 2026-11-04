@@ -29,6 +29,21 @@ Warden in the stone circle and Morrigan of the Mire, a shade who melts into shad
   - lock-on
 - **Grapple.** Hook a glinting point on a ledge to be hauled up onto it. Hook a smaller enemy to
   yank it to your blade, dazed. Hook a big one to pull yourself in for a falling cut.
+- **A bestiary.** Besides the Hollow knights, the island has six kinds of foe, each a rigged CC0 model
+  with habits to match. They are posted by biome:
+  - Hollow villagers swarm you in the woods: frail and quick, they flee when hurt and call the
+    rest of the pack.
+  - A hooded huntress also hunts the woods. She rolls clear of your swings.
+  - Skeletons hold the ruined keep and the standing-stone avenue. They shamble, never flinch and
+    never fear.
+  - The peat-drowned lurch out of the marsh and lunge to grab and bite. Roll or step back to slip
+    the grab.
+  - Fen imps leap at you from range in the marsh.
+  - Club-wielding brutes walk the heather moor. They are slow, crush you with heavy blows and are
+    hard to stagger.
+
+  The player is a hooded ranger rather than the bare mannequin. Sources and licences are in
+  `SourceArt/Characters/`.
 - **Brace and impale.** Leapers crouch and spring at you from range. Brace your blade while one is
   in the air and it's run through, held aloft and slides off dead. If you don't brace, you're
   knocked flat.
@@ -42,6 +57,14 @@ Warden in the stone circle and Morrigan of the Mire, a shade who melts into shad
 - **Swimming and exploration.** You can swim the sea and the marsh pools as long as you like.
   Golden Seeds (+1 flask), a Crimson Tear (stronger flasks) and
   rune purses wait on grapple ledges, in the marsh and on the islet.
+- **A walking mech.** A two-legged war machine stands parked in the dunes off the path. Walk up
+  and press D-pad up / F to climb into its cockpit. The left stick / WASD drives the legs
+  (throttle and turn, with weight and inertia); the right stick / mouse twists the torso up to
+  100 degrees off the legs and aims the gun arms. X / LMB / RT fires the twin autocannons, Y / RMB / LT a
+  missile salvo; both build heat, and an overheat locks them out. LB / C swings the legs round
+  under the torso and R3 / V swaps to the cockpit view. Every step is procedural and shakes the
+  ground. Enemies come for it and hack at its legs; at zero armour it's wrecked, you're thrown
+  clear, and it reboots after a while. Press D-pad up / F again to climb out.
 - **Elden Ring trappings.**
   - Sites of Grace: rest to refill, which also brings the enemies back.
   - Runes, which you lose when you die.
@@ -91,5 +114,12 @@ Run these with `-RenderOffscreen` to check a build without anyone at the control
   camera, shoots each mid-spurt (`BloodDemo_1_Light` … `BloodDemo_3_Critical_Drops`) and the blood
   on the ground after (`BloodDemo_4_Decals_Side`, `BloodDemo_5_Decals_Top`), logs `BloodDemo:` lines
   ending in `BLOOD_DEMO_OK`, then quits.
+- `-MechDemo` boards the parked mech (or one it drops beside you), walks it, turns the legs, twists the
+  torso to its stop, fires the autocannons and a missile salvo at an enemy, lets an enemy hack at it,
+  then climbs out and checks the knight's controls are back. It shoots each beat (`Mech_1_parked` …
+  `Mech_13_disembarked`), logs `MechDemo:` PASS/FAIL lines ending in `MECH_DEMO_DONE`, then quits.
+- `-BestiaryShots` shows each bestiary type one at a time in front of a fixed camera. It shoots each
+  one idle, winding up, striking and in a heavy swing (`Bestiary_<Type>_1_Idle` … `_4_Heavy`), logs
+  each type's numbers (`BestiaryShots:`) ending in `BESTIARY_SHOTS_OK`, then quits.
 
 Screenshots land in `Saved/Screenshots`.

@@ -1,0 +1,4 @@
+# Quaternius Animated Mech Pack 'George' (CC0), baked by tools/convert_mech.py
+newmtl Mech
+Kd 1 1 1
+map_Kd Mech_Texture.png

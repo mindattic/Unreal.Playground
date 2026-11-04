@@ -8,6 +8,7 @@
 #include "SoulsBlood.h"
 #include "SoulsFire.h"
 #include "SoulsTorch.h"
+#include "SoulsMech.h"
 #include "Components/ShadowMergeComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
@@ -601,8 +602,8 @@ void ASoulsKnight::RunInputTest()
 		{ 8.8f, [Check](ASoulsKnight* K) { Check(TEXT("tap R3 crouches"), K->Stance == EKnightStance::Crouched, FString::Printf(TEXT("stance=%d"), (int32)K->Stance)); K->Shot(TEXT("Input_6_crouch")); } },
 		{ 9.0f, [Tap](ASoulsKnight* K) { Tap(K, EKeys::Gamepad_RightThumbstick, 0.08f); } },
 		{ 9.4f, [Check](ASoulsKnight* K) { Check(TEXT("tap R3 again stands"), K->Stance == EKnightStance::Standing, FString::Printf(TEXT("stance=%d"), (int32)K->Stance)); } },
-		{ 9.8f, [Tap](ASoulsKnight* K) { Tap(K, EKeys::Gamepad_FaceButton_Top, 0.08f); Tap(K, EKeys::Gamepad_LeftTrigger, 0.08f); } },
-		{ 10.3f, [Check](ASoulsKnight* K) { Check(TEXT("Y and LT do nothing"), K->Action == EKnightAction::None && K->GrappleMode == EGrappleMode::None && !K->bBlocking, FString::Printf(TEXT("action=%d grapple=%d"), (int32)K->Action, (int32)K->GrappleMode)); } },
+		{ 9.8f, [Tap](ASoulsKnight* K) { Tap(K, EKeys::Gamepad_FaceButton_Top, 0.08f); } },
+		{ 10.3f, [Check](ASoulsKnight* K) { Check(TEXT("Y does nothing"), K->Action == EKnightAction::None && K->GrappleMode == EGrappleMode::None && !K->bBlocking, FString::Printf(TEXT("action=%d grapple=%d"), (int32)K->Action, (int32)K->GrappleMode)); } },
 		// Reach: a foe (looking away) 3.3 m ahead; one tap of X must step in and land the blow.
 		{ 13.5f, [Side](ASoulsKnight* K)
 			{
@@ -2184,6 +2185,10 @@ void ASoulsKnight::InteractPressed()
 			Grace->Rest(this);
 		}
 		return;
+	}
+	if (!IsDead() && !IsBusy() && ASoulsMech::TryBoard(this))
+	{
+		return; // UNR-T68: climb into a parked mech in reach
 	}
 	Whistle();
 }

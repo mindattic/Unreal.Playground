@@ -1818,6 +1818,63 @@ def clear_markers():
     log("marker clearance: removed %d props %s" % (len(removed), removed))
 
 
+# ----------------------------------------------------------------------------------------------
+# The bestiary (UNR-T64/T67): monster posts by biome. An "Enemy" TargetPoint also tagged
+# "Bestiary_<Type>" spawns /Game/Souls/Bestiary/BP_SoulsEnemy_<Type> (ASoulsMonster::ClassForMarker,
+# tools/build_bestiary.py) instead of a Hollow knight.
+# ----------------------------------------------------------------------------------------------
+
+# Route posts (1-based, the enemies list in build_markers) that hold a monster.
+BESTIARY_ROUTE_POSTS = {1: "Hollow", 3: "Skeleton", 5: "Skeleton", 6: "Zombie", 7: "Imp", 8: "Brute"}
+# (kind, route t, side offset cm): hollow pack and a huntress in the woods (positive side = toward the
+# woodland), skeletons in the ruined keep and on the standing-stone avenue, the drowned and an imp in
+# the marsh (negative side), brutes on the heather moor.
+BESTIARY_POSTS = [
+    ("Hollow", 0.26, 1500.0), ("Hollow", 0.27, 1850.0), ("Hollow", 0.28, 1450.0), ("Huntress", 0.31, 2000.0),
+    ("Skeleton", 0.46, -1500.0), ("Skeleton", 0.48, -2100.0),
+    ("Zombie", 0.58, -1900.0), ("Zombie", 0.60, -1500.0), ("Zombie", 0.62, -2050.0), ("Imp", 0.61, -2600.0),
+    ("Brute", 0.76, 1700.0), ("Brute", 0.88, -1400.0),
+]
+
+
+def build_bestiary_markers(route):
+    # clear_markers() deletes any ruin or standing stone over a marker, so keep 2.5 m clear of them.
+    solid = []
+    for a in actors_sub.get_all_level_actors():
+        if isinstance(a, unreal.StaticMeshActor) and str(a.get_folder_path()).startswith(("Ruins", "StoneCircle")):
+            o, e = a.get_actor_bounds(False)
+            solid.append((o.x, o.y, e.x + 250.0, e.y + 250.0))
+
+    def ok(x, y):
+        return (height(x, y) > 80.0 and normal_z(x, y) > 0.8 and biome(x, y)[3] < 0.05
+                and math.hypot(x - HILL[0], y - HILL[1]) > ARENA_RADIUS + 600.0
+                and not any(abs(x - ox) < ex and abs(y - oy) < ey for ox, oy, ex, ey in solid))
+
+    # The standing-stone avenue (tools/build_island.py build_stone_circle): between the 3rd and 5th pairs.
+    posts = list(BESTIARY_POSTS) + [("Skeleton", 1.0 - (ARENA_RADIUS + 900.0 + k * 900.0) / route.length, 0.0) for k in (2, 4)]
+    placed, skipped = [], []
+    for n, (kind, t, side) in enumerate(posts):
+        spot = None
+        for shrink in (1.0, 0.75, 0.5, 0.3):   # step toward the path until the ground is dry and level
+            x, y = route.offset(t, side * shrink)
+            if ok(x, y):
+                spot = (x, y)
+                break
+        if spot is None:
+            skipped.append("%s@%.2f" % (kind, t))
+            continue
+        (px, py), (rdx, rdy) = route.at(t)
+        if side:
+            yaw = math.degrees(math.atan2(py - spot[1], px - spot[0]))   # watching the path
+        else:
+            yaw = math.degrees(math.atan2(rdy, rdx)) + 180.0             # on the path, facing the way you come
+        target_point(spot[0], spot[1], "Enemy", "Bestiary_%02d_%s" % (n + 1, kind), yaw=yaw, extra_tags=("Bestiary_" + kind,))
+        placed.append(kind)
+    log("bestiary posts: %d placed %s; %d skipped %s; route posts %s" % (len(placed), placed, len(skipped), skipped, BESTIARY_ROUTE_POSTS))
+    if skipped:
+        warn("bestiary posts skipped (no dry level ground): %s" % skipped)
+
+
 def build_markers(route, start):
     (sx, sy), (dx, dy) = route.at(0.0)
     yaw = math.degrees(math.atan2(dy, dx))
@@ -1836,7 +1893,9 @@ def build_markers(route, start):
         x, y = route.offset(t, side)
         (_, _), (rdx, rdy) = route.at(t)
         fyaw = math.degrees(math.atan2(rdy, rdx)) + (0.0 if facing == "away" else 180.0)
-        target_point(x, y, "Enemy", "Enemy_%02d" % (i + 1), yaw=fyaw, extra_tags=extra)
+        kind = BESTIARY_ROUTE_POSTS.get(i + 1)  # UNR-T64: some route posts hold a monster instead of a knight
+        target_point(x, y, "Enemy", "Enemy_%02d" % (i + 1), yaw=fyaw, extra_tags=extra + (("Bestiary_" + kind,) if kind else ()))
+    build_bestiary_markers(route)
     # Grace on the offshore islet and the shadow boss in the marsh clearing.
     ix, iy, ir = BIOMES["islet"]
     target_point(ix - ir * 0.25, iy + ir * 0.2, "Grace", "Grace_Islet")
@@ -3132,6 +3191,169 @@ def build_shells(world, models, start):
     log("shells: %d placed (%d start-beach drifts), kinds %s" % (placed, clusters, sorted(shells)))
 
 
+# ----------------------------------------------------------------------------------------------
+# The walking mech (UNR-T68): Quaternius's CC0 "George" baked into rigid parts by tools/convert_mech.py,
+# assembled and animated at runtime by ASoulsMech (Source/UnrealSoulslike/Souls/SoulsMech.*).
+# ----------------------------------------------------------------------------------------------
+
+MECH_ART = os.path.join(ART, "Mech")
+MECH_DIR = ROOT + "/Models/Mech"           # ASoulsMech loads SM_Mech_<Part> from here (MechRig::MeshFolder)
+MECH_MATS = ROOT + "/Materials/Mech"       # M_MechTracer / M_MechSmoke paths are in SoulsMech.cpp too
+MECH_PARTS = ("Pelvis", "Torso", "Canopy", "ArmL", "ArmR", "ThighL", "ShinL", "MetaL", "FootL",
+              "ThighR", "ShinR", "MetaR", "FootR")
+MECH_HALF_HEIGHT = 370.0                   # ASoulsMech's capsule (MechRig::CapsuleHalfHeight)
+
+
+def import_mech():
+    """SourceArt/Environment/Mech/SM_Mech_<Part>.obj -> /Game/Island/Models/Mech/SM_Mech_<Part>, plus T_Mech."""
+    out = {}
+    for part in MECH_PARTS:
+        target = "%s/SM_Mech_%s" % (MECH_DIR, part)
+        src = os.path.join(MECH_ART, "SM_Mech_%s.obj" % part)
+        if not os.path.exists(src):
+            warn("mech part %s missing (run tools/convert_mech.py in Blender)" % src)
+            continue
+        if REIMPORT or not eal.does_asset_exist(target):
+            tmp = "%s/Import/%s" % (MECH_DIR, part)
+            if eal.does_directory_exist(tmp):
+                eal.delete_directory(tmp)
+            if eal.does_asset_exist(target):
+                eal.delete_asset(target)
+            import_files([src], tmp)
+            meshes = assets_of(tmp, unreal.StaticMesh)
+            if not meshes:
+                warn("mech part %s: no static mesh imported" % part)
+                continue
+            if not eal.rename_asset(meshes[0].get_path_name().split(".")[0], target):
+                warn("mech part %s: could not move the mesh to %s" % (part, target))
+                continue
+        mesh = eal.load_asset(target)
+        if mesh is None:
+            continue
+        # Animated parts: no Nanite, no collision of their own (the mech's capsule collides).
+        nanite_and_collision(mesh, nanite=False, complex_collision=False)
+        out[part] = mesh
+    tex_path = MECH_DIR + "/T_Mech"
+    if REIMPORT or not eal.does_asset_exist(tex_path):
+        tmp = MECH_DIR + "/Import/Tex"
+        if eal.does_directory_exist(tmp):
+            eal.delete_directory(tmp)
+        if eal.does_asset_exist(tex_path):
+            eal.delete_asset(tex_path)
+        import_files([os.path.join(MECH_ART, "Mech_Texture.png")], tmp)
+        texs = assets_of(tmp, unreal.Texture2D)
+        if texs:
+            eal.rename_asset(texs[0].get_path_name().split(".")[0], tex_path)
+    tex = eal.load_asset(tex_path) if eal.does_asset_exist(tex_path) else None
+    log("mech: %d/%d parts imported, texture %s" % (len(out), len(MECH_PARTS), "ok" if tex else "MISSING"))
+    return out, tex
+
+
+def build_mech_materials(tex):
+    """M_Mech (the pack's painted texture, tinted, with a 'Scorch' parameter that chars it as the armour goes),
+    M_MechTracer (unlit additive glow: shells, missile exhausts, fireballs) and M_MechSmoke (soft lit smoke puff,
+    'Opacity' driven per puff from code)."""
+    def sparam(g, name, value):
+        return g.new(E.MaterialExpressionScalarParameter, parameter_name=name, default_value=value)
+
+    def vparam(g, name, rgb):
+        return g.new(E.MaterialExpressionVectorParameter, parameter_name=name, default_value=unreal.LinearColor(rgb[0], rgb[1], rgb[2], 1.0))
+
+    hull, g = new_material("M_Mech", MECH_MATS)
+    uv = g.new(E.MaterialExpressionTextureCoordinate)
+    base = (g.tex(tex, uv, "color"), "RGB") if tex else g.val((0.3, 0.4, 0.32))
+    color = g.mul(base, (vparam(g, "Tint", (1.0, 1.0, 1.0)), "RGB"))
+    noise_tex = eal.load_asset(ROOT + "/Textures/Generated/T_IslandNoise")
+    patch = (g.tex(noise_tex, g.mul(uv, 3.0), "masks"), "B") if noise_tex else 0.5
+    burnt = g.sat(g.mul(g.sub(g.add(patch, sparam(g, "Scorch", 0.0)), 1.0), 3.0))
+    g.out(g.lerp(color, (0.025, 0.022, 0.02), burnt), E.MaterialProperty.MP_BASE_COLOR)
+    g.out(g.lerp(sparam(g, "Roughness", 0.6), 0.92, burnt), E.MaterialProperty.MP_ROUGHNESS)
+    g.out(sparam(g, "Metallic", 0.35), E.MaterialProperty.MP_METALLIC)
+    finish_material(hull)
+
+    tracer, g = new_material("M_MechTracer", MECH_MATS)
+    setp(tracer, "shading_model", E.MaterialShadingModel.MSM_UNLIT)
+    setp(tracer, "blend_mode", E.BlendMode.BLEND_ADDITIVE)
+    soft = g.one_minus(g.new(E.MaterialExpressionFresnel, exponent=1.2))
+    g.out(g.mul((vparam(g, "Color", (16.0, 7.5, 2.0)), "RGB"), soft), E.MaterialProperty.MP_EMISSIVE_COLOR)
+    finish_material(tracer)
+
+    smoke, g = new_material("M_MechSmoke", MECH_MATS)
+    setp(smoke, "blend_mode", E.BlendMode.BLEND_TRANSLUCENT)
+    soft = g.one_minus(g.new(E.MaterialExpressionFresnel, exponent=1.6))
+    opacity = g.mul(sparam(g, "Opacity", 0.5), soft)
+    if noise_tex:
+        wisp = (g.tex(noise_tex, g.mul(g.new(E.MaterialExpressionTextureCoordinate), 2.0), "masks"), "R")
+        opacity = g.mul(opacity, g.lerp(0.5, 1.0, wisp))
+    g.out((vparam(g, "Tint", (0.16, 0.15, 0.14)), "RGB"), E.MaterialProperty.MP_BASE_COLOR)
+    g.out(1.0, E.MaterialProperty.MP_ROUGHNESS)
+    g.out(g.sat(opacity), E.MaterialProperty.MP_OPACITY)
+    finish_material(smoke)
+    return hull
+
+
+def build_mech(world, route, pads, start):
+    """One parked mech on open, flat ground a little off the route through the dunes, facing the path."""
+    parts, tex = import_mech()
+    if parts:
+        hull = build_mech_materials(tex)
+        for mesh in parts.values():
+            mesh.set_material(0, hull)
+            eal.save_loaded_asset(mesh)
+    cls = getattr(unreal, "SoulsMech", None)
+    if cls is None:
+        warn("mech: unreal.SoulsMech not found (compile the C++ first); no mech placed")
+        return
+    grace = route.offset(0.035, 450.0)
+    sx, sy = start
+
+    def flat_and_clear(x, y):
+        h = height(x, y)
+        if h < 120.0 or LIB.get_path_distance(x, y) < 650.0 or normal_z(x, y) < 0.965:
+            return False
+        if math.hypot(x - sx, y - sy) < 2500.0 or math.hypot(x - grace[0], y - grace[1]) < 1500.0:
+            return False
+        if any(math.hypot(x - px, y - py) < pr + 900.0 for px, py, pr in pads):
+            return False
+        for i in range(8):  # the mech's footprint (~5 m across) is level and free of props
+            a = i * math.pi / 4.0
+            rx, ry = x + math.cos(a) * 520.0, y + math.sin(a) * 520.0
+            if abs(height(rx, ry) - h) > 70.0 or normal_z(rx, ry) < 0.94:
+                return False
+            hit = trace_down(world, rx, ry, h + 3000.0, h - 500.0)
+            if hit is not None and hit[0].z > h + 60.0:
+                return False
+        hit = trace_down(world, x, y, h + 3000.0, h - 500.0)
+        return hit is None or hit[0].z < h + 60.0
+
+    spot = None
+    for t in (0.12, 0.10, 0.14, 0.08, 0.16, 0.18, 0.06):
+        for side in (1100.0, -1100.0, 1500.0, -1500.0, 900.0, -900.0, 1900.0, -1900.0):
+            x, y = route.offset(t, side)
+            if flat_and_clear(x, y):
+                spot = (x, y, t)
+                break
+        if spot:
+            break
+    if spot is None:
+        x, y = route.offset(0.12, 1100.0)
+        spot = (x, y, 0.12)
+        warn("mech: no clear flat spot found; parked at route 0.12 anyway")
+    x, y, t = spot
+    (px, py), _ = route.at(t)
+    yaw = math.degrees(math.atan2(py - y, px - x))  # facing the path, so it greets the player coming up it
+    mech = spawn(cls, (x, y, height(x, y) + MECH_HALF_HEIGHT + 15.0), unreal.Rotator(yaw=yaw), "Mech_Parked", "Gameplay/Vehicles")
+    log("mech parked at (%.0f, %.0f, %.0f) yaw %.0f, route t=%.2f, %.0f cm off the path" % (
+        x, y, height(x, y), yaw, t, LIB.get_path_distance(x, y)))
+    # A shot for -IslandShots: from the path, looking at it.
+    path = os.path.join(PROJECT, "Saved", "island_shots.txt")
+    if os.path.exists(path):
+        cx, cy = px + (px - x) * 0.25, py + (py - y) * 0.25
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(shot("mech_parked", cx, cy, height(cx, cy) + 260.0, x, y, height(x, y) + 380.0, fov=70) + "\n")
+    return mech
+
+
 def build_everything(textures, models):
     route, pads = plan_layout()
     start = route.points[0]
@@ -3172,6 +3394,7 @@ def build_everything(textures, models):
     build_tall_grass(world, models, route, pads)
     build_wildlife(models, route, start)
     build_ship_graveyard(models, route, start)
+    build_mech(world, route, pads, start)
 
     gm = unreal.load_class(None, GAME_MODE)
     if gm:

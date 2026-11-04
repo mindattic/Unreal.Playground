@@ -57,3 +57,14 @@ lines in the game's credits.
 | `Shells/Source/seashell.glb` ("Seashell": a scallop valve and a spire shell) -> `SM_Shell_Scallop.obj`, `SM_Shell_Whelk.obj` | Poly by Google | https://poly.pizza/m/5ovn4mnRejL | CC-BY 3.0 - https://creativecommons.org/licenses/by/3.0/ |
 | `Shells/Source/clam_65ObbG0O7Ze.glb` ("Clam", one valve kept) -> `SM_Shell_Cockle.obj`, `SM_Shell_CockleUp.obj` | Poly by Google | https://poly.pizza/m/65ObbG0O7Ze | CC-BY 3.0 - https://creativecommons.org/licenses/by/3.0/ |
 | `Shells/Source/clam_7UsYZIZ_rhU.glb` ("Clam", meat removed) -> `SM_Shell_Clam.obj` | Poly by Google | https://poly.pizza/m/7UsYZIZ_rhU | CC-BY 3.0 - https://creativecommons.org/licenses/by/3.0/ |
+
+## Walking mech (tools/convert_mech.py + tools/build_island.py, UNR-T68)
+
+Downloaded 2026-11-04 without a login. The original used (`George.blend`, rigged and animated, with its texture and
+the pack's own `License.txt`) is kept under `Mech/Source/`; `Mech/SM_Mech_*.obj` (13 rigid parts, gun arms posed,
+autocannon barrels and missile pods added), `Mech/Mech_Texture.png` and `Mech/mech_rig.json` are baked from it by
+`tools/convert_mech.py` (Blender 4.4+). CC0 1.0, no attribution required; given anyway.
+
+| Asset | Author | Source | License |
+|---|---|---|---|
+| Animated Mech Pack (March 2021): `George.blend` + `George_Texture.png` -> the walking mech | Quaternius (quaternius.com) | https://opengameart.org/content/animated-mech-pack (`animated_mech_pack_-_march_2021.zip`) | CC0 1.0 - https://creativecommons.org/publicdomain/zero/1.0/ |
