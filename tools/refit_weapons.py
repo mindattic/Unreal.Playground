@@ -41,6 +41,11 @@ def main():
             continue
         bp = eal.load_asset(path)
         cdo = unreal.get_default_object(unreal.load_object(None, path + "." + name + "_C"))
+        body = cdo.get_editor_property("mesh").get_editor_property("skeletal_mesh_asset")
+        if body is not None and not body.get_name().startswith("SKM_Manny"):
+            # Another body (the Ranger, UNR-T64): tools/build_bestiary.py fits its hands from these numbers.
+            lines.append("skip %s (wears %s; rerun tools/build_bestiary.py to refit it)" % (name, body.get_name()))
+            continue
         place(cdo.get_editor_property("Sword"), sword)
         place(cdo.get_editor_property("Shield"), shield)
         unreal.BlueprintEditorLibrary.compile_blueprint(bp)

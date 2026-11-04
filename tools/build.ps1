@@ -58,6 +58,9 @@ function Invoke-EditorScript([string]$Script, [string]$LogFile, [string]$OkMarke
 Invoke-EditorScript (Join-Path $PSScriptRoot 'build_souls_character.py') (Join-Path $repo 'Saved\souls_character.log') 'SOULS_CHARACTER_OK'
 # The Shade of the Fen (second boss): needs the knight's montages, weapons, audio and game mode above.
 Invoke-EditorScript (Join-Path $PSScriptRoot 'build_shadow_boss.py') (Join-Path $repo 'Saved\shadow_boss.log') 'SHADOW_BOSS_OK'
+# The bestiary (UNR-T64/T67): CC0 monsters + the Ranger player body from SourceArt/Characters/Bestiary, each
+# retargeted from Manny's kit (tools/convert_bestiary.py made the GLBs). Needs the montages and blueprints above.
+Invoke-EditorScript (Join-Path $PSScriptRoot 'build_bestiary.py') (Join-Path $repo 'Saved\bestiary.log') 'BESTIARY_OK'
 # The torches' Niagara fire (UNR-T51): CC0 Kenney sprites from SourceArt/FX, tuned via unreal.SoulsFxLibrary.
 Invoke-EditorScript (Join-Path $PSScriptRoot 'build_torch_fire.py') (Join-Path $repo 'Saved\torch_fire.log') 'TORCH_FIRE_OK'
 # Blood and guts (UNR-T56): CC0 blood sheets from SourceArt/FX/Blood -> /Game/Souls/FX/Blood (SoulsBlood.cpp).

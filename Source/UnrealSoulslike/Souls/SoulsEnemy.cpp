@@ -1,6 +1,7 @@
 #include "SoulsEnemy.h"
 #include "SoulsConcealment.h"
 #include "SoulsGameMode.h"
+#include "SoulsMonster.h" // [Bestiary UNR-T64]
 #include "CollisionQueryParams.h"
 #include "Components/CapsuleComponent.h"
 #include "Engine/World.h"
@@ -627,6 +628,11 @@ void ASoulsEnemyController::ThinkCombat(ASoulsKnight* Foe, float DeltaSeconds)
 		return;
 	}
 	if (Me->IsBusy())
+	{
+		return;
+	}
+	// [Bestiary UNR-T64] Monster types get first say: flight, swarming, grabs (SoulsMonster.cpp).
+	if (ASoulsMonster* Monster = Cast<ASoulsMonster>(Me); Monster && Monster->ThinkMonster(this, Foe, DeltaSeconds))
 	{
 		return;
 	}

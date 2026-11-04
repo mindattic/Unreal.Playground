@@ -1,6 +1,7 @@
 #include "SoulsGameMode.h"
 #include "SoulsEnemy.h"
 #include "SoulsShadowBoss.h"
+#include "SoulsMonster.h" // [Bestiary UNR-T64]
 #include "SoulsHUD.h"
 #include "SoulsKnight.h"
 #include "SiteOfGrace.h"
@@ -72,6 +73,12 @@ void ASoulsGameMode::GatherSpawns()
 			Spawn.Transform = Point;
 			// Every third island knight (or any marked Leaper) springs from range.
 			Spawn.bLeaper = It->ActorHasTag(TEXT("Leaper")) || (Spawns.Num() % 3 == 0);
+			// [Bestiary UNR-T64] A "Bestiary_<Type>" tag posts that monster here instead (SoulsMonster.cpp).
+			if (TSubclassOf<ASoulsEnemy> Monster = ASoulsMonster::ClassForMarker(*It))
+			{
+				Spawn.Class = Monster;
+				Spawn.bLeaper = false;
+			}
 		}
 		else if (It->ActorHasTag(TEXT("Loot")))
 		{
