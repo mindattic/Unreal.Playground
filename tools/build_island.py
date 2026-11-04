@@ -1445,11 +1445,11 @@ def dress_biomes(world, models, route, pads):
         return (height(x, y) > min_h and normal_z(x, y) > 0.8 and LIB.get_path_distance(x, y) > path and clear_of(x, y, keep))
 
     # Woodland: wind-bent island trees with bushes, ferns and wildflowers beneath.
-    scatter(world, rng, models["island_tree_02"], 26, lambda x, y: biome(x, y)[1] > 0.55 and land(x, y, path=900.0),
-            (1.4, 2.1), "Trees", collision=True, sink=0.02)
-    scatter(world, rng, models["shrub_02"], 70, lambda x, y: biome(x, y)[1] > 0.3 and land(x, y), (0.8, 1.4), "Shrubs",
+    scatter(world, rng, models["island_tree_02"], 48, lambda x, y: biome(x, y)[1] > 0.45 and land(x, y, path=900.0),
+            (1.6, 2.5), "Trees", collision=True, sink=0.02)
+    scatter(world, rng, models["shrub_02"], 140, lambda x, y: biome(x, y)[1] > 0.3 and land(x, y), (0.8, 1.4), "Shrubs",
             cull=9000.0)
-    scatter(world, rng, models["fern_02"], 420, lambda x, y: biome(x, y)[1] > 0.4 and land(x, y, path=350.0), (1.0, 1.8),
+    scatter(world, rng, models["fern_02"], 700, lambda x, y: biome(x, y)[1] > 0.4 and land(x, y, path=350.0), (1.0, 1.8),
             "Ferns", cull=6000.0, sink=0.02)
     scatter(world, rng, models["dandelion_01"], 500,
             lambda x, y: (biome(x, y)[1] > 0.2 or rng.random() < 0.25) and biome(x, y)[0] < 0.2 and land(x, y, path=250.0),
@@ -1686,8 +1686,8 @@ def write_shot_list(route, start, grapples=()):
     lines.append(shot("arena_inside", hx - 1500.0, hy - 1200.0, ARENA_HEIGHT + 190.0, hx + 1500, hy + 1000, ARENA_HEIGHT + 200, fov=85))
     # Biomes, swimming, a grapple ledge.
     wx, wy = BIOMES["wood"]
-    (rx, ry) = route.offset(0.22, 900.0)
-    lines.append(shot("biome_woodland", rx, ry, height(rx, ry) + 230.0, wx, wy, height(wx, wy) + 300.0, fov=80))
+    (rx, ry) = route.offset(0.27, 2600.0)
+    lines.append(shot("biome_woodland", rx, ry, height(rx, ry) + 200.0, wx, wy, height(wx, wy) + 250.0, fov=85))
     mx, my = BIOMES["marsh"]
     (rx, ry) = route.offset(0.56, -1500.0)
     lines.append(shot("biome_marsh", rx, ry, height(rx, ry) + 260.0, mx, my, MARSH_LEVEL + 150.0, fov=80))

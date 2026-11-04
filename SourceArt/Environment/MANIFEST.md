@@ -77,3 +77,11 @@ offsets, which the build compensates for from each mesh's bounds.
 | `T_WaterNormal.png` | 1024^2 tileable wave normal map (OpenGL green), panned at three scales by `M_Ocean` |
 | `T_IslandNoise.png` | 1024^2 tileable fbm noise, three scales in R/G/B (macro variation, foam, moss) |
 | `SM_GrassClump_A/B/C.obj` | blade-geometry grass clumps (154-280 tris, Z-up cm; UE's OBJ import keeps Z up and mirrors Y) for the landscape grass type `LGT_IslandTurf` |
+### Biomes (UNR-T17)
+
+| Model | Use |
+|---|---|
+| `island_tree_02` | wind-bent leafy trees in the woodland (HISM, Nanite, leaves masked by the fetched `leaves_alpha` map, light wind sway in `M_IslandFoliage`) |
+| `shrub_02`, `fern_02` | bushes and ferns under the trees (alpha maps fetched separately; the glTFs reference JPGs without alpha) |
+| `dandelion_01` | wildflowers across the grassland |
+| `Generated/SM_Marram.obj`, `SM_Reeds.obj`, `SM_Heather.obj` | landscape grass types for the dunes, the marsh and the highland |
