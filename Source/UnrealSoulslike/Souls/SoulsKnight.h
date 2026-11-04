@@ -336,6 +336,9 @@ public:
 	virtual void DoChargedAttackEnd() override {}
 	void DodgePressed();
 	void DodgeReleased();
+	void SprintPressed();
+	void JumpPressed();
+	void JumpReleased();
 	void DodgeToward(const FVector& Direction);
 	void BlockPressed();
 	void BlockReleased();
@@ -461,6 +464,12 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> GrappleAction;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> SprintAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> KnightJumpAction;
+
 	TWeakObjectPtr<ASoulsKnight> LockTarget;
 	TWeakObjectPtr<ASoulsKnight> CriticalVictim;
 	TWeakObjectPtr<AActor> TrackTarget;
@@ -478,7 +487,10 @@ private:
 	bool bHeavySwing = false;
 	bool bDodgeHeld = false;
 	bool bSprinting = false;
+	bool bSprintToggled = false;
 	float DodgePressTime = 0.f;
+	float SprintPressTime = 0.f;
+	float BlockPressTime = -100.f;
 	float ActionElapsed = 0.f;
 	float ActionDuration = 0.f;
 	float StaminaIdleTime = 0.f;

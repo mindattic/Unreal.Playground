@@ -46,7 +46,8 @@ namespace
 	constexpr float KBlockWalkSpeed = 230.f;
 	constexpr float KSprintSpeed = 760.f;
 	constexpr float KSprintStaminaPerSecond = 14.f;
-	constexpr float KDodgeHoldToSprint = 0.28f;
+	// Raising the guard this close before a blow lands turns it into a parry.
+	constexpr float KGuardParryWindow = 0.22f;
 	constexpr float KParryCost = 10.f;
 	constexpr float KLockRange = 2200.f;
 	constexpr float KLockBreakRange = 2900.f;
@@ -198,7 +199,27 @@ void ASoulsKnight::RunVerificationDemo()
 			K->Controller->SetControlRotation(FRotator(-12.f, K->GetActorRotation().Yaw + 35.f, 0.f));
 		}
 	};
+	// Close front and side views to check how the sword and shield sit in the hands.
+	auto ViewFrom = [](ASoulsKnight* K, float YawOffset, float Distance)
+	{
+		const bool bClose = Distance < 400.f;
+		K->GetCameraBoom()->TargetArmLength = Distance;
+		K->GetCameraBoom()->SocketOffset = FVector(0.f, 0.f, bClose ? -20.f : 55.f);
+		K->GetCameraBoom()->bEnableCameraLag = !bClose;
+		K->GetCameraBoom()->bEnableCameraRotationLag = !bClose;
+		if (K->Controller)
+		{
+			K->Controller->SetControlRotation(FRotator(bClose ? 0.f : -8.f, K->GetActorRotation().Yaw + YawOffset, 0.f));
+		}
+	};
 	const TArray<FStep> Steps = {
+		{ 0.3f, [ViewFrom](ASoulsKnight* K) { ViewFrom(K, 180.f, 330.f); } },
+		{ 0.6f, [](ASoulsKnight* K) { K->Shot(TEXT("00a_front")); } },
+		{ 0.7f, [ViewFrom](ASoulsKnight* K) { ViewFrom(K, 90.f, 330.f); } },
+		{ 1.0f, [](ASoulsKnight* K) { K->Shot(TEXT("00b_left_side")); } },
+		{ 1.1f, [ViewFrom](ASoulsKnight* K) { ViewFrom(K, -90.f, 330.f); } },
+		{ 1.4f, [](ASoulsKnight* K) { K->Shot(TEXT("00c_right_side")); } },
+		{ 1.5f, [ViewFrom](ASoulsKnight* K) { ViewFrom(K, 0.f, K->DefaultCameraDistance); } },
 		{ 2.0f, [](ASoulsKnight* K) { K->Shot(TEXT("00_idle")); } },
 		{ 2.5f, [](ASoulsKnight* K) { K->DoComboAttackStart(); } },
 		{ 2.75f, [](ASoulsKnight* K) { K->Shot(TEXT("01_swing_a")); K->DoComboAttackStart(); } },
@@ -381,8 +402,15 @@ void ASoulsKnight::EnsureKnightInput()
 	LockOnAction = MakeAction(TEXT("IA_KnightLockOn"));
 	InteractAction = MakeAction(TEXT("IA_KnightInteract"));
 	GrappleAction = MakeAction(TEXT("IA_KnightGrapple"));
+	SprintAction = MakeAction(TEXT("IA_KnightSprint"));
+	KnightJumpAction = MakeAction(TEXT("IA_KnightJump"));
 
 	KnightMappingContext = NewObject<UInputMappingContext>(this, TEXT("IMC_Knight"));
+	// The combat template's map has no jump at all, so the knight carries its own.
+	KnightMappingContext->MapKey(KnightJumpAction, EKeys::Gamepad_FaceButton_Bottom);
+	KnightMappingContext->MapKey(KnightJumpAction, EKeys::SpaceBar);
+	KnightMappingContext->MapKey(SprintAction, EKeys::Gamepad_LeftThumbstick);
+	KnightMappingContext->MapKey(SprintAction, EKeys::LeftControl);
 	KnightMappingContext->MapKey(DodgeAction, EKeys::Gamepad_FaceButton_Right);
 	KnightMappingContext->MapKey(DodgeAction, EKeys::LeftShift);
 	KnightMappingContext->MapKey(BlockAction, EKeys::Gamepad_LeftShoulder);
@@ -433,6 +461,9 @@ void ASoulsKnight::SetupPlayerInputComponent(UInputComponent* PlayerInputCompone
 	{
 		Input->BindAction(DodgeAction, ETriggerEvent::Started, this, &ASoulsKnight::DodgePressed);
 		Input->BindAction(DodgeAction, ETriggerEvent::Completed, this, &ASoulsKnight::DodgeReleased);
+		Input->BindAction(SprintAction, ETriggerEvent::Started, this, &ASoulsKnight::SprintPressed);
+		Input->BindAction(KnightJumpAction, ETriggerEvent::Started, this, &ASoulsKnight::JumpPressed);
+		Input->BindAction(KnightJumpAction, ETriggerEvent::Completed, this, &ASoulsKnight::JumpReleased);
 		Input->BindAction(BlockAction, ETriggerEvent::Started, this, &ASoulsKnight::BlockPressed);
 		Input->BindAction(BlockAction, ETriggerEvent::Completed, this, &ASoulsKnight::BlockReleased);
 		Input->BindAction(HealAction, ETriggerEvent::Started, this, &ASoulsKnight::HealPressed);
@@ -698,26 +729,42 @@ void ASoulsKnight::SwingHit()
 
 void ASoulsKnight::DodgePressed()
 {
-	// Tap to roll (on release), hold to sprint.
+	// B rolls the instant it's pressed; sprinting lives on L3.
 	bDodgeHeld = true;
 	DodgePressTime = GetWorld()->GetTimeSeconds();
+	bSprintToggled = false;
+	FVector Direction = GetCharacterMovement()->GetCurrentAcceleration().GetSafeNormal2D();
+	if (Direction.IsNearlyZero())
+	{
+		// No stick: roll away from whatever we face (a backstep, Souls style, but rolling).
+		Direction = LockTarget.IsValid() ? -AttackDirection() : GetActorForwardVector();
+	}
+	DodgeToward(Direction);
 }
 
 void ASoulsKnight::DodgeReleased()
 {
-	const bool bWasTap = bDodgeHeld && GetWorld()->GetTimeSeconds() - DodgePressTime < KDodgeHoldToSprint;
 	bDodgeHeld = false;
-	bSprinting = false;
-	if (bWasTap)
+}
+
+void ASoulsKnight::SprintPressed()
+{
+	// Tap L3 to break into a sprint; it lasts until you stop, guard, act or run out of stamina.
+	bSprintToggled = !bSprintToggled;
+	SprintPressTime = GetWorld()->GetTimeSeconds();
+}
+
+void ASoulsKnight::JumpPressed()
+{
+	if (!IsDead() && !IsSwimming())
 	{
-		FVector Direction = GetLastMovementInputVector().GetSafeNormal2D();
-		if (Direction.IsNearlyZero())
-		{
-			// No stick: roll away from whatever we face (a backstep, Souls style, but rolling).
-			Direction = LockTarget.IsValid() ? -AttackDirection() : GetActorForwardVector();
-		}
-		DodgeToward(Direction);
+		Jump();
 	}
+}
+
+void ASoulsKnight::JumpReleased()
+{
+	StopJumping();
 }
 
 void ASoulsKnight::DodgeToward(const FVector& Direction)
@@ -743,8 +790,15 @@ void ASoulsKnight::DodgeToward(const FVector& Direction)
 void ASoulsKnight::BlockPressed()
 {
 	bBlockHeld = true;
+	// Something leaping at you: the guard button sets the blade instead.
+	if (IsPlayerControlled() && !IsDead() && !IsSwimming() && !IsBusy() && FindIncomingPouncer())
+	{
+		StartBrace();
+		return;
+	}
 	if (!IsBusy() && !IsSwimming())
 	{
+		BlockPressTime = GetWorld()->GetTimeSeconds();
 		SetBlocking(true);
 	}
 }
@@ -1014,7 +1068,10 @@ ASoulsKnight::EMeleeResult ASoulsKnight::ReceiveMelee(ASoulsKnight* Attacker, fl
 		return EMeleeResult::Hit;
 	}
 
-	if (bFacing && IsInParryWindow())
+	// A guard raised just before the blow lands is a parry (players only; the AI blocks plainly).
+	const bool bTimedGuard = bBlocking && IsPlayerControlled()
+		&& GetWorld()->GetTimeSeconds() - BlockPressTime <= KGuardParryWindow;
+	if (bFacing && (IsInParryWindow() || bTimedGuard))
 	{
 		PlaySound(ParrySound, 1.f);
 		ReceivedDamage(0.f, ImpactPoint, -ToAttacker);
@@ -1431,11 +1488,15 @@ void ASoulsKnight::Tick(float DeltaSeconds)
 	{
 		UpdateLockOn(DeltaSeconds);
 
-		// Hold dodge to sprint.
+		// Tapped L3: sprint until the stick is released, the guard goes up or stamina runs dry.
 		const FVector Vel = GetVelocity();
 		const bool bMoving = Vel.Size2D() > 50.f;
-		bSprinting = bDodgeHeld && !IsBusy() && !bBlocking && bMoving && Stamina > 0.f
-			&& Now - DodgePressTime >= KDodgeHoldToSprint;
+		const bool bStickHeld = !Movement->GetCurrentAcceleration().IsNearlyZero();
+		if (bSprintToggled && ((!bStickHeld && Now - SprintPressTime > 0.4f) || Stamina <= 0.f || bBlocking))
+		{
+			bSprintToggled = false;
+		}
+		bSprinting = bSprintToggled && !IsBusy() && !bBlocking && bMoving && Stamina > 0.f;
 		Movement->MaxWalkSpeed = bBlocking ? KBlockWalkSpeed : (bSprinting ? KSprintSpeed : RunSpeed);
 		if (bSprinting)
 		{

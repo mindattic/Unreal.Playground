@@ -136,7 +136,7 @@ void ASoulsHUD::DrawHUD()
 			if (It->IsPouncing() && It->Team != Knight->Team && FVector::Dist(It->GetActorLocation(), Knight->GetActorLocation()) < 1400.f)
 			{
 				const float Pulse = 0.65f + 0.35f * FMath::Sin(Now * 18.f);
-				Text(TEXT("BRACE   [ LT / C ]"), Canvas->ClipX * 0.5f, Canvas->ClipY * 0.8f, FLinearColor(1.f, 0.85f, 0.5f, Pulse), 0.8f * S, true, TitleFont ? TitleFont.Get() : nullptr);
+				Text(TEXT("BRACE   [ LB / LT ]"), Canvas->ClipX * 0.5f, Canvas->ClipY * 0.8f, FLinearColor(1.f, 0.85f, 0.5f, Pulse), 0.8f * S, true, TitleFont ? TitleFont.Get() : nullptr);
 				break;
 			}
 		}
@@ -165,6 +165,14 @@ void ASoulsHUD::DrawHUD()
 			{
 				Mark = TEXT("?");
 				MarkColor = FLinearColor(0.75f, 0.78f, 0.95f, 0.8f);
+			}
+			// Two patrollers passing the time: the one talking gets a murmur over its head.
+			const ASoulsEnemyController* Mind = Cast<ASoulsEnemyController>(Enemy->GetController());
+			if (!Mark && Mind && Mind->IsSpeaking())
+			{
+				static const TCHAR* Murmurs[] = { TEXT("."), TEXT(".."), TEXT("...") };
+				Mark = Murmurs[static_cast<int32>(Now * 3.f) % 3];
+				MarkColor = FLinearColor(0.92f, 0.88f, 0.78f, 0.85f);
 			}
 			if (Mark)
 			{
@@ -204,10 +212,10 @@ void ASoulsHUD::DrawHUD()
 		{
 			const float Alpha = FMath::Clamp((HintUntil - Now) / 3.f, 0.f, 1.f) * 0.9f;
 			static const TCHAR* Lines[] = {
-				TEXT("Light  X / LMB     Heavy  Y / RT / F     Parry  LT / C"),
-				TEXT("Roll  tap B / Shift     Sprint  hold B / Shift     Jump  A / Space"),
-				TEXT("Guard  LB / RMB     Flask  RB / R     Lock on  R3 / MMB / Q"),
-				TEXT("Grapple  RT / G     Brace a leaping foe  LT / C     Strike the unaware for an ambush"),
+				TEXT("Light  X / LMB     Heavy  Y / F     Guard  LB / RMB  (raise it just in time to parry)"),
+				TEXT("Roll  B / Shift     Sprint  tap L3 / Ctrl     Jump  A / Space"),
+				TEXT("Flask  RB / R     Lock on  R3 / MMB / Q     Parry  LT / C"),
+				TEXT("Grapple  RT / G     Brace a leaping foe  LB / LT     Strike the unaware for an ambush"),
 			};
 			float LineY = Canvas->ClipY - 170.f * S;
 			for (const TCHAR* Line : Lines)
