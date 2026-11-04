@@ -511,6 +511,7 @@ private:
 	TWeakObjectPtr<ASoulsKnight> PounceTarget;
 	TWeakObjectPtr<ASoulsKnight> Impaler;
 	bool bPounceAirborne = false;
+	FVector PounceVelocity = FVector::ZeroVector;
 	bool bWasSwimming = false;
 	bool bKilledByAmbush = false;
 	float LastFearTime = -100.f;

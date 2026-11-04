@@ -257,17 +257,18 @@ void ASoulsKnight::RunVerificationDemo()
 				{
 					Foe->Interrupt();
 					Foe->EndAction();
-					Foe->BeginPounce(K);
 					if (K->Controller)
 					{
 						K->Controller->SetControlRotation(FRotator(-8.f, K->GetActorRotation().Yaw + 70.f, 0.f));
 					}
 				}
 			} },
-		{ 38.45f, [](ASoulsKnight* K) { K->ParryPressed(); } },
-		{ 38.9f, [](ASoulsKnight* K) { K->Shot(TEXT("20_pounce")); } },
-		{ 39.45f, [](ASoulsKnight* K) { K->Shot(TEXT("21_impaled")); } },
-		{ 40.4f, [](ASoulsKnight* K) { K->Shot(TEXT("22_rolled_off")); } },
+		// Let the foe settle on the ground first (leapers only spring from their feet).
+		{ 38.6f, [NearestFoe](ASoulsKnight* K) { if (ASoulsKnight* Foe = NearestFoe(K)) { Foe->BeginPounce(K); } } },
+		{ 39.05f, [](ASoulsKnight* K) { K->ParryPressed(); } },
+		{ 39.5f, [](ASoulsKnight* K) { K->Shot(TEXT("20_pounce")); } },
+		{ 40.05f, [](ASoulsKnight* K) { K->Shot(TEXT("21_impaled")); } },
+		{ 41.0f, [](ASoulsKnight* K) { K->Shot(TEXT("22_rolled_off")); } },
 		// Ambush: a foe caught by surprise freezes; terror spreads.
 		{ 42.0f, [Approach, NearestFoe](ASoulsKnight* K) { Approach(K, 170.f); if (ASoulsKnight* Foe = NearestFoe(K)) { Foe->Shock(2.5f); } } },
 		{ 42.4f, [](ASoulsKnight* K) { K->Shot(TEXT("23_shocked")); K->DoComboAttackStart(); } },

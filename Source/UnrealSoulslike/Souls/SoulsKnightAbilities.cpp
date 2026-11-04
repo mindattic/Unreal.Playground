@@ -360,6 +360,7 @@ void ASoulsKnight::LaunchPounce()
 	Launch.Z = (Delta.Z + 0.5f * Gravity * Time * Time) / Time;
 	FaceTowards(Aim);
 	LaunchCharacter(Launch, true, true);
+	PounceVelocity = Launch;
 	bPounceAirborne = true;
 	if (SwordComboMontages.Num() > 2 && SwordComboMontages[2])
 	{
@@ -374,9 +375,21 @@ void ASoulsKnight::LaunchPounce()
 
 void ASoulsKnight::TickPounce(float DeltaSeconds)
 {
-	if (Action != EKnightAction::Pounce || !bPounceAirborne)
+	if (!bPounceAirborne)
 	{
 		return;
+	}
+	if (Action != EKnightAction::Pounce)
+	{
+		bPounceAirborne = false;
+		return;
+	}
+	// Hold the leap's carry: the movement component's air braking would otherwise drop it short.
+	UCharacterMovementComponent* Movement = GetCharacterMovement();
+	if (Movement->IsFalling())
+	{
+		Movement->Velocity.X = PounceVelocity.X;
+		Movement->Velocity.Y = PounceVelocity.Y;
 	}
 	ASoulsKnight* Target = PounceTarget.Get();
 	if (Target && !Target->IsDead())
