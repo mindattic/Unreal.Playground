@@ -396,11 +396,27 @@ void ASoulsGameMode::EndBossFight(bool bWon)
 void ASoulsGameMode::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	const ASoulsKnight* Player = GetPlayerKnight();
 	if (bBossFightActive)
 	{
+		// No fog walls: run far enough from the arena and the fight is abandoned; the boss returns
+		// to its post at full health.
+		if (Player && !Player->IsDead() && Spawns.IsValidIndex(ActiveBossSpawn))
+		{
+			FSoulsSpawn& Active = Spawns[ActiveBossSpawn];
+			if (FVector::Dist2D(Player->GetActorLocation(), Active.ArenaCenter) > Active.ArenaRadius * 1.8f)
+			{
+				const int32 Abandoned = ActiveBossSpawn;
+				EndBossFight(false);
+				if (ASoulsEnemy* Boss = Spawns[Abandoned].Actor.Get())
+				{
+					Boss->Destroy();
+				}
+				SpawnFrom(Spawns[Abandoned]);
+			}
+		}
 		return;
 	}
-	const ASoulsKnight* Player = GetPlayerKnight();
 	if (!Player || Player->IsDead())
 	{
 		return;
