@@ -51,6 +51,8 @@ namespace
 	const FName KShieldSocket(TEXT("hand_l"));
 	constexpr float KBlockWalkSpeed = 230.f;
 	constexpr float KSprintSpeed = 760.f;
+	constexpr float KPlayerSlashSpeed = 1.4f;   // the X slash, vs 0.9 for an enemy heavy
+	constexpr float KBackSlashAt = 0.55f;       // a queued back-slash starts this far into the slash
 	constexpr float KSprintStaminaPerSecond = 14.f;
 	// Raising the guard this close before a blow lands turns it into a parry.
 	constexpr float KGuardParryWindow = 0.22f;
@@ -160,6 +162,10 @@ void ASoulsKnight::BeginPlay()
 	if (Team == 0 && FParse::Param(FCommandLine::Get(), TEXT("HandShots")))
 	{
 		RunHandShots();
+	}
+	if (Team == 0 && FParse::Param(FCommandLine::Get(), TEXT("ChainShots")))
+	{
+		RunChainShots();
 	}
 	if (Team == 0 && FParse::Param(FCommandLine::Get(), TEXT("ClashDemo")))
 	{
@@ -853,6 +859,41 @@ void ASoulsKnight::RunWhistleDemo()
 	}, 10.f, false);
 }
 
+void ASoulsKnight::RunChainShots()
+{
+	GEngine->Exec(GetWorld(), TEXT("r.MotionBlurQuality 0"));
+	GetCameraBoom()->bEnableCameraLag = false;
+	GetCameraBoom()->bEnableCameraRotationLag = false;
+	const TWeakObjectPtr<ASoulsKnight> WeakThis(this);
+	FTimerHandle Aim, First, Second;
+	GetWorldTimerManager().SetTimer(Aim, [WeakThis]()
+	{
+		if (ASoulsKnight* K = WeakThis.Get())
+		{
+			K->GetCameraBoom()->TargetArmLength = 380.f;
+			K->GetCameraBoom()->SocketOffset = FVector(0.f, 0.f, 20.f);
+			if (K->Controller)
+			{
+				K->Controller->SetControlRotation(FRotator(-5.f, K->GetActorRotation().Yaw - 90.f, 0.f));
+			}
+		}
+	}, 3.f, false);
+	GetWorldTimerManager().SetTimer(First, [WeakThis]() { if (WeakThis.IsValid()) { WeakThis->AttackPressed(); } }, 3.5f, false);
+	GetWorldTimerManager().SetTimer(Second, [WeakThis]() { if (WeakThis.IsValid()) { WeakThis->AttackPressed(); } }, 3.75f, false);
+	for (int32 Index = 0; Index < 24; ++Index)
+	{
+		FTimerHandle Snap;
+		GetWorldTimerManager().SetTimer(Snap, [WeakThis, Index]()
+		{
+			if (ASoulsKnight* K = WeakThis.Get())
+			{
+				UE_LOG(LogUnrealSoulslike, Log, TEXT("Chain frame %d: action %d swing %d progress %.2f"), Index, static_cast<int32>(K->Action), K->SwingIndex, K->GetActionProgress());
+				K->Shot(*FString::Printf(TEXT("Chain_%02d"), Index));
+			}
+		}, 3.5f + Index * 0.08f, false);
+	}
+}
+
 void ASoulsKnight::Shot(const TCHAR* Name)
 {
 	FScreenshotRequest::RequestScreenshot(FString::Printf(TEXT("Knight_%s"), Name), true, false);
@@ -1227,7 +1268,8 @@ void ASoulsKnight::StartHeavy()
 	bHeavySwing = true;
 	HitThisSwing.Reset();
 	SetActorRotation(FRotator(0.f, AttackDirection().Rotation().Yaw, 0.f));
-	const float Duration = HeavyAttackMontage->GetPlayLength() / (AttackSpeed * 0.9f);
+	// The player's one slash is quick (about half again as fast as an enemy's heavy).
+	const float Duration = HeavyAttackMontage->GetPlayLength() / (AttackSpeed * (IsPlayerControlled() ? KPlayerSlashSpeed : 0.9f));
 	PlayAction(EKnightAction::HeavyAttack, HeavyAttackMontage, Duration);
 	float HitTime = Duration * 0.5f;
 	if (IsPlayerControlled())
@@ -1441,6 +1483,16 @@ void ASoulsKnight::AttackPressed()
 	{
 		DoComboAttackStart(); // the torch swing (SwingHit hands it to the torch)
 		return;
+	}
+	// X again mid-slash: queue the cross-slash back from where this one ends.
+	if (Action == EKnightAction::HeavyAttack && bHeavySwing)
+	{
+		bComboQueued = true;
+		return;
+	}
+	if (Action == EKnightAction::LightAttack)
+	{
+		return; // the back-slash ends the string
 	}
 	DoChargedAttackStart();
 }
@@ -2312,6 +2364,13 @@ void ASoulsKnight::Tick(float DeltaSeconds)
 		}
 	}
 	TickClashDemo();
+
+	// The player's slash, with X pressed again, flows into the back-slash from its end point.
+	if (Action == EKnightAction::HeavyAttack && bHeavySwing && bComboQueued && IsPlayerControlled()
+		&& ActionElapsed >= ActionDuration * KBackSlashAt && SwordComboMontages.Num() > 1 && SpendStamina(LightAttackCost))
+	{
+		StartSwing(1);
+	}
 
 	if (Action == EKnightAction::LightAttack && bComboQueued && ActionElapsed >= ActionDuration * ComboChainFraction
 		&& SwingIndex + 1 < SwordComboMontages.Num() && SpendStamina(LightAttackCost))

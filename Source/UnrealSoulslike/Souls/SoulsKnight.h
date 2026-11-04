@@ -468,6 +468,8 @@ private:
 	void RunInputTest();
 	// -HandShots: close views of the sword hand and the shield arm, after textures stream in.
 	void RunHandShots();
+	// -ChainShots: X, X: the slash and the back-slash, frame by frame from the side.
+	void RunChainShots();
 	// -ClashDemo: a foe attacks into the raised guard (sparks, jolt, bounce), then a timed guard parries.
 	// -WhistleDemo: whistle from out of sight; the foe wanders over to look.
 	void RunClashDemo();
