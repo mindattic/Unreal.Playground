@@ -91,10 +91,10 @@ public:
 	float SunNoonTemperature = 5700.f;
 
 	UPROPERTY(EditAnywhere, Category = "DayNight|Moon")
-	float MoonIntensity = 0.6f;
+	float MoonIntensity = 0.75f;
 
 	UPROPERTY(EditAnywhere, Category = "DayNight|Moon")
-	FLinearColor MoonColor = FLinearColor(0.55f, 0.68f, 1.f);
+	FLinearColor MoonColor = FLinearColor(0.72f, 0.6f, 1.f);
 
 	// The moon runs opposite the sun, turned this far round the compass.
 	UPROPERTY(EditAnywhere, Category = "DayNight|Moon")
@@ -105,17 +105,17 @@ public:
 	float DaySkyIntensity = 1.15f;
 
 	UPROPERTY(EditAnywhere, Category = "DayNight|Sky")
-	float NightSkyIntensity = 2.2f;
+	float NightSkyIntensity = 2.8f;
 
 	UPROPERTY(EditAnywhere, Category = "DayNight|Sky")
-	FLinearColor NightSkyTint = FLinearColor(0.55f, 0.65f, 1.f);
+	FLinearColor NightSkyTint = FLinearColor(0.72f, 0.5f, 1.f);
 
 	// Exposure compensation (EV) added at full night on top of the post process volume's own.
 	UPROPERTY(EditAnywhere, Category = "DayNight|Sky")
-	float NightExposureBoost = 1.6f;
+	float NightExposureBoost = 1.9f;
 
 	UPROPERTY(EditAnywhere, Category = "DayNight|Fog")
-	FLinearColor NightFogInscattering = FLinearColor(0.012f, 0.018f, 0.035f);
+	FLinearColor NightFogInscattering = FLinearColor(0.03f, 0.016f, 0.045f);
 
 	UPROPERTY(EditAnywhere, Category = "DayNight|Fog")
 	FLinearColor DuskFogDirectional = FLinearColor(0.55f, 0.3f, 0.14f);

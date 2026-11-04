@@ -71,7 +71,7 @@ _Nothing recorded yet._
 | UNR-T48 | 2026-11-04 | fix | closed | Remove the umbrella (and grapple slingshot) completely | — |
 | UNR-T49 | 2026-11-04 | fix | closed | Dodge roll keeps the player's facing unless the stick is pressed | — |
 | UNR-T50 | 2026-11-04 | feature | closed | Ludicrous gore: absurd blood sprays on every hit | — |
-| UNR-T51 | 2026-11-04 | feature | open | Natural torch flames from a free fire particle pack | — |
+| UNR-T51 | 2026-11-04 | feature | closed | Natural torch flames from a free fire particle pack | — |
 | UNR-T52 | 2026-11-04 | feature | closed | Dodge roll cancels an attack less than 50% committed | — |
 | UNR-T53 | 2026-11-04 | fix | closed | Day/night cycle 10x faster (2-minute day) | — |
 | UNR-T54 | 2026-11-04 | feature | closed | X attack faster, and a second X chains the cross-slash back | — |
@@ -80,3 +80,4 @@ _Nothing recorded yet._
 | UNR-T57 | 2026-11-04 | feature | open | Sword hits come from the blade actually intersecting the enemy | — |
 | UNR-T58 | 2026-11-04 | feature | open | Every run of the game records video via MindAttic.Capture, windowed 1920x1080 | — |
 | UNR-T59 | 2026-11-04 | fix | closed | Remove stamina completely: every move always available | — |
+| UNR-T60 | 2026-11-04 | fix | open | Deepest night is dark purple with visibility, never pitch black | — |
