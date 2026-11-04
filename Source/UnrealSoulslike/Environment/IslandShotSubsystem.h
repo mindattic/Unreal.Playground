@@ -45,6 +45,8 @@ private:
 	bool bWarm = false;
 	bool bFramed = false;
 	bool bRequested = false;
+	float FrameTime = 0.f;
+	int32 Frames = 0;
 	float Warmup = 25.f;
 	float Settle = 6.f;
 

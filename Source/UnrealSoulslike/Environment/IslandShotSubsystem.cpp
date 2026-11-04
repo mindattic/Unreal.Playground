@@ -147,11 +147,21 @@ void UIslandShotSubsystem::Tick(float DeltaTime)
 #if WITH_EDITOR
 	bCompiling = GShaderCompilingManager && GShaderCompilingManager->GetNumRemainingJobs() > 0;
 #endif
+	if (!bRequested && Clock - PhaseStart > 1.f)
+	{
+		// Average frame time over the settle window (after the first second of the new view).
+		FrameTime += DeltaTime;
+		++Frames;
+	}
 	if (!bRequested && Clock - PhaseStart >= Settle && !bCompiling)
 	{
 		const FString Path = FPaths::ConvertRelativePathToFull(ShotDir / (Shot.Name + TEXT(".png")));
 		FScreenshotRequest::RequestScreenshot(Path, false, false);
-		UE_LOG(LogIslandShots, Display, TEXT("Shot %s -> %s"), *Shot.Name, *Path);
+		const float AvgMs = Frames > 0 ? 1000.f * FrameTime / Frames : 0.f;
+		UE_LOG(LogIslandShots, Display, TEXT("Shot %s -> %s (avg %.2f ms, %.1f fps over %d frames)"), *Shot.Name, *Path, AvgMs,
+			AvgMs > 0.f ? 1000.f / AvgMs : 0.f, Frames);
+		FrameTime = 0.f;
+		Frames = 0;
 		bRequested = true;
 		PhaseStart = Clock;
 		return;

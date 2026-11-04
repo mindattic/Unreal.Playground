@@ -471,6 +471,9 @@ def build_terrain_material(tex, mask_tex, grass_type):
     grass_c = g.lerp(grass["color"], grass_far, far_t)
     grass_c = g.lerp(grass_c, olive, g.mul(g.smooth(0.40, 0.70, macro), 0.65))
     grass_c = g.lerp(grass_c, heath, g.mul(g.smooth(0.60, 0.80, mid), 0.5))
+    # Broad heather / dead-bracken patches so the moor reads as varied ground from a distance.
+    heath_patch = g.smooth(0.56, 0.74, (noise_macro, "B"))
+    grass_c = g.lerp(grass_c, g.mul(heath, (0.78, 0.62, 0.6)), g.mul(heath_patch, 0.55))
     lum = g.dot(grass_c, (0.3, 0.59, 0.11))
     grass_c = g.lerp(grass_c, lum, 0.1)
     grass_c = g.mul(grass_c, g.lerp((1.0, 1.0, 0.78), (0.88, 0.97, 0.8), mid))
@@ -503,7 +506,7 @@ def build_terrain_material(tex, mask_tex, grass_type):
     # Gentle large-scale brightness variation breaks up any remaining repetition.
     base = g.mul(base, g.lerp(0.82, 1.1, macro))
     normal = blend("normal", grass["normal"], trail["normal"], sand["normal"], rock["normal"])
-    rough = blend("rough", g.maxx(grass["rough"], 0.82), (trail["arm"], "G"), (sand["arm"], "G"), (rock["arm"], "G"),
+    rough = blend("rough", g.maxx(grass["rough"], 0.82), g.maxx((trail["arm"], "G"), 0.65), (sand["arm"], "G"), (rock["arm"], "G"),
                   g.mul((sand["arm"], "G"), 0.45))
     ao = blend("ao", grass["ao"], (trail["arm"], "R"), (sand["arm"], "R"), (rock["arm"], "R"))
 
@@ -515,7 +518,7 @@ def build_terrain_material(tex, mask_tex, grass_type):
 
     # Procedural grass: where the turf shows, minus path / sand / rock, patchy by noise.
     if grass_type is not None:
-        grass_w = g.mul(g.mul(g.one_minus(path_a), g.one_minus(sand_a)), g.one_minus(rock_a))
+        grass_w = g.mul(g.mul(g.one_minus(g.smooth(0.12, 0.42, path_w)), g.one_minus(sand_a)), g.one_minus(rock_a))
         grass_w = g.mul(grass_w, g.smooth(0.15, 0.45, g.add(mid, g.mul(macro, 0.3))))
         go = g.new(E.MaterialExpressionLandscapeGrassOutput)
         gi = unreal.GrassInput()
@@ -576,6 +579,9 @@ def build_ocean_material(tex, mask_tex):
     return mat
 
 
+GRASS_NOISE = []
+
+
 def build_grass_material():
     mat, g = new_material("M_GrassBlades", ROOT + "/Materials")
     mat.set_editor_property("shading_model", E.MaterialShadingModel.MSM_TWO_SIDED_FOLIAGE)
@@ -590,6 +596,8 @@ def build_grass_material():
     tip_a = (0.11, 0.16, 0.035)
     tip_b = (0.20, 0.21, 0.06)
     tip_c = g.lerp(tip_a, tip_b, rnd)
+    patch = (g.tex(GRASS_NOISE[0], g.div(wp_xy, (9000.0, 9000.0)), "masks"), "B")
+    tip_c = g.lerp(tip_c, (0.17, 0.12, 0.07), g.mul(g.smooth(0.56, 0.74, patch), 0.6))
     color = g.lerp(root_c, tip_c, g.op(E.MaterialExpressionPower, {"Base": tip, "Exp": 0.7}))
     g.out(color, E.MaterialProperty.MP_BASE_COLOR)
     g.out(g.lerp(0.75, 0.5, tip), E.MaterialProperty.MP_ROUGHNESS)
@@ -845,9 +853,19 @@ def build_sky():
     cc = cloud.get_component_by_class(unreal.VolumetricCloudComponent)
     setp(cc, "layer_bottom_altitude", 1.4)
     setp(cc, "layer_height", 5.0)
-    mat = eal.load_asset("/Engine/EngineSky/VolumetricClouds/m_SimpleVolumetricCloud_Inst")
-    if mat:
-        setp(cc, "material", mat)
+    base = unreal.load_object(None, "/Engine/EngineSky/VolumetricClouds/m_SimpleVolumetricCloud.m_SimpleVolumetricCloud")
+    if base and CLOUDS:
+        # Heavier Atlantic cover than the engine default (coverage -0.2, density 0.008).
+        path = ROOT + "/Materials/MI_IslandClouds"
+        mi = eal.load_asset(path) if eal.does_asset_exist(path) else tools.create_asset(
+            "MI_IslandClouds", ROOT + "/Materials", unreal.MaterialInstanceConstant, unreal.MaterialInstanceConstantFactoryNew())
+        mel.set_material_instance_parent(mi, base)
+        for name, value in CLOUDS.items():
+            mel.set_material_instance_scalar_parameter_value(mi, name, value)
+        eal.save_loaded_asset(mi)
+        setp(cc, "material", mi)
+    elif not base:
+        warn("cloud base material not found")
 
     fog = spawn(unreal.ExponentialHeightFog, (0, 0, -200), None, "HeightFog", folder)
     fc = fog.get_editor_property("component")
@@ -900,7 +918,8 @@ def build_sky():
     return sun
 
 
-EXPOSURE_BIAS = 0.0  # manual exposure compensation (EV) on top of the physical camera
+EXPOSURE_BIAS = 0.0  # manual exposure compensation (EV)
+CLOUDS = {}  # MI_IslandClouds overrides for m_SimpleVolumetricCloud; empty = engine default clouds (a denser test lost them)
 
 
 def build_ocean(mat):
@@ -1143,6 +1162,27 @@ def target_point(x, y, tag, label, z_offset=10.0):
     return tp
 
 
+def clear_markers():
+    """No prop may stand on a gameplay marker: remove any dressing whose bounds (grown by 1.5 m) cover one."""
+    markers = [a for a in actors_sub.get_all_level_actors() if isinstance(a, (unreal.TargetPoint, unreal.PlayerStart))]
+    removed = []
+    for a in actors_sub.get_all_level_actors():
+        if not isinstance(a, unreal.StaticMeshActor):
+            continue
+        folder = str(a.get_folder_path())
+        if not folder.startswith(("Dressing", "Ruins", "StoneCircle")):
+            continue
+        origin, extent = a.get_actor_bounds(False)
+        for m in markers:
+            p = m.get_actor_location()
+            if (abs(p.x - origin.x) < extent.x + 150.0 and abs(p.y - origin.y) < extent.y + 150.0
+                    and p.z < origin.z + extent.z + 50.0 and p.z > origin.z - extent.z - 300.0):
+                removed.append("%s near %s" % (a.get_actor_label(), m.get_actor_label()))
+                actors_sub.destroy_actor(a)
+                break
+    log("marker clearance: removed %d props %s" % (len(removed), removed))
+
+
 def build_markers(route, start):
     (sx, sy), (dx, dy) = route.at(0.0)
     yaw = math.degrees(math.atan2(dy, dx))
@@ -1158,6 +1198,7 @@ def build_markers(route, start):
         x, y = route.offset(t, side)
         target_point(x, y, "Enemy", "Enemy_%02d" % (i + 1))
     target_point(HILL[0], HILL[1], "Boss", "Boss")
+    clear_markers()
     log("markers: PlayerStart yaw %.0f, 2 graces, %d enemies, boss at (%.0f, %.0f, %.0f)" % (
         yaw, len(enemies), HILL[0], HILL[1], height(*HILL)))
     return ps
@@ -1166,9 +1207,9 @@ def build_markers(route, start):
 def write_shot_list(route, start):
     (sx, sy), (dx, dy) = route.at(0.0)
     lines = ["player player"]
-    mx, my = route.offset(0.48, -900.0)
-    (tx, ty), _ = route.at(0.62)
-    lines.append(shot("route_mid", mx, my, height(mx, my) + 260.0, tx, ty, height(tx, ty) + 250.0))
+    (mx, my), _ = route.at(0.40)
+    (tx, ty), _ = route.at(0.56)
+    lines.append(shot("route_mid", mx, my, height(mx, my) + 260.0, tx, ty, height(tx, ty) + 200.0))
     hx, hy = HILL
     (cx, cy) = route.offset(1.0 - (ARENA_RADIUS + 1600.0) / route.length, 600.0)
     lines.append(shot("stone_circle", cx, cy, height(cx, cy) + 450.0, hx, hy, ARENA_HEIGHT + 150.0, fov=80))
@@ -1226,6 +1267,7 @@ def build_everything(textures, models):
     start = route.points[0]
     mask_tex = LIB.create_island_mask_texture(ROOT + "/Textures/Generated/T_IslandMask", 1024)
     eal.save_loaded_asset(mask_tex)
+    GRASS_NOISE.append(textures["generated"]["T_IslandNoise"])
     grass_mat = build_grass_material()
     grass_type = build_grass_type(models, grass_mat)
     terrain_mat = build_terrain_material(textures, mask_tex, grass_type)
