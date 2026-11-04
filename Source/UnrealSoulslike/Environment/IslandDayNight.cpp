@@ -166,7 +166,7 @@ void AIslandDayNight::FindSceneLights()
 	UWorld* World = GetWorld();
 	for (TActorIterator<ADirectionalLight> It(World); It; ++It)
 	{
-		UDirectionalLightComponent* Light = It->GetComponent();
+		UDirectionalLightComponent* Light = Cast<UDirectionalLightComponent>(It->GetLightComponent());
 		if (!Light)
 		{
 			continue;
@@ -179,7 +179,7 @@ void AIslandDayNight::FindSceneLights()
 	}
 	if (ADirectionalLight* SunActor = Sun.Get())
 	{
-		UDirectionalLightComponent* Light = SunActor->GetComponent();
+		UDirectionalLightComponent* Light = Cast<UDirectionalLightComponent>(SunActor->GetLightComponent());
 		if (Light->Mobility != EComponentMobility::Movable)
 		{
 			Light->SetMobility(EComponentMobility::Movable);
@@ -314,7 +314,7 @@ void AIslandDayNight::Apply(float Hours)
 	// Sun: dim and warm near the horizon, whiter and stronger toward noon, gone 10 degrees under.
 	if (ADirectionalLight* SunActor = Sun.Get())
 	{
-		UDirectionalLightComponent* Light = SunActor->GetComponent();
+		UDirectionalLightComponent* Light = Cast<UDirectionalLightComponent>(SunActor->GetLightComponent());
 		SunActor->SetActorRotation((-SunDir).Rotation());
 		const float Ratio = (float)FMath::Clamp(SunDir.Z / FMath::Sin(FMath::DegreesToRadians((double)NoonElevation)), 0.0, 1.0);
 		const float Intensity = SunNoonIntensity * FMath::Max(FMath::Sqrt(Ratio), 0.12f) * FMath::SmoothStep(-10.f, 0.f, Elev);

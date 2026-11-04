@@ -248,10 +248,12 @@ void USoulsFireSubsystem::LoadAssets()
 			UE_LOG(LogSoulsFire, Warning, TEXT("T_FireField is %dx%d, expected %d: no char on the ground"), FieldTexture->GetSizeX(), FieldTexture->GetSizeY(), N);
 			FieldTexture = nullptr;
 		}
+#if WITH_EDITOR
 		else if (FieldTexture->IsStreamable())
 		{
 			FieldTexture->TemporarilyDisableStreaming();
 		}
+#endif
 	}
 	else
 	{

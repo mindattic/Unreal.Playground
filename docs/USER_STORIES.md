@@ -48,3 +48,21 @@ _Nothing recorded yet._
 | UNR-T25 | 2026-11-04 | fix | closed | Gamepad: A jumps (unbound today), B rolls on press, tap L3 starts sprinting | — |
 | UNR-T26 | 2026-11-04 | feature | closed | Enemies patrol; when two patrollers meet they stop, chat, then part ways | — |
 | UNR-T27 | 2026-11-04 | feature | closed | Stealth stance: tap B standing still to crouch, hold B to dive prone and army-crawl, B again to stand; crouch/prone cut enemy sight and hearing so you can sneak up and backstab | — |
+| UNR-T28 | 2026-11-04 | fix | closed | Crouch (tap B) does nothing in real play | — |
+| UNR-T29 | 2026-11-04 | fix | closed | Sprint (tap L3/Ctrl) does nothing in real play | — |
+| UNR-T30 | 2026-11-04 | fix | closed | Light attack has no reach | — |
+| UNR-T31 | 2026-11-04 | fix | closed | Sword hand not gripping, shield upside down | — |
+| UNR-T32 | 2026-11-04 | fix | closed | One-sided rock meshes invisible from behind | — |
+| UNR-T33 | 2026-11-04 | fix | closed | Standard Elden Ring pad layout: L3 run, R3 lock-on, B roll | — |
+| UNR-T34 | 2026-11-04 | feature | closed | Combat clash: enemy swings meet the player's guard | — |
+| UNR-T35 | 2026-11-04 | feature | closed | Grapple: fill in animations and timing | — |
+| UNR-T36 | 2026-11-04 | feature | closed | Beach life: scuttling crabs and dead fish washed up on the shore | — |
+| UNR-T37 | 2026-11-04 | feature | closed | Pond life: frogs that jump into the water, fish swimming in the ponds | — |
+| UNR-T38 | 2026-11-04 | feature | closed | Boulders strewn across the land; high cliffs built from properly aligned boulders | — |
+| UNR-T39 | 2026-11-04 | feature | closed | Day/night cycle; dimmer setting sun in the west | — |
+| UNR-T40 | 2026-11-04 | feature | closed | Torches: carried lit by enemies, wall torches, pick up, wield, throw | — |
+| UNR-T41 | 2026-11-04 | feature | closed | Field fire: open flame ignites grass, spreads, burns models away | — |
+| UNR-T42 | 2026-11-04 | feature | closed | Grapple + umbrella traversal: slingshot up, catch the wind, glide | — |
+| UNR-T43 | 2026-11-04 | feature | closed | Tall grass to hide in | — |
+| UNR-T44 | 2026-11-04 | feature | closed | D-pad up whistles: nearby enemies come over curiously | — |
+| UNR-T45 | 2026-11-04 | feature | open | Grapple: fill in throw/reel/haul/land animation beats and timing (reopens UNR-T35) | — |
