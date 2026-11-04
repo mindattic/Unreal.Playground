@@ -19,6 +19,7 @@ public class UnrealSoulslike : ModuleRules
 			"UMG",
 			"Slate",
 			"Landscape",
+			"Niagara", // torch fire (UNR-T51)
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {

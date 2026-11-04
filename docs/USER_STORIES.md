@@ -74,7 +74,9 @@ _Nothing recorded yet._
 | UNR-T51 | 2026-11-04 | feature | open | Natural torch flames from a free fire particle pack | — |
 | UNR-T52 | 2026-11-04 | feature | closed | Dodge roll cancels an attack less than 50% committed | — |
 | UNR-T53 | 2026-11-04 | fix | closed | Day/night cycle 10x faster (2-minute day) | — |
-| UNR-T54 | 2026-11-04 | feature | open | X attack faster, and a second X chains the cross-slash back | — |
+| UNR-T54 | 2026-11-04 | feature | closed | X attack faster, and a second X chains the cross-slash back | — |
 | UNR-T55 | 2026-11-04 | fix | open | World collision uses the meshes' polygons, not boxes or spheres | — |
 | UNR-T56 | 2026-11-04 | feature | open | Real blood and guts splash VFX from a free pack | — |
 | UNR-T57 | 2026-11-04 | feature | open | Sword hits come from the blade actually intersecting the enemy | — |
+| UNR-T58 | 2026-11-04 | feature | open | Every run of the game records video via MindAttic.Capture, windowed 1920x1080 | — |
+| UNR-T59 | 2026-11-04 | fix | closed | Remove stamina completely: every move always available | — |

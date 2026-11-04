@@ -9,12 +9,15 @@
 class ASoulsKnight;
 class ASoulsEnemy;
 class UMaterialInterface;
+class UNiagaraComponent;
+class UNiagaraSystem;
 class UPointLightComponent;
 class UStaticMesh;
 class UStaticMeshComponent;
 
 // A cheap fire: a few glowing, flickering blobs that always rise (world-up), whichever way their
-// parent is turned. Used for a torch's head and for a knight set alight.
+// parent is turned. The fallback for a torch's head and a knight set alight when the Niagara fire
+// (UNR-T51, tools/build_torch_fire.py) hasn't been built into Content/ yet.
 USTRUCT()
 struct FSoulsFlames
 {
@@ -49,7 +52,9 @@ enum class ESoulsTorchState : uint8
 	Out,       // burnt out or drowned: gone soon
 };
 
-// UNR-T40. A burning torch: a point light that flickers over a few additive flame blobs.
+// UNR-T40. A burning torch: a point light that flickers over Niagara flames, embers and smoke (UNR-T51:
+// a tall tongue in a hand or bracket, a wider little fire when it lies on the ground; always rising
+// world-up, leaning away from the way the head moves). Falls back to flame blobs without the FX assets.
 // - Some enemies carry one in the off hand instead of a shield (USoulsTorchSubsystem arms them).
 // - Torches burn in brackets on the ruined keep's and the broch's walls (TargetPoints tagged "Torch",
 //   placed by tools/build_island.py). Interact takes one: it becomes the main-hand weapon, the sword is
@@ -127,6 +132,22 @@ public:
 	UPROPERTY()
 	TObjectPtr<UMaterialInterface> IronMaterial;
 
+	// UNR-T51 fire (tools/build_torch_fire.py); null until that has run, then the blobs are used.
+	UPROPERTY()
+	TObjectPtr<UNiagaraSystem> FlameSystem;
+
+	UPROPERTY()
+	TObjectPtr<UNiagaraSystem> GroundFlameSystem;
+
+	UPROPERTY()
+	TObjectPtr<UNiagaraSystem> EmberSystem;
+
+	UPROPERTY()
+	TObjectPtr<UNiagaraSystem> SmokeSystem;
+
+	// True when the Niagara fire assets were found (the class default's view).
+	static bool HasFireFx();
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -142,6 +163,8 @@ private:
 	void SetCenterAndAxis(const FVector& Center, const FVector& Axis);
 	FVector GetCenter() const;
 	FVector GetAxis() const;
+	// Switches the Niagara fire between held/wall flames, a ground fire and out, as the state demands.
+	void RefreshFire();
 
 	UPROPERTY(VisibleAnywhere, Category = "Torch")
 	TObjectPtr<USceneComponent> Root;
@@ -158,6 +181,20 @@ private:
 
 	UPROPERTY(VisibleAnywhere, Category = "Torch")
 	TObjectPtr<UPointLightComponent> Light;
+
+	// Niagara fire on FlameRoot (UNR-T51): the flames in a hand / bracket / flight, the little fire on
+	// the ground, and the embers and smoke both share.
+	UPROPERTY(VisibleAnywhere, Category = "Torch")
+	TObjectPtr<UNiagaraComponent> FlameFx;
+
+	UPROPERTY(VisibleAnywhere, Category = "Torch")
+	TObjectPtr<UNiagaraComponent> GroundFlameFx;
+
+	UPROPERTY(VisibleAnywhere, Category = "Torch")
+	TObjectPtr<UNiagaraComponent> EmberFx;
+
+	UPROPERTY(VisibleAnywhere, Category = "Torch")
+	TObjectPtr<UNiagaraComponent> SmokeFx;
 
 	UPROPERTY(Transient)
 	FSoulsFlames Flames;
@@ -183,6 +220,8 @@ private:
 	float LightPhase = 0.f;
 	FVector LastHeadLocation = FVector::ZeroVector;
 	FVector FlameLean = FVector::ZeroVector;
+	// 0 = out, 1 = flames (hand, bracket, flight), 2 = ground fire; 255 = not set up yet.
+	uint8 FireLook = 255;
 };
 
 // A knight set alight: small flames on the body and a little health lost every half second, until it
@@ -212,6 +251,10 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UPointLightComponent> Glow;
+
+	// The Niagara fire on the body (UNR-T51), when the assets exist (otherwise Flames).
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UNiagaraComponent>> Fx;
 
 	TWeakObjectPtr<AActor> Source;
 	float Remaining = 0.f;

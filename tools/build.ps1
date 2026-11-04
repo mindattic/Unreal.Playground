@@ -6,7 +6,7 @@ param(
 
 # Compiles the UnrealSoulslikeEditor target, installs Epic's Third Person template content if it's
 # missing, then builds the sword knight (retargeted animations, weapons, blueprints) and the island map
-# /Game/Souls/Maps/Lvl_Isle (tools/build_island.py) in the editor.
+# /Game/Souls/Maps/Lvl_Isle (tools/build_island.py) in the editor, plus the torch fire (tools/build_torch_fire.py).
 # -LegacyContent also runs the old KayKit/island import (tools/build_content.py).
 
 $ErrorActionPreference = 'Stop'
@@ -58,6 +58,8 @@ function Invoke-EditorScript([string]$Script, [string]$LogFile, [string]$OkMarke
 Invoke-EditorScript (Join-Path $PSScriptRoot 'build_souls_character.py') (Join-Path $repo 'Saved\souls_character.log') 'SOULS_CHARACTER_OK'
 # The Shade of the Fen (second boss): needs the knight's montages, weapons, audio and game mode above.
 Invoke-EditorScript (Join-Path $PSScriptRoot 'build_shadow_boss.py') (Join-Path $repo 'Saved\shadow_boss.log') 'SHADOW_BOSS_OK'
+# The torches' Niagara fire (UNR-T51): CC0 Kenney sprites from SourceArt/FX, tuned via unreal.SoulsFxLibrary.
+Invoke-EditorScript (Join-Path $PSScriptRoot 'build_torch_fire.py') (Join-Path $repo 'Saved\torch_fire.log') 'TORCH_FIRE_OK'
 Invoke-EditorScript (Join-Path $PSScriptRoot 'build_island.py') (Join-Path $repo 'Saved\island.log') 'ISLAND_OK'
 
 if ($LegacyContent) {
