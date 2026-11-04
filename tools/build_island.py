@@ -2572,6 +2572,566 @@ def build_fire_assets():
         warn("fire assets: %s" % exc)
 
 
+# ----------------------------------------------------------------------------------------------
+# Ship graveyard (UNR-T63): the bay off the start beach and its approaches are choked with wrecked great
+# ships - on their sides in the shallows, listing half-sunk, broken in two, masts standing out of the water,
+# and far out, broken on the reefs - so no one makes it to this island. One rowboat lies dragged up the
+# sand a few metres from the player start: where the player came ashore. Kenney's CC0 Pirate Kit, wrecked
+# and baked to life size by tools/convert_ships.py into SourceArt/Environment/Ships.
+# ----------------------------------------------------------------------------------------------
+
+SHIP_ART = os.path.join(ART, "Ships")
+SHIP_HULLS = ("Wreck_Large", "Wreck_Medium", "Wreck_Small", "Wreck_Ghost", "Wreck_Hulk", "Wreck_Large_Bow",
+              "Wreck_Large_Stern", "Wreck_Medium_Bow", "Wreck_Medium_Stern", "Wreck_Mast", "Rowboat")
+SHIP_DEBRIS = ("Oar", "Barrel", "Crate", "CrateBottles", "Planks")
+# Slot looks: (tint, desaturation of the kit's bright palette, roughness, moss on upward faces)
+SHIP_LOOKS = {"Wood": ((0.46, 0.4, 0.33), 0.6, 0.85, 0.55), "Cloth": ((0.4, 0.38, 0.34), 0.85, 0.92, 0.15),
+              "Weed": ((0.22, 0.28, 0.13), 0.3, 0.7, 0.0)}
+ROWBOAT_LOOK = ((0.66, 0.54, 0.43), 0.4, 0.72, 0.1)
+# (mesh, bearing offset from the start beach (radians), offshore of the waterline: cm, or <= 1 a fraction of the
+#  open water out to the sea walls (only ~90 m off this beach), how it lies, yaw from facing inland (deg), roll,
+#  pitch). The gentle shore deepens ~0.07 d + 0.0016 d^2 metres at d metres out: shallows within ~18 m, half-sunk
+#  to ~45 m, beyond that deep enough to swallow a hull up to its masts.
+SHIP_WRECKS = [
+    ("Wreck_Large", -0.34, 900.0, "side", 70.0, 78.0, 4.0),
+    ("Wreck_Hulk", 0.30, 700.0, "beached", -25.0, 14.0, 5.0),  # driven bow-first onto the sand
+    ("Wreck_Large_Bow", 0.12, 3600.0, "end", 60.0, 18.0, 28.0),  # broken in two: the bow rears up...
+    ("Wreck_Large_Stern", 0.21, 3000.0, "list", 150.0, -32.0, -10.0),  # ...the stern lies a few lengths off
+    ("Wreck_Medium_Bow", -0.48, 1500.0, "side", -40.0, -72.0, 10.0),
+    ("Wreck_Medium_Stern", -0.41, 4300.0, "end", 30.0, 12.0, -30.0),
+    ("Wreck_Small", 0.50, 1100.0, "side", 160.0, 82.0, -6.0),
+    ("Wreck_Ghost", -0.16, 4600.0, "list", -20.0, 38.0, 8.0),
+    ("Wreck_Medium", 0.02, 0.66, "sunk", 75.0, -9.0, 5.0),
+    ("Wreck_Mast", -0.07, 0.72, "mast", 0.0, 14.0, -10.0),
+    ("Wreck_Mast", 0.36, 0.6, "mast", 40.0, -18.0, 6.0),
+    ("Wreck_Large", 0.42, 0.7, "sunk", -50.0, 12.0, -4.0),
+    ("Wreck_Hulk", -0.27, 0.64, "sunk", 100.0, 6.0, 9.0),
+    # The approaches: broken on the reefs out by the edge of the world.
+    ("Wreck_Ghost", -0.12, 0.9, "reef", 35.0, 34.0, 10.0),
+    ("Wreck_Large", 0.19, 0.97, "reef", -60.0, -28.0, -12.0),
+    ("Wreck_Medium", -0.36, 0.95, "reef", 80.0, 40.0, 6.0),
+    ("Wreck_Small", 0.31, 0.86, "reef", 10.0, -45.0, 15.0),
+    ("Wreck_Mast", 0.06, 1.0, "reef_mast", 0.0, 20.0, 0.0),
+]
+SHIP_START_CLEAR = 5000.0  # cm round the player start kept free of wrecks (the start beach, the knight demo's swim)
+
+
+def import_ships():
+    """SourceArt/Environment/Ships/SM_<Name>.obj (baked by tools/convert_ships.py) -> /Game/Island/Models/Ships/<Name>."""
+    out = {}
+    for name in SHIP_HULLS + SHIP_DEBRIS:
+        src = os.path.join(SHIP_ART, "SM_%s.obj" % name)
+        if not os.path.exists(src):
+            warn("ship mesh %s missing (run tools/convert_ships.py in Blender)" % src)
+            continue
+        dest = "%s/Models/Ships/%s" % (ROOT, name)
+        if REIMPORT or not (eal.does_directory_exist(dest) and assets_of(dest, unreal.StaticMesh)):
+            if eal.does_directory_exist(dest):
+                eal.delete_directory(dest)
+            import_files([src], dest)
+            for mesh in assets_of(dest, unreal.StaticMesh):
+                # Hulls are climbable: collide on their real shape. Debris never blocks.
+                nanite_and_collision(mesh, nanite=False, complex_collision=name in SHIP_HULLS)
+        meshes = assets_of(dest, unreal.StaticMesh)
+        if not meshes:
+            warn("ship %s: no static mesh imported" % name)
+            continue
+        mesh = meshes[0]
+        if name in SHIP_HULLS and mesh.get_editor_property("body_setup") is None:
+            warn("ship %s: no collision body" % name)
+        out[name] = mesh
+        b = mesh.get_bounding_box()
+        log("ship %s: size=(%.0f, %.0f, %.0f) slots=%s" % (name, b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z,
+                                                          [str(s.get_editor_property("material_slot_name"))
+                                                           for s in mesh.get_editor_property("static_materials")]))
+    return out
+
+
+def ship_colormap():
+    """The kit's palette texture (every face samples a flat colour cell): nearest filtering keeps cells crisp."""
+    dest = "%s/Models/Ships/Tex" % ROOT
+    if REIMPORT or not assets_of(dest, unreal.Texture2D) if eal.does_directory_exist(dest) else True:
+        import_files([os.path.join(SHIP_ART, "colormap.png")], dest)
+        for t in assets_of(dest, unreal.Texture2D):
+            setp(t, "filter", unreal.TextureFilter.TF_NEAREST)
+            eal.save_loaded_asset(t)
+    tex = assets_of(dest, unreal.Texture2D)
+    return tex[0] if tex else None
+
+
+def island_texture(set_name, tag):
+    for t in assets_of("%s/Textures/%s" % (ROOT, set_name), unreal.Texture2D):
+        if tag in t.get_name():
+            return t
+    return None
+
+
+def build_ship_material(colormap):
+    """M_Shipwreck: the kit palette, desaturated and tinted to old dark wood, weathered in vertical streaks,
+    soaked dark below ~3 m above the sea, barnacles and weed in a ragged band at the waterline, green-black
+    slime under it, moss on the decks. Two-sided: the broken hulls are open shells."""
+    mat, g = new_material("M_Shipwreck", ROOT + "/Materials")
+    setp(mat, "two_sided", True)
+    noise_tex = eal.load_asset(ROOT + "/Textures/Generated/T_IslandNoise")
+    rock = island_texture("seaside_rock", "_diff_")
+    moss = island_texture("Grass003", "_Color")
+
+    def sparam(name, value):
+        return g.new(E.MaterialExpressionScalarParameter, parameter_name=name, default_value=value)
+
+    uv = g.new(E.MaterialExpressionTextureCoordinate)
+    if colormap:
+        base = g.new(E.MaterialExpressionTextureSampleParameter2D, parameter_name="Base", texture=colormap,
+                     sampler_type=E.MaterialSamplerType.SAMPLERTYPE_COLOR, sampler_source=E.SamplerSourceMode.SSM_CLAMP_WORLD_GROUP_SETTINGS)
+        g.link(uv, base, "UVs")
+        base_rgb = (base, "RGB")
+    else:
+        base_rgb = (0.5, 0.36, 0.24)
+    tint = g.new(E.MaterialExpressionVectorParameter, parameter_name="Tint", default_value=unreal.LinearColor(1, 1, 1, 1))
+    lum = g.dot(base_rgb, (0.3, 0.59, 0.11))
+    color = g.mul(g.lerp(base_rgb, lum, sparam("Desaturate", 0.6)), (tint, "RGB"))
+
+    wp = g.world()
+    wz = g.mask(wp, b=True)
+    along = g.add(g.mask(wp, r=True), g.mask(wp, g=True))
+    if noise_tex:
+        streak = (g.tex(noise_tex, g.append(g.div(along, 420.0), g.div(wz, 2600.0)), "masks"), "G")
+        blotch = (g.tex(noise_tex, g.div(g.mask(wp, r=True, g=True), (380.0, 380.0)), "masks"), "B")
+        color = g.mul(color, g.lerp(0.6, 1.15, streak))
+        ragged = g.mul(g.sub(blotch, 0.5), 1.0)
+    else:
+        streak, ragged = 0.5, 0.0
+    # Soaked: dark below ~3.5 m above the sea, fading up the hull with a ragged edge.
+    wet = g.mul(g.one_minus(g.smooth(-50.0, 380.0, g.add(wz, g.mul(ragged, 160.0)))), sparam("Wet", 1.0))
+    color = g.lerp(color, g.mul(color, 0.42), wet)
+    # Barnacles and weed in a band round the waterline.
+    band = g.mul(g.smooth(-320.0, -60.0, wz), g.one_minus(g.smooth(30.0, 170.0, g.add(wz, g.mul(ragged, 220.0)))))
+    side_uv = g.append(g.div(along, 110.0), g.div(wz, 110.0))
+    barnacle = g.mul((g.tex(rock, side_uv, "color"), "RGB"), (0.46, 0.47, 0.43)) if rock else g.val((0.2, 0.2, 0.18))
+    weed = g.mul((g.tex(moss, side_uv, "color"), "RGB"), (0.22, 0.3, 0.14)) if moss else g.val((0.05, 0.07, 0.03))
+    color = g.lerp(color, g.lerp(barnacle, weed, streak), g.mul(band, 0.9))
+    # Green-black slime on everything under the water.
+    deep = g.one_minus(g.smooth(-450.0, -80.0, wz))
+    color = g.lerp(color, (0.035, 0.05, 0.03), g.mul(deep, 0.8))
+    # Moss on the decks and other upward faces above the water.
+    vnz = g.mask(g.new(E.MaterialExpressionVertexNormalWS), b=True)
+    moss_w = g.mul(g.mul(g.smooth(0.5, 0.85, g.add(vnz, g.mul(ragged, 0.6))), sparam("Moss", 0.5)), g.smooth(-20.0, 120.0, wz))
+    moss_col = g.mul((g.tex(moss, g.div(g.mask(wp, r=True, g=True), (260.0, 260.0)), "color"), "RGB"), (0.5, 0.6, 0.38)) if moss \
+        else g.val((0.08, 0.1, 0.05))
+    color = g.lerp(color, moss_col, moss_w)
+    g.out(color, E.MaterialProperty.MP_BASE_COLOR)
+    rough = g.lerp(sparam("Roughness", 0.85), 0.3, g.mul(wet, 0.8))
+    g.out(g.lerp(rough, 0.92, band), E.MaterialProperty.MP_ROUGHNESS)
+    finish_material(mat)
+    return mat
+
+
+def ship_instance(master, name, look, wet=1.0):
+    tint, desat, rough, moss = look
+    folder = ROOT + "/Materials/Ships"
+    ensure_dir(folder)
+    path = "%s/%s" % (folder, name)
+    mi = eal.load_asset(path) if eal.does_asset_exist(path) else \
+        tools.create_asset(name, folder, unreal.MaterialInstanceConstant, unreal.MaterialInstanceConstantFactoryNew())
+    mel.set_material_instance_parent(mi, master)
+    mel.set_material_instance_vector_parameter_value(mi, "Tint", unreal.LinearColor(tint[0], tint[1], tint[2], 1.0))
+    for param, value in (("Desaturate", desat), ("Roughness", rough), ("Moss", moss), ("Wet", wet)):
+        mel.set_material_instance_scalar_parameter_value(mi, param, value)
+    eal.save_loaded_asset(mi)
+    return mi
+
+
+def build_furrow_material():
+    """M_DragFurrow: a deferred decal of churned, wet, darker sand with soft ragged edges."""
+    mat, g = new_material("M_DragFurrow", ROOT + "/Materials")
+    setp(mat, "material_domain", E.MaterialDomain.MD_DEFERRED_DECAL)
+    setp(mat, "blend_mode", E.BlendMode.BLEND_TRANSLUCENT)
+    uv = g.new(E.MaterialExpressionTextureCoordinate)
+    edge_u = g.one_minus(g.smooth(0.3, 0.5, g.abs(g.sub(g.mask(uv, r=True), 0.5))))
+    edge_v = g.one_minus(g.smooth(0.3, 0.5, g.abs(g.sub(g.mask(uv, g=True), 0.5))))
+    opacity = g.mul(edge_u, edge_v)
+    noise_tex = eal.load_asset(ROOT + "/Textures/Generated/T_IslandNoise")
+    if noise_tex:
+        scuff = (g.tex(noise_tex, g.div(g.mask(g.world(), r=True, g=True), (90.0, 90.0)), "masks"), "B")
+        opacity = g.mul(opacity, g.lerp(0.35, 0.9, scuff))
+    g.out((0.11, 0.09, 0.07), E.MaterialProperty.MP_BASE_COLOR)
+    g.out(0.45, E.MaterialProperty.MP_ROUGHNESS)
+    g.out(g.sat(opacity), E.MaterialProperty.MP_OPACITY)
+    finish_material(mat)
+    return mat
+
+
+def build_ship_graveyard(models, route, start):
+    ships = import_ships()
+    if "Wreck_Large" not in ships:
+        warn("ship graveyard: no wreck meshes; skipped")
+        return
+    master = build_ship_material(ship_colormap())
+    looks = {k: ship_instance(master, "MI_Ship_%s" % k, v) for k, v in SHIP_LOOKS.items()}
+    looks["Rowboat"] = ship_instance(master, "MI_Ship_Rowboat", ROWBOAT_LOOK, wet=0.6)
+    for name, mesh in ships.items():
+        for i, slot in enumerate(mesh.get_editor_property("static_materials")):
+            s = str(slot.get_editor_property("material_slot_name")).lower()
+            if name in ("Rowboat", "Oar"):
+                mi = looks["Rowboat"]
+            elif s.startswith("cloth"):
+                mi = looks["Cloth"]
+            elif s.startswith("weed"):
+                mi = looks["Weed"]
+            else:
+                mi = looks["Wood"]
+            mesh.set_material(i, mi)
+        eal.save_loaded_asset(mesh)
+
+    rng = random.Random(6363)
+    sx, sy = start
+    base_ang = math.atan2(sy, sx)
+    grace = route.offset(0.035, 450.0)
+    ix, iy, ir = BIOMES["islet"]
+    reef_rocks = (models.get("boulder_01") or []) + (models.get("rock_moss_set_01") or [])
+    count = {"wrecks": 0, "masts": 0, "reef_rocks": 0, "skipped": 0, "debris": 0, "flotsam": 0}
+    placed = []  # (x, y, footprint radius)
+    near = []    # wrecks in the shallows, for flotsam
+
+    def footprint(mesh):
+        b = mesh.get_bounding_box()
+        return 0.5 * max(b.max.x - b.min.x, b.max.y - b.min.y)
+
+    def free(x, y, r):
+        return (math.hypot(x - sx, y - sy) > SHIP_START_CLEAR + r * 0.5
+                and math.hypot(x - grace[0], y - grace[1]) > 1500.0 + r
+                and LIB.get_path_distance(x, y) > r + 800.0
+                and math.hypot(x - ix, y - iy) > ir + r + 2500.0
+                and math.hypot(x, y) < SEA_WALL_RADIUS - r - 1500.0
+                and height(x, y) < 60.0  # in the water or on the wet sand, never up the beach
+                and all(math.hypot(x - px, y - py) > (r + pr) * 0.75 for px, py, pr in placed))
+
+    for k, (name, dang, off, how, yaw_rel, roll, pitch) in enumerate(SHIP_WRECKS):
+        mesh = ships.get(name)
+        if mesh is None:
+            continue
+        r = footprint(mesh)
+        spot = None
+        for attempt in range(14):
+            ang = base_ang + dang + (0.035 * ((attempt + 1) // 2) * (1 if attempt % 2 else -1))
+            wx, wy = shore_point(ang, 0.0)
+            room = SEA_WALL_RADIUS - 1700.0 - r - math.hypot(wx, wy)  # open water out to the sea walls
+            d = off * room if off <= 1.0 else off + 250.0 * (attempt // 4)
+            d = min(d, room)
+            if d < 300.0:
+                continue
+            x, y = wx + math.cos(ang) * d, wy + math.sin(ang) * d
+            if free(x, y, r):
+                spot = (x, y, ang)
+                break
+        if spot is None:
+            count["skipped"] += 1
+            log("ship graveyard: no room for %s (%s)" % (name, how))
+            continue
+        x, y, ang = spot
+        yaw = math.degrees(ang) + 180.0 + yaw_rel + rng.uniform(-8.0, 8.0)
+        roll += rng.uniform(-4.0, 4.0)
+        pitch += rng.uniform(-3.0, 3.0)
+        ground = height(x, y)
+        label = "Wreck_%02d_%s" % (k + 1, name)
+        folder = "ShipGraveyard/Wrecks"
+        if how in ("side", "beached", "list", "end"):
+            # Bedded into the sand by a few metres (the bounds' low corner is a mast tip or a keel edge).
+            embed = {"side": 300.0, "beached": 150.0, "list": 250.0, "end": 400.0}[how]
+            place_mesh(mesh, x, y, yaw=yaw, sink=0.0, pitch=pitch, roll=roll, z=ground - embed, folder=folder, label=label)
+            near.append((x, y, r))
+        elif how in ("sunk", "mast"):
+            # Settled on the bottom (decks awash at worst); the masts stand out of the water.
+            place_mesh(mesh, x, y, yaw=yaw, sink=0.0, pitch=pitch, roll=roll, z=max(ground, -2400.0) - 150.0, folder=folder, label=label)
+        else:
+            # Far out on the approaches: impaled on a reef that breaks the surface.
+            for j in (range(rng.randint(2, 4)) if reef_rocks else ()):
+                rock = reef_rocks[rng.randrange(len(reef_rocks))]
+                b = rock.get_bounding_box()
+                s = rng.uniform(5.0, 8.0)
+                top = rng.uniform(-40.0, 260.0)
+                sz = (1500.0 + top) / max(1.0, (b.max.z - b.min.z) * s)
+                a_ = rng.uniform(0, 2 * math.pi)
+                rr = rng.uniform(0.2, 0.8) * r
+                place_mesh(rock, x + math.cos(a_) * rr, y + math.sin(a_) * rr, yaw=rng.uniform(0, 360), scale=(s, s, sz),
+                           sink=0.0, z=-1500.0, folder="ShipGraveyard/Reefs", label="%s_Reef%d" % (label, j + 1))
+                count["reef_rocks"] += 1
+            place_mesh(mesh, x, y, yaw=yaw, sink=0.0, pitch=pitch, roll=roll, z=-1500.0 if how == "reef_mast" else -650.0,
+                       folder=folder, label=label)
+        placed.append((x, y, r))
+        count["masts" if "Mast" in name else "wrecks"] += 1
+
+    # The rowboat the player came ashore in: dragged bow-first up the sand a few metres beside the start.
+    n = LIB.get_island_normal(sx, sy)
+    hn = math.hypot(n.x, n.y)
+    inland = (-n.x / hn, -n.y / hn) if hn > 0.02 else (-math.cos(base_ang), -math.sin(base_ang))
+    ri = (-math.cos(base_ang), -math.sin(base_ang))
+    inland = (inland[0] + ri[0], inland[1] + ri[1])  # the beach's fall line, steadied by the bearing
+    nn = math.hypot(*inland) or 1.0
+    inland = (inland[0] / nn, inland[1] / nn)
+    side = (-inland[1], inland[0])
+    away = 1.0 if math.hypot(sx + side[0] * 480.0 - grace[0], sy + side[1] * 480.0 - grace[1]) > \
+        math.hypot(sx - side[0] * 480.0 - grace[0], sy - side[1] * 480.0 - grace[1]) else -1.0
+    side = (side[0] * away, side[1] * away)
+    in_yaw = math.degrees(math.atan2(inland[1], inland[0]))
+    boat_at = None
+    boat = ships.get("Rowboat")
+    if boat:
+        bx, by = sx + side[0] * 480.0 - inland[0] * 150.0, sy + side[1] * 480.0 - inland[1] * 150.0
+        rise = height(bx + inland[0] * 150.0, by + inland[1] * 150.0) - height(bx - inland[0] * 150.0, by - inland[1] * 150.0)
+        b = boat.get_bounding_box()
+        hz = b.max.z - b.min.z
+        a = place_mesh_at(boat, bx, by, height(bx, by) + hz * 0.5 - 16.0, yaw=in_yaw + 7.0,
+                          pitch=math.degrees(math.atan2(rise, 300.0)) + 2.0, roll=9.0, folder="ShipGraveyard/Landing")
+        a.set_actor_label("Rowboat_Landing")
+        a.get_editor_property("static_mesh_component").set_editor_property("receives_decals", False)
+        boat_at = (bx, by)
+        oar = ships.get("Oar")
+        if oar:
+            ox, oy = bx + side[0] * 175.0 + inland[0] * 30.0, by + side[1] * 175.0 + inland[1] * 30.0
+            place_mesh(oar, ox, oy, yaw=in_yaw + 14.0, sink=0.35, roll=rng.uniform(-6, 6), pitch=rng.uniform(-3, 3),
+                       folder="ShipGraveyard/Landing", label="Rowboat_Oar", collide=False)
+        # The drag furrow from the stern down to the waterline.
+        half = (b.max.x - b.min.x) * 0.5
+        tx, ty = bx - inland[0] * half, by - inland[1] * half
+        length = 100.0
+        while length < 3000.0 and height(tx - inland[0] * length, ty - inland[1] * length) > 3.0:
+            length += 100.0
+        cx, cy = tx - inland[0] * length * 0.5, ty - inland[1] * length * 0.5
+        try:
+            furrow = spawn(unreal.DecalActor, (cx, cy, height(cx, cy)), unreal.Rotator(pitch=-90.0, yaw=in_yaw),
+                           "Rowboat_DragFurrow", "ShipGraveyard/Landing")
+            furrow.set_decal_material(build_furrow_material())
+            # Decal X projects down; after pitch -90 its Z runs along in_yaw (the furrow) and Y across it.
+            setp(furrow.get_editor_property("decal"), "decal_size", unreal.Vector(160.0, 80.0, length * 0.5 + 60.0))
+        except Exception as exc:
+            warn("rowboat drag furrow: %s" % exc)
+        log("rowboat at (%.0f, %.0f) %.0f cm from the start, yaw %.0f, furrow %.0f cm" % (
+            bx, by, math.hypot(bx - sx, by - sy), in_yaw, length))
+
+    # Wreckage washed up along the tideline of the bay, and flotsam bobbing round the wrecks in the shallows.
+    junk = [ships[n_] for n_ in ("Planks", "Planks", "Barrel", "Crate", "CrateBottles", "Barrel", "Planks") if n_ in ships]
+    if junk:
+        for _ in range(140):
+            if count["debris"] >= 34:
+                break
+            ang = base_ang + rng.uniform(-0.55, 0.55)
+            x, y = shore_point(ang, rng.uniform(2.0, 45.0))
+            if (math.hypot(x - sx, y - sy) < 700.0 or LIB.get_path_distance(x, y) < 300.0
+                    or (boat_at and math.hypot(x - boat_at[0], y - boat_at[1]) < 600.0)):
+                continue
+            mesh = junk[rng.randrange(len(junk))]
+            lying = "Barrel" in mesh.get_name() and rng.random() < 0.6
+            place_mesh(mesh, x, y, yaw=rng.uniform(0, 360), pitch=rng.uniform(-10, 10),
+                       roll=90.0 + rng.uniform(-5, 5) if lying else rng.uniform(-14, 14), sink=0.25,
+                       folder="ShipGraveyard/Debris", label="Wreckage_%02d" % (count["debris"] + 1), collide=False)
+            count["debris"] += 1
+        for wx, wy, r in near:
+            for _ in range(rng.randint(2, 4)):
+                x, y = wx + rng.gauss(0, r * 0.6), wy + rng.gauss(0, r * 0.6)
+                if not -250.0 < height(x, y) < -10.0 or math.hypot(x - sx, y - sy) < SHIP_START_CLEAR:
+                    continue
+                place_mesh(junk[rng.randrange(len(junk))], x, y, yaw=rng.uniform(0, 360), pitch=rng.uniform(-15, 15),
+                           roll=rng.uniform(-20, 20), sink=0.55, z=0.0, folder="ShipGraveyard/Debris",
+                           label="Flotsam_%02d" % (count["flotsam"] + 1), collide=False)
+                count["flotsam"] += 1
+    log("ship graveyard: %s" % count)
+
+    # Shots for -IslandShots: out over the bay from the start, the whole graveyard from above, the landing.
+    shots = []
+    cx, cy = sx + inland[0] * 350.0 - side[0] * 250.0, sy + inland[1] * 350.0 - side[1] * 250.0
+    shots.append(shot("ship_graveyard_bay", cx, cy, height(cx, cy) + 320.0, sx - inland[0] * 7000.0, sy - inland[1] * 7000.0, 250.0, fov=80))
+    cx, cy = sx + inland[0] * 3500.0 - side[0] * 1500.0, sy + inland[1] * 3500.0 - side[1] * 1500.0
+    shots.append(shot("ship_graveyard_wide", cx, cy, height(cx, cy) + 3800.0, sx - inland[0] * 8000.0, sy - inland[1] * 8000.0, 0.0, fov=75))
+    if boat_at:
+        bx, by = boat_at
+        cx, cy = bx + side[0] * 650.0 - inland[0] * 380.0, by + side[1] * 650.0 - inland[1] * 380.0
+        shots.append(shot("rowboat_landing", cx, cy, max(height(cx, cy), 0.0) + 190.0, bx, by, height(bx, by) + 40.0, fov=55))
+    path = os.path.join(PROJECT, "Saved", "island_shots.txt")
+    if os.path.exists(path):
+        with open(path, "a", encoding="utf-8") as f:
+            f.write("\n".join(shots) + "\n")
+
+
+SHELL_ART = os.path.join(ART, "Shells")
+SHELL_KINDS = ("Cockle", "CockleUp", "Clam", "Mussel", "Scallop", "Whelk")
+# (kind, slot): (linear tint, banding from the shell's own texture 0..1, roughness). Slots come from the baked .mtl.
+SHELL_LOOKS = {
+    ("Cockle", "Outer"): ((0.56, 0.47, 0.35), 0.8, 0.72),     # sandy, ridged bands
+    ("Cockle", "Inner"): ((0.66, 0.61, 0.53), 0.0, 0.55),
+    ("CockleUp", "Outer"): ((0.52, 0.44, 0.33), 0.8, 0.72),
+    ("CockleUp", "Inner"): ((0.70, 0.65, 0.57), 0.0, 0.5),    # the pale hollow showing
+    ("Clam", "Outer"): ((0.70, 0.68, 0.62), 0.0, 0.68),       # chalky, sun-bleached
+    ("Mussel", "Outer"): ((0.014, 0.017, 0.034), 0.0, 0.32),  # blue-black, glossy
+    ("Mussel", "Inner"): ((0.36, 0.42, 0.54), 0.0, 0.25),     # pearly blue nacre
+    ("Scallop", "Outer"): ((0.70, 0.44, 0.40), 0.9, 0.62),    # pinkish
+    ("Whelk", "Outer"): ((0.60, 0.52, 0.40), 0.9, 0.6),
+}
+SHELL_CULL = 3000.0  # cm; a few centimetres of shell is invisible past this
+
+
+def import_shells():
+    """SourceArt/Environment/Shells/SM_Shell_<Kind>.obj (baked by tools/convert_shells.py) -> /Game/Island/Models/Shells/<Kind>."""
+    out = {}
+    for kind in SHELL_KINDS:
+        src = os.path.join(SHELL_ART, "SM_Shell_%s.obj" % kind)
+        if not os.path.exists(src):
+            warn("shell mesh %s missing (run tools/convert_shells.py in Blender)" % src)
+            continue
+        dest = "%s/Models/Shells/%s" % (ROOT, kind)
+        if REIMPORT or not (eal.does_directory_exist(dest) and assets_of(dest, unreal.StaticMesh)):
+            if eal.does_directory_exist(dest):
+                eal.delete_directory(dest)
+            import_files([src], dest)
+            for mesh in assets_of(dest, unreal.StaticMesh):
+                nanite_and_collision(mesh, nanite=False, complex_collision=False)
+                mesh.set_editor_property("body_setup", None)  # never blocks or catches traces
+                eal.save_loaded_asset(mesh)
+        meshes = assets_of(dest, unreal.StaticMesh)
+        if not meshes:
+            warn("shell %s: no static mesh imported" % kind)
+            continue
+        out[kind] = meshes[0]
+        b = meshes[0].get_bounding_box()
+        log("shell %s: size=(%.1f, %.1f, %.1f) cm" % (kind, b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z))
+    return out
+
+
+def shell_texture(png):
+    """One shared import per shell texture (the .mtl's map_Kd), under /Game/Island/Models/Shells/Tex."""
+    dest = "%s/Models/Shells/Tex" % ROOT
+    name = os.path.splitext(png)[0].lower()
+
+    def find():
+        if not eal.does_directory_exist(dest):
+            return None
+        return next((t for t in assets_of(dest, unreal.Texture2D) if name in t.get_name().lower()), None)
+
+    tex = None if REIMPORT else find()
+    if tex is None:
+        src = os.path.join(SHELL_ART, png)
+        if not os.path.exists(src):
+            return None
+        import_files([src], dest)
+        tex = find()
+    return tex
+
+
+def build_shell_materials(shells):
+    """M_Shell: tint x (optionally) the shell's own texture as light/dark banding, a little per-instance colour
+    variety, darker and glossier where the sea last wet it (the lowest ~half metre above sea level). Two-sided:
+    the valves are thin open shells. One MI_Shell_<Kind>_<Slot> per mesh slot."""
+    mat, g = new_material("M_Shell", ROOT + "/Materials")
+    setp(mat, "two_sided", True)
+    setp(mat, "used_with_instanced_static_meshes", True)
+
+    def sparam(name, value):
+        return g.new(E.MaterialExpressionScalarParameter, parameter_name=name, default_value=value)
+
+    tint = (g.new(E.MaterialExpressionVectorParameter, parameter_name="Tint", default_value=unreal.LinearColor(1, 1, 1, 1)), "RGB")
+    first_tex = next((t for t in (shell_texture(p) for p in sorted(os.listdir(SHELL_ART)) if p.endswith(".png")) if t), None) \
+        if os.path.isdir(SHELL_ART) else None
+    color = tint
+    if first_tex:
+        uv = g.new(E.MaterialExpressionTextureCoordinate)
+        base = g.new(E.MaterialExpressionTextureSampleParameter2D, parameter_name="Base", texture=first_tex,
+                     sampler_type=E.MaterialSamplerType.SAMPLERTYPE_COLOR, sampler_source=E.SamplerSourceMode.SSM_WRAP_WORLD_GROUP_SETTINGS)
+        g.link(uv, base, "UVs")
+        lum = g.dot((base, "RGB"), (0.3, 0.59, 0.11))
+        color = g.mul(tint, g.lerp(1.0, g.minx(g.mul(lum, 2.2), 1.6), sparam("Banding", 0.0)))
+    if hasattr(E, "MaterialExpressionPerInstanceRandom"):
+        color = g.mul(color, g.lerp(0.8, 1.15, g.new(E.MaterialExpressionPerInstanceRandom)))
+    wet = g.one_minus(g.smooth(8.0, 55.0, g.mask(g.world(), b=True)))
+    color = g.lerp(color, g.mul(color, 0.6), wet)
+    g.out(color, E.MaterialProperty.MP_BASE_COLOR)
+    g.out(g.lerp(sparam("Roughness", 0.6), 0.2, wet), E.MaterialProperty.MP_ROUGHNESS)
+    finish_material(mat)
+
+    folder = ROOT + "/Materials/Shells"
+    ensure_dir(folder)
+    for kind, mesh in shells.items():
+        mtl = read_mtl(os.path.join(SHELL_ART, "SM_Shell_%s.mtl" % kind))
+        for i, slot in enumerate(mesh.get_editor_property("static_materials")):
+            slot_name = str(slot.get_editor_property("material_slot_name"))
+            key = next((k for k in mtl if k == slot_name), None) or \
+                next((k for k in mtl if slot_name.lower().startswith(k.lower()) or k.lower().startswith(slot_name.lower())), None) or \
+                (next(iter(mtl)) if len(mtl) == 1 else None)
+            part = key.split("_", 1)[1] if key and "_" in key else "Outer"
+            tint_rgb, banding, rough = SHELL_LOOKS.get((kind, part), ((0.6, 0.55, 0.45), 0.0, 0.6))
+            mi_name = "MI_Shell_%s_%s" % (kind, part)
+            path = "%s/%s" % (folder, mi_name)
+            mi = eal.load_asset(path) if eal.does_asset_exist(path) else \
+                tools.create_asset(mi_name, folder, unreal.MaterialInstanceConstant, unreal.MaterialInstanceConstantFactoryNew())
+            mel.set_material_instance_parent(mi, mat)
+            mel.set_material_instance_vector_parameter_value(mi, "Tint", unreal.LinearColor(tint_rgb[0], tint_rgb[1], tint_rgb[2], 1.0))
+            mel.set_material_instance_scalar_parameter_value(mi, "Roughness", rough)
+            tex = shell_texture(mtl[key]["map"]) if key and "map" in mtl.get(key, {}) else None
+            if first_tex and tex:
+                mel.set_material_instance_texture_parameter_value(mi, "Base", tex)
+                mel.set_material_instance_scalar_parameter_value(mi, "Banding", banding)
+            eal.save_loaded_asset(mi)
+            mesh.set_material(i, mi)
+        eal.save_loaded_asset(mesh)
+
+
+def build_shells(world, models, start):
+    """Sea shells on the sand (UNR-T61): cockles, a pale clam, mussels, scallops and whelks at real size (2-12 cm),
+    thickest in a wrack line along the tideline, thinner up the beach, and a few little drifts on the start beach.
+    Instanced, no collision, culled at SHELL_CULL."""
+    shells = import_shells()
+    if not shells:
+        return
+    build_shell_materials(shells)
+    rng = random.Random(6161)
+    bivalves = [shells[k] for k in ("Cockle", "CockleUp", "Clam", "Mussel") if k in shells]
+    spirals = [shells[k] for k in ("Scallop", "Whelk") if k in shells]
+    every = bivalves + spirals
+
+    def sand(x, y):
+        return normal_z(x, y) > 0.9 and biome(x, y)[3] < 0.2
+
+    def wrack(x, y):
+        # The strand line: where the last tide dropped its load, ~5-55 cm above the sea, thickest at 15-40 cm.
+        h = height(x, y)
+        return 5.0 < h < 55.0 and (15.0 < h < 40.0 or rng.random() < 0.4) and sand(x, y)
+
+    def upper(x, y):
+        h = height(x, y)
+        return 55.0 <= h < 240.0 and sand(x, y)
+
+    placed = 0
+    if bivalves:
+        placed += scatter(world, rng, bivalves, 340, wrack, (0.7, 1.3), "Shells_Wrack", cull=SHELL_CULL, sink=0.2, tries=200)
+    if spirals:
+        placed += scatter(world, rng, spirals, 90, wrack, (0.75, 1.35), "Shells_WrackSpiral", cull=SHELL_CULL, sink=0.2, tries=400)
+    placed += scatter(world, rng, every, 170, upper, (0.6, 1.1), "Shells_Beach", cull=SHELL_CULL, sink=0.25, tries=120)
+
+    # A few little drifts on the start beach, where the player wakes and looks down first.
+    per_mesh = {m.get_name(): [] for m in every}
+    clusters = 0
+    for _ in range(200):
+        if clusters >= 6:
+            break
+        ang, r = rng.uniform(0.0, 2.0 * math.pi), rng.uniform(250.0, 1400.0)
+        cx, cy = start[0] + math.cos(ang) * r, start[1] + math.sin(ang) * r
+        if not (5.0 < height(cx, cy) < 200.0 and sand(cx, cy)):
+            continue
+        clusters += 1
+        for _ in range(rng.randint(6, 11)):
+            x, y = cx + rng.gauss(0.0, 45.0), cy + rng.gauss(0.0, 45.0)
+            if not 3.0 < height(x, y) < 240.0:
+                continue
+            m = every[rng.randrange(len(every))]
+            per_mesh[m.get_name()].append(inst_transform(m, x, y, rng.uniform(0, 360), rng.uniform(0.7, 1.2), sink=0.2,
+                                                         pitch=rng.uniform(-6, 6), roll=rng.uniform(-6, 6)))
+    for m in every:
+        if per_mesh[m.get_name()]:
+            LIB.create_instanced_meshes(world, m, per_mesh[m.get_name()], "Shells_StartBeach_%s" % m.get_name(),
+                                        "Biomes/Shells_StartBeach", False, SHELL_CULL)
+            placed += len(per_mesh[m.get_name()])
+    log("shells: %d placed (%d start-beach drifts), kinds %s" % (placed, clusters, sorted(shells)))
+
+
 def build_everything(textures, models):
     route, pads = plan_layout()
     start = route.points[0]
@@ -2603,6 +3163,7 @@ def build_everything(textures, models):
     build_stone_circle(models, route)
     dress_biomes(world, models, route, pads)
     dress_more(world, models, route, pads, start)
+    build_shells(world, models, start)
     broch = build_islet(models)
     build_markers(route, start)
     grapples = build_grapples_and_loot(world, route, pads, broch)
@@ -2610,6 +3171,7 @@ def build_everything(textures, models):
     write_shot_list(route, start, grapples)
     build_tall_grass(world, models, route, pads)
     build_wildlife(models, route, start)
+    build_ship_graveyard(models, route, start)
 
     gm = unreal.load_class(None, GAME_MODE)
     if gm:

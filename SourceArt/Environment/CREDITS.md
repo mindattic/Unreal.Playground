@@ -33,3 +33,27 @@ are baked from them by `tools/convert_critters.py` (Blender 4.4+). All CC0 1.0, 
 | `Critters/Source/crab/` (`crab.blend`, `crab.png`; low poly crab, rigged, idle + walk) -> `SM_Crab.obj` | methodical pixel | https://opengameart.org/content/crab-low-poly-animated-3d-model (`crab_0.zip`) | CC0 1.0 |
 | `Critters/Source/frog.glb` ("Frog", animated) -> `SM_Frog.obj` | Quaternius | https://poly.pizza/m/9Z2V8fpazF | CC0 1.0 |
 | `Critters/Source/fish.glb` ("Fish", animated) -> `SM_Fish.obj` (pond fish and the dead fish on the beach) | Quaternius | https://poly.pizza/m/XWl86YFtpF | CC0 1.0 |
+
+## Ship graveyard (tools/convert_ships.py + tools/build_island.py, UNR-T63)
+
+Downloaded 2026-11-04 without a login (the site's free "Continue without donating" download). The originals
+used are kept under `Ships/Source/` with the pack's own `License.txt`; `Ships/SM_*.obj` are baked from them by
+`tools/convert_ships.py` (Blender 4.4+). CC0 1.0, no attribution required; given anyway.
+
+| Asset | Author | Source | License |
+|---|---|---|---|
+| Pirate Kit 2.1: `ship-large`, `ship-medium`, `ship-small`, `ship-ghost`, `ship-wreck`, `mast-ropes`, `boat-row-large`, `tool-paddle`, `barrel`, `crate`, `crate-bottles`, `platform-planks` (`.glb`) and `Textures/colormap.png` -> the wrecks, the rowboat, its oar and the washed-up wreckage | Kenney (www.kenney.nl) | https://kenney.nl/assets/pirate-kit (`kenney_pirate-kit.zip`) | CC0 1.0 |
+
+## Sea shells (tools/convert_shells.py + tools/build_island.py, UNR-T61)
+
+Downloaded 2026-11-04 without a login from poly.pizza's static model store. The originals are kept under
+`Shells/Source/`; `Shells/SM_Shell_*.obj` (+ the `shell_*.png` textures, downscaled to 256 px) are baked from them by
+`tools/convert_shells.py` (Blender 4.4+). Three of the sources are **CC-BY 3.0: attribution required** - keep these
+lines in the game's credits.
+
+| Asset | Author | Source | License |
+|---|---|---|---|
+| `Shells/Source/mussel-open.glb` ("Mussel Open") -> `SM_Shell_Mussel.obj` | Kenney (www.kenney.nl) | https://poly.pizza/m/eWHAc3Pq8z | CC0 1.0 |
+| `Shells/Source/seashell.glb` ("Seashell": a scallop valve and a spire shell) -> `SM_Shell_Scallop.obj`, `SM_Shell_Whelk.obj` | Poly by Google | https://poly.pizza/m/5ovn4mnRejL | CC-BY 3.0 - https://creativecommons.org/licenses/by/3.0/ |
+| `Shells/Source/clam_65ObbG0O7Ze.glb` ("Clam", one valve kept) -> `SM_Shell_Cockle.obj`, `SM_Shell_CockleUp.obj` | Poly by Google | https://poly.pizza/m/65ObbG0O7Ze | CC-BY 3.0 - https://creativecommons.org/licenses/by/3.0/ |
+| `Shells/Source/clam_7UsYZIZ_rhU.glb` ("Clam", meat removed) -> `SM_Shell_Clam.obj` | Poly by Google | https://poly.pizza/m/7UsYZIZ_rhU | CC-BY 3.0 - https://creativecommons.org/licenses/by/3.0/ |

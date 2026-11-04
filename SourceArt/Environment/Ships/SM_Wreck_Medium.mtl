@@ -1,0 +1,10 @@
+# Kenney Pirate Kit (CC0), baked by tools/convert_ships.py
+newmtl Wood
+Kd 0.42 0.3 0.2
+map_Kd colormap.png
+
+newmtl Cloth
+Kd 0.62 0.6 0.55
+
+newmtl Weed
+Kd 0.12 0.16 0.07

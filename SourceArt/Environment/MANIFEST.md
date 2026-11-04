@@ -98,3 +98,51 @@ collision, no Nanite), gives each `.mtl` slot an `M_Critter` instance, and place
 | `Critters/SM_Crab.obj` (+ `crab.png` palette texture) | 12 x 17.3 x 6.2 | 832 | beach crabs: scuttle sideways, flee the player |
 | `Critters/SM_Frog.obj` | 13 x 14.2 x 6 | 4920 | frogs on the marsh pool banks; leap into the water when approached (recoloured to a common frog) |
 | `Critters/SM_Fish.obj` | 32 x 4.6 x 10.7 | 544 | fish swimming in the marsh pools; dead fish on their side along the tideline |
+### Ship graveyard (UNR-T63)
+
+`Ships/Source/` holds the Kenney Pirate Kit originals used (see `CREDITS.md`). `tools/convert_ships.py` (run with
+Blender 4.4+: `blender -b --factory-startup --disable-autoexec --python tools/convert_ships.py [-- --preview] [Name ...]`)
+joins each model's parts, turns the bow to **+X**, Z up, scales it to life size in centimetres (beam narrowed to
+0.82 so the stubby kit hulls read as ships), wrecks it - flags struck, sails subdivided and rotted to tatters,
+optionally broken in two at a ragged cut a little aft of midships - and writes a static OBJ with its bottom-centre
+at the origin and slots `Wood` (the kit palette `colormap.png`), `Cloth` (sails) and `Weed` (the grass on the kit's
+own wreck). `tools/build_island.py` (`build_ship_graveyard`) imports them to `/Game/Island/Models/Ships/<Name>`
+(no Nanite; hulls collide complex-as-simple so they can be climbed, debris has no collision), gives every slot an
+instance of `M_Shipwreck` (palette desaturated and tinted to dark old wood, streaked, soaked below ~3.5 m above
+the sea, barnacles and weed at the waterline, slime under it, moss on the decks; two-sided for the open broken
+hulls) and lays out the graveyard in the bay off the start beach.
+
+| File | Size (cm, X x Y x Z) | Tris | Use |
+|---|---|---|---|
+| `SM_Wreck_Large.obj` | 4200 x 1262 x 3194 | 10181 | three-masted galleon: on its side in the shallows, sunk with masts out, on a reef far out |
+| `SM_Wreck_Medium.obj` | 3500 x 1300 x 3290 | 10115 | sunk with masts out; listing on a reef |
+| `SM_Wreck_Small.obj` | 2700 x 1252 x 3057 | 5284 | on its side in the shallows; on a reef |
+| `SM_Wreck_Ghost.obj` | 3800 x 1411 x 3572 | 10068 | the kit's holed ghost ship: listing half-sunk; on a reef |
+| `SM_Wreck_Hulk.obj` | 3800 x 1411 x 3572 | 2832 | the kit's grassed-over wreck: driven onto the sand; sunk |
+| `SM_Wreck_Large_Bow.obj` / `_Stern.obj` | 2541 x 1157 x 3130 / 2226 x 1262 x 3194 | 4306 / 10283 | one galleon broken in two, the halves lying apart |
+| `SM_Wreck_Medium_Bow.obj` / `_Stern.obj` | 2118 x 1300 x 3224 / 1855 x 1300 x 3104 | 5359 / 8602 | another broken ship: bow on its side, stern rearing up |
+| `SM_Wreck_Mast.obj` | 1406 x 687 x 2529 | 3429 | lone masts standing out of the water over sunk hulls |
+| `SM_Rowboat.obj` | 390 x 195 x 88 | 118 | the boat the player came ashore in (the kit's oars dropped) |
+| `SM_Oar.obj` | 250 x 70 x 22 | 60 | one oar lying beside it (the kit's paddle, laid flat) |
+| `SM_Barrel.obj`, `SM_Crate.obj`, `SM_CrateBottles.obj`, `SM_Planks.obj` | 96 x 96 x 88, 102 x 124 x 73, 102 x 124 x 100, 199 x 284 x 45 | 48-572 | wreckage along the tideline and flotsam round the wrecks |
+
+### Sea shells (UNR-T61)
+
+`Shells/Source/` holds the originals (see `CREDITS.md`). `tools/convert_shells.py` (run with Blender 4.4+:
+`blender -b --factory-startup --disable-autoexec --python tools/convert_shells.py [-- --preview]`) keeps only the
+shell (meat cut away; the seashell pair split into a scallop and a whelk; the cockle keeps one valve), lays each the
+way it rests on sand, scales it to real size with its bottom-centre at the origin, and writes a static OBJ with slots
+`<Kind>_Outer` / `<Kind>_Inner` (textured slots name a `shell_*.png`). `tools/build_island.py` (`build_shells`)
+imports them to `/Game/Island/Models/Shells/<Kind>` (no Nanite, no collision body), gives every slot an instance of
+`M_Shell` (two-sided; tint x the shell texture's banding, per-instance brightness variety, darker and glossier in
+the last half metre above the sea) and scatters ~600 instanced shells (culled at 30 m): thickest along the
+wrack line 5-55 cm above the sea, thinner up the beach, and six small drifts on the start beach.
+
+| File | Size (cm, X x Y x Z) | Tris | Look |
+|---|---|---|---|
+| `SM_Shell_Cockle.obj` | 4.0 x 3.5 x 0.9 | 224 | one valve, convex up; sandy, banded |
+| `SM_Shell_CockleUp.obj` | 3.5 x 3.0 x 0.8 | 224 | the same valve hollow side up, pale inside |
+| `SM_Shell_Clam.obj` | 4.3 x 5.0 x 2.5 | 396 | gaping empty clam, chalky white |
+| `SM_Shell_Mussel.obj` | 4.0 x 6.5 x 3.4 | 90 | open blue mussel: blue-black outside, pearly blue inside |
+| `SM_Shell_Scallop.obj` | 8.0 x 6.4 x 1.0 | 968 | ribbed fan valve, pinkish |
+| `SM_Shell_Whelk.obj` | 6.0 x 2.7 x 2.6 | 448 | spire shell lying on its side |
