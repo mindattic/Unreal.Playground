@@ -128,6 +128,12 @@ public:
 	bool IsChatting() const { return ChatPartner.IsValid(); }
 	bool IsSpeaking() const { return IsChatting() && bSpeaking; }
 
+	// A whistle in earshot: an unaware foe wanders over to see what it was, looks about, then goes back.
+	void HearWhistle(const FVector& Where);
+	bool IsCurious() const { return bCurious; }
+	// Verification runs: set this foe on a target at once.
+	void ForceEngage(ASoulsKnight* NewTarget) { Engage(NewTarget); }
+
 private:
 	void ThinkPatrol(float Now);
 	bool PickPatrolPoint(const FVector& Bias);
@@ -162,4 +168,8 @@ private:
 	float ChatCooldownUntil = 0.f;
 	float NextTurnSwap = 0.f;
 	bool bSpeaking = false;
+	bool bCurious = false;
+	FVector CuriousPoint = FVector::ZeroVector;
+	float CuriousUntil = 0.f;
+	float CuriousLookUntil = 0.f;
 };

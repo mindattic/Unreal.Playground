@@ -19,8 +19,8 @@ Warden in the stone circle and Morrigan of the Mire, a shade who melts into shad
   Quaternius); credits are under `SourceArt/`.
 - **Combat.** The player and every enemy use the same kit, built on Epic's Manny with retargeted
   CC0 animation:
-  - a three-swing combo and a heavy attack
-  - tap to roll (with i-frames), hold to sprint
+  - a three-swing combo and a heavy attack; each swing steps in toward the foe ahead
+  - a roll with i-frames, and a sprint
   - a guard that breaks when stamina runs out
   - a timed parry, then a riposte, and backstabs
   - poise interrupts and stance breaks
@@ -29,6 +29,11 @@ Warden in the stone circle and Morrigan of the Mire, a shade who melts into shad
   - lock-on
 - **Grapple.** Hook a glinting point on a ledge to be hauled up onto it. Hook a smaller enemy to
   yank it to your blade, dazed. Hook a big one to pull yourself in for a falling cut.
+- **Slingshot and umbrella.** Keep RT held as a ledge grapple reels you in and you hang taut under
+  the hook while the tension builds. Let go and it flings you up and past the hook. In the air,
+  press A (or keep it held) to open the umbrella you carry across your back. You sink slowly,
+  steer with the stick and drift with the prevailing wind. It folds when you land, attack or
+  press B.
 - **Brace and impale.** Leapers crouch and spring at you from range. Brace your blade while one is
   in the air and it's run through, held aloft and slides off dead. If you don't brace, you're
   knocked flat.
@@ -55,16 +60,18 @@ Warden in the stone circle and Morrigan of the Mire, a shade who melts into shad
 | Move / look | L-stick / R-stick | WASD / mouse |
 | Light attack (combo, riposte, backstab) | X | LMB |
 | Heavy attack | Y | F |
-| Roll (tap while moving) | B | Shift |
-| Crouch / stand (tap while still) | B | Shift |
+| Crouch / stand (tap) | B | Shift |
+| Roll (tap while sprinting, locked on or with a foe on you) | B | Shift |
 | Dive prone and army-crawl (hold); get up (tap again) | B | Shift |
-| Sprint (tap; lasts until you stop) | L3 | Ctrl |
+| Sprint (tap; lasts until you stop) | R3 or L3 | Ctrl |
 | Jump | A | Space |
 | Guard (hold); raise it just as a blow lands to parry | LB | RMB |
 | Parry, or brace against a leaping enemy | LT (or LB) | C |
 | Flask | RB | R |
 | Grapple | RT | G / mouse thumb |
-| Lock on | R3 | Q / MMB |
+| Slingshot: hold through a ledge grapple, release to fling | RT | G / mouse thumb |
+| Open the umbrella in the air (B, X or Y folds it) | A | Space |
+| Lock on (hold; tap again to let go) | R3 | Q / MMB |
 | Rest at grace / pick up | D-pad up | E |
 
 ## Build and run
@@ -87,5 +94,11 @@ Run these with `-RenderOffscreen` to check a build without anyone at the control
 - `-ShadowBossTest -ShadowBossDemo` stages the shade's fight.
 - `-StealthDemo` dives prone, crawls, gets up, then crouch-walks up behind a sentry and backstabs it.
 - `-PatrolDemo` watches two patrolling enemies meet, talk and part.
+- `-InputTest` presses real controller buttons through the player controller (crouch, crouch-walk,
+  sprint on R3 and L3, roll, prone, crawl, get up, a light attack's reach) and logs `Input check:` PASS/FAIL.
+- `-HandShots` takes close shots of the sword fist and the shield arm, at rest and on guard.
+- `-GlideDemo` grapples a hook on Lvl_Isle with RT held, hangs, slingshots and opens the umbrella
+  at the apex. It glides and lands, screenshots each beat and logs `Glide check:` heights, speeds
+  and PASS/FAIL.
 
 Screenshots land in `Saved/Screenshots`.

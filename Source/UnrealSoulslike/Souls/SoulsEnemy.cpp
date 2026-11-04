@@ -1,4 +1,5 @@
 #include "SoulsEnemy.h"
+#include "SoulsConcealment.h"
 #include "SoulsGameMode.h"
 #include "CollisionQueryParams.h"
 #include "Components/CapsuleComponent.h"
@@ -140,7 +141,7 @@ bool ASoulsEnemyController::CanSee(const AActor* Other) const
 	const float Distance = To.Size();
 	// Crouching or crawling knights are much harder to pick out, and quieter.
 	const ASoulsKnight* OtherKnight = Cast<ASoulsKnight>(Other);
-	const float Visibility = OtherKnight ? OtherKnight->GetVisibilityScale() : 1.f;
+	const float Visibility = (OtherKnight ? OtherKnight->GetVisibilityScale() : 1.f) * USoulsConcealment::GetConcealment(Other);
 	const float Hearing = OtherKnight ? OtherKnight->GetNoiseRadius() : 450.f;
 	if (Distance > Me->SightRange * Visibility)
 	{
@@ -165,6 +166,7 @@ void ASoulsEnemyController::Engage(ASoulsKnight* NewTarget)
 	{
 		return;
 	}
+	bCurious = false;
 	Target = NewTarget;
 	if (Mind != EEnemyMind::Engage)
 	{
@@ -388,6 +390,44 @@ void ASoulsEnemyController::ThinkPatrol(float Now)
 		return;
 	}
 
+	// Heard a whistle: go and have a look.
+	if (bCurious)
+	{
+		const FVector ToSpot = CuriousPoint - Me->GetActorLocation();
+		if (Now > CuriousUntil)
+		{
+			bCurious = false;
+			bHasPatrolPoint = false;
+			PatrolWaitUntil = Now + 1.f;
+			UE_LOG(LogTemp, Log, TEXT("Whistle: %s gives up looking"), *Me->GetName());
+			return;
+		}
+		if (CuriousLookUntil > 0.f)
+		{
+			// At the spot: turn this way and that, peering about.
+			Movement->bOrientRotationToMovement = false;
+			const float Yaw = Me->GetActorRotation().Yaw + 70.f * FMath::Sin(Now * 1.3f) * GetWorld()->GetDeltaSeconds();
+			Me->SetActorRotation(FRotator(0.f, Yaw, 0.f));
+			if (Now > CuriousLookUntil)
+			{
+				CuriousUntil = 0.f;
+			}
+			return;
+		}
+		if (ToSpot.Size2D() < 160.f || PatrolStuckTime > 2.f)
+		{
+			CuriousLookUntil = Now + FMath::FRandRange(3.f, 5.f);
+			PatrolStuckTime = 0.f;
+			UE_LOG(LogTemp, Log, TEXT("Whistle: %s reached the spot and looks around"), *Me->GetName());
+			return;
+		}
+		Movement->bOrientRotationToMovement = true;
+		Movement->MaxWalkSpeed = Me->PatrolSpeed * 1.15f;
+		Steer(ToSpot, 1.f);
+		PatrolStuckTime = Me->GetVelocity().Size2D() < 30.f ? PatrolStuckTime + GetWorld()->GetDeltaSeconds() : 0.f;
+		return;
+	}
+
 	// Bumped into another wanderer? Stop for a word.
 	// (Only on the move: a pair posted side by side doesn't natter forever.)
 	if (bHasPatrolPoint && Me->GetVelocity().Size2D() > 40.f && Now - LastMeetCheck > 0.4f && Now >= ChatCooldownUntil)
@@ -440,6 +480,27 @@ void ASoulsEnemyController::ThinkPatrol(float Now)
 		bHasPatrolPoint = false;
 		PatrolWaitUntil = Now + 1.f;
 	}
+}
+
+void ASoulsEnemyController::HearWhistle(const FVector& Where)
+{
+	const ASoulsEnemy* Me = Knight();
+	if (!Me || Me->IsDead() || Mind != EEnemyMind::Idle || !CanPatrol())
+	{
+		return;
+	}
+	const float Now = GetWorld()->GetTimeSeconds();
+	if (IsChatting())
+	{
+		EndChat(Now, false);
+	}
+	bCurious = true;
+	// Not right onto the whistler: somewhere about where the sound came from.
+	CuriousPoint = Where + FVector(FMath::FRandRange(-250.f, 250.f), FMath::FRandRange(-250.f, 250.f), 0.f);
+	CuriousUntil = Now + 25.f;
+	CuriousLookUntil = 0.f;
+	PatrolStuckTime = 0.f;
+	UE_LOG(LogTemp, Log, TEXT("Whistle: %s heard it and comes to look"), *Me->GetName());
 }
 
 void ASoulsEnemyController::Tick(float DeltaSeconds)

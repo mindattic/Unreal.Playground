@@ -4,6 +4,8 @@
 #include "SoulsKnight.h"
 #include "SoulsEnemy.h"
 #include "GrapplePoint.h"
+#include "SoulsGlider.h"
+#include "SoulsTorch.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Components/CapsuleComponent.h"
@@ -106,6 +108,7 @@ void ASoulsKnight::GrapplePressed()
 	{
 		return;
 	}
+	ASoulsTorch::DropWielded(this);
 	StartGrapple(Target);
 }
 
@@ -183,6 +186,14 @@ void ASoulsKnight::TickGrapple(float DeltaSeconds)
 	if (!Target || (Foe && !Foe->CanBeLockedOn()))   // dead, or melted into shadow
 	{
 		EndGrapple(false);
+		return;
+	}
+	// UNR-T42: RT still held as the line flies to a ledge: hand over to the slingshot instead of landing.
+	if (GrappleMode == EGrappleMode::ToPoint && Glider && Glider->WantsSlingshot())
+	{
+		AGrapplePoint* Point = Cast<AGrapplePoint>(Target);
+		EndGrapple(false);
+		Glider->BeginSlingshot(Point);
 		return;
 	}
 	ACharacter* Mover = GrappleMode == EGrappleMode::ReelFoe ? static_cast<ACharacter*>(Foe) : static_cast<ACharacter*>(this);
@@ -308,6 +319,7 @@ ASoulsKnight* ASoulsKnight::FindIncomingPouncer() const
 
 void ASoulsKnight::StartBrace()
 {
+	ASoulsTorch::DropWielded(this);
 	SetBlocking(false);
 	if (ASoulsKnight* Pouncer = FindIncomingPouncer())
 	{

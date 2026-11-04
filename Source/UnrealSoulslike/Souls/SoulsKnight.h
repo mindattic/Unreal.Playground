@@ -9,6 +9,7 @@ class UMaterialInterface;
 class USoundBase;
 class UStaticMeshComponent;
 class UInputAction;
+class USoulsGlider;
 class UInputMappingContext;
 class ASiteOfGrace;
 class AGrapplePoint;
@@ -79,6 +80,10 @@ public:
 	// The grapple's line, stretched from the off hand to the hook while it's out.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Knight")
 	TObjectPtr<UStaticMeshComponent> GrappleLine;
+
+	// The umbrella and the grapple slingshot (UNR-T42).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Knight")
+	TObjectPtr<USoulsGlider> Glider;
 
 	// 0 = players, 1 = the island's enemies. Knights never hurt their own team.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight")
@@ -190,7 +195,11 @@ public:
 	float CriticalDamage = 60.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight|Combat")
-	float SwordReach = 190.f;
+	float SwordReach = 235.f;
+
+	// Burn damage per second at full flame (field fire, UNR-T41).
+	UPROPERTY(EditAnywhere, Category = "Souls|Hazards")
+	float BurnDamagePerSecond = 18.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight|Combat")
 	float SwingHitFraction = 0.42f;
@@ -399,6 +408,8 @@ public:
 	void ParryPressed();
 	void HealPressed();
 	void InteractPressed();
+	// D-pad up away from anything to use: whistle, and unaware foes in earshot come over to look.
+	void Whistle();
 	void ToggleLockOn();
 	void GrapplePressed();
 
@@ -435,6 +446,9 @@ public:
 	// Hitstop: freeze this knight's animation and movement for a beat.
 	void Hitstop(float Seconds);
 
+	// Burning (SoulsTorch.cpp): health only, no flinch, sound or hitstop.
+	void TakeBurnDamage(float Amount, AActor* Source) { LoseHealth(Amount, Source); }
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
@@ -451,13 +465,34 @@ private:
 	void RunStealthDemo();
 	void TickStealthDemo();
 	void Shot(const TCHAR* Name);
+	// -InputTest: presses real controller buttons through the player controller and checks each result.
+	void RunInputTest();
+	// -HandShots: close views of the sword hand and the shield arm, after textures stream in.
+	void RunHandShots();
+	// -ClashDemo: a foe attacks into the raised guard (sparks, jolt, bounce), then a timed guard parries.
+	// -WhistleDemo: whistle from out of sight; the foe wanders over to look.
+	void RunClashDemo();
+	void RunWhistleDemo();
+	void TickClashDemo();
+	bool bClashParry = false;
+	int32 ClashBlocks = 0;
+	int32 ClashParries = 0;
+	void InputTestKey(const FKey& Key, bool bDown);
 	TWeakObjectPtr<ASoulsKnight> DemoVictim;
 	FVector DemoMove = FVector::ZeroVector;
 	bool bDemoStalk = false;
 	float DemoStalkStart = 0.f;
 
 	void EnsureKnightInput();
-	void DodgeHeld();
+	// Light/heavy swings step in toward the foe in front, so the blade reaches it: after Delay, over Window.
+	void StartLunge(float MaxDistance, float Delay, float Window);
+	// AI swings telegraph: a slow raise, then a fast strike. Retimes the playing montage and the
+	// action; returns the seconds until the blade lands.
+	float ApplyWindup(UAnimMontage* Montage, float BaseRate, float HitFraction, bool bHeavy);
+	// A blow caught on this knight's raised shield: the guard jolts, the feet slide, sparks fly.
+	void GuardImpact(const FVector& ToAttacker, bool bHeavy);
+	// This knight's blade glanced off a shield: it bounces back a beat and the knight is shoved off.
+	void RecoilFromGuard(bool bHeavy);
 	void TickStance(float DeltaSeconds);
 	// Prone and asked to do something: get up instead (true = the request was used up).
 	bool GetUpFirst();
@@ -535,6 +570,15 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> KnightJumpAction;
 
+	FTimerHandle WindupTimer;
+	FTimerHandle StrikeTimer;
+	FTimerHandle RecoilTimer;
+	float LungeDelay = 0.f;
+	float LastWhistleTime = -10.f;
+	FVector LungeDirection = FVector::ZeroVector;
+	float LungeRemaining = 0.f;
+	float LungeSpeed = 0.f;
+
 	TWeakObjectPtr<ASoulsKnight> LockTarget;
 	TWeakObjectPtr<ASoulsKnight> CriticalVictim;
 	TWeakObjectPtr<AActor> TrackTarget;
@@ -550,15 +594,12 @@ private:
 	bool bVerificationDemo = false;
 	bool bDemoCameraSet = false;
 	bool bHeavySwing = false;
-	bool bDodgeHeld = false;
 	bool bSprinting = false;
 	bool bSprintToggled = false;
-	bool bDodgeHoldFired = false;
 	bool bTalking = false;
 	EKnightStance Stance = EKnightStance::Standing;
 	float BaseMeshZ = 0.f;
 	float MeshDrop = 0.f;
-	FTimerHandle DodgeHoldTimer;
 	float DodgePressTime = 0.f;
 	float SprintPressTime = 0.f;
 	float BlockPressTime = -100.f;
