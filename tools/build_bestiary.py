@@ -95,6 +95,8 @@ def assets_of(folder, cls):
 def import_glb(filename, dest):
     if eal.does_directory_exist(dest):
         eal.delete_directory(dest)
+        if eal.does_directory_exist(dest) and eal.list_assets(dest, recursive=True, include_folder=False):
+            warn("could not clear %s (still referenced?); importing over it" % dest)
     ensure_dir(dest)
     task = unreal.AssetImportTask()
     task.set_editor_property("filename", filename)
@@ -227,6 +229,9 @@ def stand_in(bone, have):
     """A target bone for one of Manny's chain bones, or None if the rig has nothing like it."""
     if bone in have:
         return bone
+    folded = {b.lower(): b for b in have}
+    if bone.lower() in folded:
+        return folded[bone.lower()]
     if bone.startswith(("ik_", "interaction", "center_of_mass")) or "twist" in bone or "_corrective" in bone:
         return None
     if bone.startswith("spine_"):
@@ -265,7 +270,7 @@ def make_rig(name, mesh, manny_rig):
         start = stand_in(str(mc.get_retarget_chain_start_bone(cname)), have)
         end = stand_in(str(mc.get_retarget_chain_end_bone(cname)), have)
         if not start or not end:
-            skipped.append(str(cname))
+            skipped.append("%s(%s..%s)" % (cname, mc.get_retarget_chain_start_bone(cname), mc.get_retarget_chain_end_bone(cname)))
             continue
         c.add_retarget_chain(cname, start, end, "")
         made.append("%s(%s..%s)" % (cname, start, end))
@@ -369,9 +374,18 @@ def retarget_kit(kind, mesh, template_cdo, manny, manny_rig):
         factory.set_editor_property("source_animation", out["A_Death"])
         death = tools.create_asset(prefix + "AM_Death", dest, unreal.AnimMontage, factory)
         eal.save_loaded_asset(death)
+    # UNR-T72: the template's foot IK plants the feet on ik_foot_l/r; key them onto the feet in every clip
+    # (the blendspace and jump clips the anim blueprint plays came across as AnimSequences here too).
+    baked = 0
     for asset in out.values():
         if isinstance(asset, unreal.AnimSequence):
+            baked += 1 if unreal.SoulsBestiaryTools.bake_foot_ik_bones(asset) >= 3 else 0
             eal.save_loaded_asset(asset)
+    sequences = sum(1 for a in out.values() if isinstance(a, unreal.AnimSequence))
+    log("%s: foot IK bones keyed in %d/%d clips" % (kind, baked, sequences))
+    if baked < sequences:
+        warn("%s: foot IK bones missing from %d clips (no ik_foot_root/ik_foot_l/ik_foot_r? rerun tools/convert_bestiary.py)"
+             % (kind, sequences - baked))
     return out, anim_bp, death
 
 
@@ -439,7 +453,7 @@ def import_character(kind):
         import_glb(wglb, "%s/%s/Weapon" % (BESTIARY, kind))
         weapon = (assets_of("%s/%s/Weapon" % (BESTIARY, kind), unreal.StaticMesh) or [None])[0]
     pose = Pose(mesh)
-    need = [b for b in ("pelvis", "hand_l", "hand_r", "upperarm_l", "upperarm_r", "middle_01_l", "middle_01_r",
+    need = [b for b in ("pelvis", "ik_foot_root", "ik_foot_l", "ik_foot_r", "hand_l", "hand_r", "upperarm_l", "upperarm_r", "middle_01_l", "middle_01_r",
                         "index_01_l", "index_01_r", "pinky_01_l", "pinky_01_r") if b not in pose.bones]
     if need:
         warn("%s: bones missing %s" % (kind, need))
@@ -545,6 +559,36 @@ def build_player(kind, ctx):
     return True
 
 
+def release_old_bodies(ctx):
+    """A rerun re-imports every mesh (new skeletons with new bones), so first drop what still points at the
+    old ones: the bestiary blueprints, and the knight's Ranger body (back on Manny until build_player)."""
+    for path in eal.list_assets(BESTIARY, recursive=False, include_folder=False) if eal.does_directory_exist(BESTIARY) else []:
+        if path.rsplit("/", 1)[1].split(".")[0].startswith("BP_SoulsEnemy_"):
+            eal.delete_asset(path.split(".")[0])
+    knight_path = SOULS + "/BP_SoulsKnight"
+    if not eal.does_asset_exist(knight_path):
+        return
+    knight_cdo = blueprint_cdo(knight_path)
+    comp = knight_cdo.get_editor_property("mesh")
+    body = comp.get_editor_property("skeletal_mesh_asset")
+    if body is not None and body.get_path_name().startswith(BESTIARY):
+        enemy_cdo = ctx["enemy_cdo"]
+        comp.set_editor_property("skeletal_mesh_asset", ctx["manny"])
+        comp.set_editor_property("anim_class", enemy_cdo.get_editor_property("mesh").get_editor_property("anim_class"))
+        comp.set_editor_property("relative_rotation", enemy_cdo.get_editor_property("mesh").get_editor_property("relative_rotation"))
+        # The knight and the Hollow knights share one montage set (build_souls_character.configure_knight).
+        for prop in MONTAGE_PROPS + MONTAGE_ARRAYS:
+            knight_cdo.set_editor_property(prop, enemy_cdo.get_editor_property(prop))
+        steel = [eal.load_asset("%s/Materials/MI_KnightSteel_%d" % (SOULS, i)) for i in (0, 1)]
+        knight_cdo.set_editor_property("BodyMaterials", [m for m in steel if m])
+        place(knight_cdo.get_editor_property("Sword"), ctx["sword"], spec_transform(ctx["sword_fit"]), ctx["sword_fit"]["scale"])
+        place(knight_cdo.get_editor_property("Shield"), ctx["shield"], spec_transform(ctx["shield_fit"]), ctx["shield_fit"]["scale"])
+        bp = eal.load_asset(knight_path)
+        unreal.BlueprintEditorLibrary.compile_blueprint(bp)
+        eal.save_loaded_asset(bp)
+        log("released BP_SoulsKnight's old %s (montages are re-pointed by build_player)" % body.get_name())
+
+
 def main():
     ensure_dir(BESTIARY)
     unreal.SystemLibrary.execute_console_command(None, "Interchange.FeatureFlags.Import.FBX true")
@@ -559,6 +603,7 @@ def main():
                manny_yaw=enemy_cdo.get_editor_property("mesh").get_editor_property("relative_rotation").yaw,
                manny_facing=facing_yaw(manny_pose), sword_fit=sword_fit, shield_fit=shield_fit,
                sword=eal.load_asset(SWORD), shield=eal.load_asset(SHIELD), unseen=unseen_material())
+    release_old_bodies(ctx)
     log("manny: mesh yaw %.0f, facing %.0f, sword fit %s, shield fit %s" % (ctx["manny_yaw"], ctx["manny_facing"], sword_fit, shield_fit))
     weapons = {"sword": ctx["sword"]}
     # Types with their own weapon first, so the Hollow can borrow the skeleton's cleaver.

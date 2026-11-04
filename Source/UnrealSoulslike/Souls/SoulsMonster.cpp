@@ -640,3 +640,165 @@ void USoulsBestiaryShots::Finish()
 		}
 	}, 1.5f, false);
 }
+
+// ---------------------------------------------------------------------------------------------
+// -RangerRunShots (UNR-T72)
+// ---------------------------------------------------------------------------------------------
+
+namespace
+{
+	constexpr float KRunShotsDuration = 9.f;     // seconds of running
+	constexpr int32 KRunShotsPerView = 4;        // stride extremes shot from the side, then at the feet
+	constexpr float KRunMinStride = 45.f;        // cm between the feet at a running stride's extreme
+	constexpr float KRunMaxShinError = 4.f;      // cm a foot may sit off its shin's reference length
+}
+
+bool USoulsRunShots::ShouldCreateSubsystem(UObject* Outer) const
+{
+	return FParse::Param(FCommandLine::Get(), TEXT("RangerRunShots")) && Super::ShouldCreateSubsystem(Outer);
+}
+
+void USoulsRunShots::OnWorldBeginPlay(UWorld& InWorld)
+{
+	Super::OnWorldBeginPlay(InWorld);
+	if (!InWorld.IsGameWorld())
+	{
+		return;
+	}
+	const TWeakObjectPtr<USoulsRunShots> WeakThis(this);
+	FTimerHandle Start;
+	InWorld.GetTimerManager().SetTimer(Start, [WeakThis]()
+	{
+		if (WeakThis.IsValid())
+		{
+			WeakThis->Begin();
+		}
+	}, 3.5f, false);
+}
+
+void USoulsRunShots::Begin()
+{
+	UWorld* World = GetWorld();
+	APlayerController* PC = World ? UGameplayStatics::GetPlayerController(World, 0) : nullptr;
+	ASoulsKnight* Runner = PC ? Cast<ASoulsKnight>(PC->GetPawn()) : nullptr;
+	if (!Runner)
+	{
+		UE_LOG(LogUnrealSoulslike, Warning, TEXT("RangerRun: no player knight"));
+		Finish();
+		return;
+	}
+	USkeletalMeshComponent* Body = Runner->GetMesh();
+	Heading = Runner->GetActorForwardVector().GetSafeNormal2D();
+	PC->SetControlRotation(FRotator(0.f, Heading.Rotation().Yaw, 0.f));
+	for (const TCHAR* Side : { TEXT("l"), TEXT("r") })
+	{
+		const int32 Foot = Body->GetBoneIndex(FName(*FString::Printf(TEXT("foot_%s"), Side)));
+		const float Shin = Foot != INDEX_NONE ? Body->GetRefPoseTransform(Foot).GetTranslation().Size() * Body->GetComponentScale().X : 0.f;
+		(*Side == TEXT('l') ? RefShinL : RefShinR) = Shin;
+	}
+	UE_LOG(LogUnrealSoulslike, Log, TEXT("RangerRun: %s wears %s, anim %s, shins %.1f / %.1f cm"), *Runner->GetName(),
+		Body->GetSkeletalMeshAsset() ? *Body->GetSkeletalMeshAsset()->GetName() : TEXT("none"),
+		Body->GetAnimInstance() ? *Body->GetAnimInstance()->GetClass()->GetName() : TEXT("none"), RefShinL, RefShinR);
+
+	FActorSpawnParameters CamParams;
+	CamParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	Camera = World->SpawnActor<ACameraActor>(ACameraActor::StaticClass(), Runner->GetActorLocation(), FRotator::ZeroRotator, CamParams);
+	if (Camera)
+	{
+		PC->SetViewTarget(Camera);
+	}
+	StartTime = World->GetTimeSeconds();
+	const TWeakObjectPtr<ASoulsKnight> WeakRunner(Runner);
+	FTimerHandle Sprint;
+	World->GetTimerManager().SetTimer(Sprint, [WeakRunner]()
+	{
+		if (WeakRunner.IsValid())
+		{
+			WeakRunner->SprintPressed();   // L3 / Shift: run
+		}
+	}, 0.6f, false);
+	const TWeakObjectPtr<USoulsRunShots> WeakThis(this);
+	World->GetTimerManager().SetTimer(StepTimer, [WeakThis]()
+	{
+		if (WeakThis.IsValid())
+		{
+			WeakThis->Step();
+		}
+	}, 1.f / 60.f, true);
+}
+
+void USoulsRunShots::Step()
+{
+	UWorld* World = GetWorld();
+	APlayerController* PC = World ? UGameplayStatics::GetPlayerController(World, 0) : nullptr;
+	ASoulsKnight* Runner = PC ? Cast<ASoulsKnight>(PC->GetPawn()) : nullptr;
+	const float Now = World ? World->GetTimeSeconds() : 0.f;
+	if (!Runner || Runner->IsDead() || Now - StartTime > KRunShotsDuration || Shots >= KRunShotsPerView * 2)
+	{
+		Finish();
+		return;
+	}
+	Runner->AddMovementInput(Heading, 1.f);   // held W
+	MaxSpeed = FMath::Max(MaxSpeed, static_cast<float>(Runner->GetVelocity().Size2D()));
+
+	// The camera runs alongside: wide from the side first, then down at the feet.
+	const FVector Right = FVector::CrossProduct(FVector::UpVector, Heading);
+	const FVector Centre = Runner->GetActorLocation();
+	const bool bFeet = Shots >= KRunShotsPerView;
+	const FVector Eye = bFeet ? Centre + Right * 170.f + FVector(0.f, 0.f, -50.f) : Centre + Right * 430.f + FVector(0.f, 0.f, 30.f);
+	const FVector Look = bFeet ? Centre + FVector(0.f, 0.f, -70.f) : Centre + FVector(0.f, 0.f, -10.f);
+	if (Camera)
+	{
+		Camera->SetActorLocationAndRotation(Eye, (Look - Eye).Rotation());
+	}
+
+	USkeletalMeshComponent* Body = Runner->GetMesh();
+	const FVector FootL = Body->GetSocketLocation(TEXT("foot_l"));
+	const FVector FootR = Body->GetSocketLocation(TEXT("foot_r"));
+	const float Spread = FVector::DotProduct(FootL - FootR, Heading);
+	const float Delta = Spread - PrevSpread;
+	// A stride extreme: the feet stop drawing apart. Only once up to speed.
+	if (Now - StartTime > 1.5f && PrevDelta * Delta < 0.f && FMath::Abs(Spread) > 5.f && Now - LastShot > 0.2f)
+	{
+		++Extremes;
+		LastShot = Now;
+		const float ShinL = FVector::Dist(FootL, Body->GetSocketLocation(TEXT("calf_l")));
+		const float ShinR = FVector::Dist(FootR, Body->GetSocketLocation(TEXT("calf_r")));
+		const float ErrorL = FMath::Abs(ShinL - RefShinL);
+		const float ErrorR = FMath::Abs(ShinR - RefShinR);
+		MaxStride = FMath::Max(MaxStride, FMath::Abs(Spread));
+		MaxShinError = FMath::Max(MaxShinError, FMath::Max(ErrorL, ErrorR));
+		const FString Name = FString::Printf(TEXT("RangerRun_%s_%d"), bFeet ? TEXT("Feet") : TEXT("Side"), (Shots % KRunShotsPerView) + 1);
+		UE_LOG(LogUnrealSoulslike, Log, TEXT("RangerRun: %s stride %.0f cm (%s foot ahead), speed %.0f, foot-to-calf L %.1f (ref %.1f) R %.1f (ref %.1f)"),
+			*Name, FMath::Abs(Spread), Spread > 0.f ? TEXT("left") : TEXT("right"), Runner->GetVelocity().Size2D(), ShinL, RefShinL, ShinR, RefShinR);
+		FScreenshotRequest::RequestScreenshot(Name, false, false);
+		++Shots;
+	}
+	PrevDelta = Delta;
+	PrevSpread = Spread;
+}
+
+void USoulsRunShots::Finish()
+{
+	UWorld* World = GetWorld();
+	if (World)
+	{
+		World->GetTimerManager().ClearTimer(StepTimer);
+	}
+	const bool bOk = Shots >= KRunShotsPerView * 2 && MaxStride >= KRunMinStride && MaxShinError <= KRunMaxShinError;
+	UE_LOG(LogUnrealSoulslike, Log, TEXT("RangerRun: %d extremes, %d shots, widest stride %.0f cm (want >= %.0f), worst foot-to-calf error %.1f cm (want <= %.0f), top speed %.0f%s"),
+		Extremes, Shots, MaxStride, KRunMinStride, MaxShinError, KRunMaxShinError, MaxSpeed, bOk ? TEXT(" RANGER_RUN_OK") : TEXT(" RANGER_RUN_FAIL"));
+	if (!World)
+	{
+		return;
+	}
+	const TWeakObjectPtr<UWorld> WeakWorld(World);
+	FTimerHandle Quit;
+	World->GetTimerManager().SetTimer(Quit, [WeakWorld]()
+	{
+		if (WeakWorld.IsValid())
+		{
+			UKismetSystemLibrary::QuitGame(WeakWorld.Get(), UGameplayStatics::GetPlayerController(WeakWorld.Get(), 0), EQuitPreference::Quit, false);
+		}
+	}, 1.5f, false);
+}

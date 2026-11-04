@@ -201,3 +201,40 @@ private:
 	int32 Shown = 0;
 	int32 Missing = 0;
 };
+
+// -RangerRunShots (UNR-T72): the player body runs straight ahead (held W, then sprint) under a camera
+// that tracks alongside. At each stride extreme it screenshots from the side (RangerRun_Side_<n>), then
+// close on the feet (RangerRun_Feet_<n>), and logs the stride and each foot's distance from its shin
+// against the reference length ("RangerRun: ..." lines; a foot torn off its shin shows as a gap).
+// Ends with "RangerRun: ... RANGER_RUN_OK" when the stride is a real run and no foot came loose, then quits.
+UCLASS()
+class UNREALSOULSLIKE_API USoulsRunShots : public UWorldSubsystem
+{
+	GENERATED_BODY()
+
+public:
+	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
+	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
+
+private:
+	void Begin();
+	void Step();
+	void Finish();
+
+	UPROPERTY(Transient)
+	TObjectPtr<AActor> Camera;
+
+	FTimerHandle StepTimer;
+	FVector Heading = FVector::ForwardVector;
+	float StartTime = 0.f;
+	float LastShot = -10.f;
+	float PrevSpread = 0.f;
+	float PrevDelta = 0.f;
+	float MaxStride = 0.f;
+	float MaxShinError = 0.f;
+	float MaxSpeed = 0.f;
+	float RefShinL = 0.f;
+	float RefShinR = 0.f;
+	int32 Extremes = 0;
+	int32 Shots = 0;
+};

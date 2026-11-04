@@ -24,6 +24,11 @@ Every GLB has the same layout:
   upperarm_l, lowerarm_l, hand_l, index_01_l.., thigh_l, calf_l, foot_l`, plus the `_r` side).
   `build_bestiary.py` copies IK_Manny's retarget chains by name, and the C++ sword and shield sockets
   (`hand_r` / `hand_l`) exist on every rig.
+- **IK foot bones (UNR-T72):** every rig also carries Manny's unweighted `ik_foot_root`
+  (under `root`), `ik_foot_l` and `ik_foot_r`. The template's locomotion blueprint runs Epic's
+  `CR_Mannequin_FootIK`, which plants the feet where those bones are. `build_bestiary.py` keys them
+  onto the feet in every retargeted clip (`USoulsBestiaryTools::BakeFootIKBones`). Without them the
+  feet were pinned at Manny's rest spots: torn off the shins, with almost no stride.
 - **Weapons:** a `<Type>_Weapon.glb` is a static mesh with the grip at the origin, the haft along +Z
   and the edge along +X. The script fits it into the fist by hand anatomy (knuckle line, finger
   direction), carrying over the knight sword's tuned Manny fit.

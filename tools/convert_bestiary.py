@@ -270,6 +270,28 @@ def normalise(arm, height, weapon=None):
     log("  turned %.0f deg, scaled x%.3f (was %.2f m tall)" % (math.degrees(yaw), s, hi.z - lo.z))
 
 
+def add_ik_feet(arm):
+    """Manny's ik_foot_root / ik_foot_l / ik_foot_r (unweighted). The template's foot IK control rig plants
+    the feet where these bones are; tools/build_bestiary.py bakes them onto the feet in every retargeted
+    clip (USoulsBestiaryTools::BakeFootIKBones). Without them the rig used Manny's rest spots and held the
+    feet there (UNR-T72)."""
+    bones = edit(arm)
+    root = bones["root"]
+    ik_root = bones.get("ik_foot_root") or bones.new("ik_foot_root")
+    ik_root.head = root.head.copy()
+    ik_root.tail = root.head + mathutils.Vector((0.0, 0.0, 0.1))
+    ik_root.parent = root
+    ik_root.use_deform = False
+    for side in ("l", "r"):
+        foot = bones["foot_" + side]
+        ik = bones.get("ik_foot_" + side) or bones.new("ik_foot_" + side)
+        ik.head, ik.tail, ik.roll = foot.head.copy(), foot.tail.copy(), foot.roll   # same axes as the foot
+        ik.parent = ik_root
+        ik.use_connect = False
+        ik.use_deform = False
+    done_edit()
+
+
 def extract_weapon(name, arm, out_path):
     """The model's own weapon as a static GLB: grip at the origin, blade/haft along +Z, edge along +X."""
     w = bpy.data.objects.get(name)
@@ -375,6 +397,7 @@ def convert(name, spec):
     folder = os.path.join(OUT, name)
     os.makedirs(folder, exist_ok=True)
     normalise(arm, spec["height"], spec.get("weapon"))
+    add_ik_feet(arm)
     weapon = None
     if spec.get("weapon"):
         weapon = extract_weapon(spec["weapon"], arm, os.path.join(folder, name + "_Weapon.glb"))
@@ -401,7 +424,7 @@ def convert(name, spec):
                               export_jpeg_quality=90)
     bones = [b.name for b in arm.data.bones]
     log("  -> %s (%d bones; hands %s; %.1f MB)" % (os.path.relpath(out, ROOT), len(bones),
-                                                  all(b in bones for b in ("hand_l", "hand_r", "foot_l", "foot_r", "head")),
+                                                  all(b in bones for b in ("hand_l", "hand_r", "foot_l", "foot_r", "head", "ik_foot_l", "ik_foot_r")),
                                                   os.path.getsize(out) / 1e6))
     if PREVIEW:
         preview(name)
