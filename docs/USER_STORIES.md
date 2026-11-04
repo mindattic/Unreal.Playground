@@ -83,3 +83,5 @@ _Nothing recorded yet._
 | UNR-T60 | 2026-11-04 | fix | closed | Deepest night is dark purple with visibility, never pitch black | — |
 | UNR-T61 | 2026-11-04 | feature | open | Beach dressing: pebbles, shells, more dead fish along the shore | — |
 | UNR-T62 | 2026-11-04 | feature | closed | More boulders, ruins and bushes across the island | — |
+| UNR-T63 | 2026-11-04 | feature | open | Ship graveyard round the landing harbour; one rowboat dragged up the beach where you came ashore | — |
+| UNR-T64 | 2026-11-04 | feature | open | High-quality free rigged characters instead of the Unreal mannequin | — |

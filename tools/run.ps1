@@ -60,14 +60,45 @@ for ($i = 0; $i -lt $Players; $i++) {
     Start-Sleep -Seconds $ClientDelaySeconds
   }
   Write-Output "Player $($i + 1): $target ($ResX x $ResY, windowed)"
+  $launched = Get-Date
+  $game = Start-Process -FilePath $exe -ArgumentList $gameArgs -PassThru
   if ($useCapture -and $i -eq 0) {
-    $captureArgs = @('run', '--app', 'Unreal.Soulslike')
-    if ($realProcess) { $captureArgs += @('--process', $realProcess) }
-    $captureArgs += @('--', "`"$exe`"") + $gameArgs
+    # Film the game's own window once it is up and drawing (a recorder attached any earlier finds a
+    # window that isn't ready and can't start), and stop the recording when the game exits.
+    $find = if ($realProcess) {
+      "Get-Process -Name '$realProcess' -ErrorAction SilentlyContinue | Where-Object { `$_.StartTime -ge ([datetime]'$($launched.ToString('o'))').AddSeconds(-2) }"
+    } else {
+      "Get-Process -Id $($game.Id) -ErrorAction SilentlyContinue"
+    }
+    $watch = @"
+`$deadline = (Get-Date).AddSeconds(180)
+`$p = `$null
+while ((Get-Date) -lt `$deadline) {
+  `$p = $find | Where-Object { `$_.MainWindowHandle -ne 0 -and `$_.MainWindowTitle } | Select-Object -First 1
+  if (`$p) { break }
+  Start-Sleep -Milliseconds 500
+}
+if (-not `$p) { exit }
+Start-Sleep -Seconds 4
+# Film exactly the game's client area (its 1920x1080 picture, no title bar or borders).
+Add-Type -Namespace SoulsCap -Name U -MemberDefinition @'
+[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
+[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)] public struct POINT { public int X, Y; }
+[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool GetClientRect(System.IntPtr h, out RECT r);
+[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool ClientToScreen(System.IntPtr h, ref POINT p);
+'@
+`$r = New-Object SoulsCap.U+RECT
+[SoulsCap.U]::GetClientRect(`$p.MainWindowHandle, [ref]`$r) | Out-Null
+`$o = New-Object SoulsCap.U+POINT
+[SoulsCap.U]::ClientToScreen(`$p.MainWindowHandle, [ref]`$o) | Out-Null
+`$region = '{0},{1},{2},{3}' -f `$o.X, `$o.Y, (`$r.R - `$r.L), (`$r.B - `$r.T)
+Start-Process -FilePath '$capture' -ArgumentList @('record', '--region', `$region, '--app', 'Unreal.Soulslike') -WindowStyle Minimized | Out-Null
+`$p.WaitForExit()
+& '$capture' stop | Out-Null
+"@
     Write-Output "Recording with MindAttic.Capture -> R:\MindAttic\Capture\Unreal.Soulslike"
-    Start-Process -FilePath $capture -ArgumentList $captureArgs -WindowStyle Minimized | Out-Null
-  }
-  else {
-    Start-Process -FilePath $exe -ArgumentList $gameArgs | Out-Null
+    $watchFile = Join-Path $env:TEMP 'unreal-soulslike-capture-watch.ps1'
+    Set-Content -LiteralPath $watchFile -Value $watch -Encoding UTF8
+    Start-Process -FilePath 'powershell' -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$watchFile`"") -WindowStyle Hidden | Out-Null
   }
 }
