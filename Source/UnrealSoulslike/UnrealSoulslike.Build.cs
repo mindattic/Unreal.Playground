@@ -18,16 +18,19 @@ public class UnrealSoulslike : ModuleRules
 			"GameplayStateTreeModule",
 			"UMG",
 			"Slate",
+			"Landscape",
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {
 			"Json",
 			"RenderCore",
 			"SlateCore",
+			"AssetRegistry",
 		});
 		PublicIncludePaths.AddRange(new string[] {
 			"UnrealSoulslike",
 			"UnrealSoulslike/Souls",
+			"UnrealSoulslike/Environment",
 			"UnrealSoulslike/ThirdPerson",
 			"UnrealSoulslike/ThirdPerson/Variant_Platforming",
 			"UnrealSoulslike/ThirdPerson/Variant_Platforming/Animation",
