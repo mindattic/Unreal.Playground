@@ -75,11 +75,11 @@ _Nothing recorded yet._
 | UNR-T52 | 2026-11-04 | feature | closed | Dodge roll cancels an attack less than 50% committed | — |
 | UNR-T53 | 2026-11-04 | fix | closed | Day/night cycle 10x faster (2-minute day) | — |
 | UNR-T54 | 2026-11-04 | feature | closed | X attack faster, and a second X chains the cross-slash back | — |
-| UNR-T55 | 2026-11-04 | fix | open | World collision uses the meshes' polygons, not boxes or spheres | — |
-| UNR-T56 | 2026-11-04 | feature | open | Real blood and guts splash VFX from a free pack | — |
-| UNR-T57 | 2026-11-04 | feature | open | Sword hits come from the blade actually intersecting the enemy | — |
+| UNR-T55 | 2026-11-04 | fix | closed | World collision uses the meshes' polygons, not boxes or spheres | — |
+| UNR-T56 | 2026-11-04 | feature | closed | Real blood and guts splash VFX from a free pack | — |
+| UNR-T57 | 2026-11-04 | feature | closed | Sword hits come from the blade actually intersecting the enemy | — |
 | UNR-T58 | 2026-11-04 | feature | open | Every run of the game records video via MindAttic.Capture, windowed 1920x1080 | — |
 | UNR-T59 | 2026-11-04 | fix | closed | Remove stamina completely: every move always available | — |
 | UNR-T60 | 2026-11-04 | fix | closed | Deepest night is dark purple with visibility, never pitch black | — |
 | UNR-T61 | 2026-11-04 | feature | open | Beach dressing: pebbles, shells, more dead fish along the shore | — |
-| UNR-T62 | 2026-11-04 | feature | open | More boulders, ruins and bushes across the island | — |
+| UNR-T62 | 2026-11-04 | feature | closed | More boulders, ruins and bushes across the island | — |

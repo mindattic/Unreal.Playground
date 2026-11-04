@@ -514,6 +514,10 @@ private:
 
 	// Melee
 	void MeleeSweep(float Damage, float PoiseDamage, float StanceHit, bool bHeavy);
+	// The blade (UNR-T57): swept frame to frame against bodies while the strike is live.
+	bool GetBladeSegment(FVector& OutBase, FVector& OutTip) const;
+	void SweepBlade();
+	void ResolveStrike(ASoulsKnight* Victim, const FVector& Impact, float Damage, float PoiseDamage, float StanceHit, bool bHeavy);
 	bool TryCritical();
 	void LandCritical();
 	void ReceiveCritical(ASoulsKnight* Attacker, float Duration);
@@ -581,6 +585,12 @@ private:
 	FTimerHandle StrikeTimer;
 	FTimerHandle RecoilTimer;
 	float LungeDelay = 0.f;
+	bool bBladeTracked = false;
+	FVector BladePrevBase = FVector::ZeroVector;
+	FVector BladePrevTip = FVector::ZeroVector;
+	float BladeLiveUntil = -1.f;
+	// Closest the blade came to each foe this swing (gap to its body, and the blade point).
+	TMap<TWeakObjectPtr<AActor>, TPair<float, FVector>> BladeNear;
 	float LastWhistleTime = -10.f;
 	FVector LungeDirection = FVector::ZeroVector;
 	float LungeRemaining = 0.f;

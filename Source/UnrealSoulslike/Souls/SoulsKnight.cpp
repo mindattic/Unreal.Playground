@@ -5,7 +5,7 @@
 #include "GrapplePoint.h"
 #include "SoulsPickup.h"
 #include "SoulsSparks.h"
-#include "SoulsGore.h"
+#include "SoulsBlood.h"
 #include "SoulsFire.h"
 #include "SoulsTorch.h"
 #include "Animation/AnimInstance.h"
@@ -51,6 +51,9 @@ namespace
 	const FName KShieldSocket(TEXT("hand_l"));
 	constexpr float KBlockWalkSpeed = 230.f;
 	constexpr float KSprintSpeed = 760.f;
+	constexpr float KBladeLead = 0.14f;      // the blade is live this long before the strike moment...
+	constexpr float KBladeTail = 0.1f;       // ...and this long after it
+	constexpr float KBladeNearMiss = 45.f;   // a blade passing this close to a body still strikes it
 	constexpr float KPlayerSlashSpeed = 1.4f;   // the X slash, vs 0.9 for an enemy heavy
 	constexpr float KBackSlashAt = 0.55f;       // a queued back-slash starts this far into the slash
 	constexpr float KSprintStaminaPerSecond = 14.f;
@@ -792,8 +795,9 @@ void ASoulsKnight::TickClashDemo()
 	}
 	// Raise the shield just as the blade comes down.
 	const float Left = GetWorldTimerManager().GetTimerRemaining(Foe->HitTimer);
-	if (Foe->IsAttacking() && Left > 0.f && Left < 0.12f && !bBlocking)
+	if (Foe->IsAttacking() && Left > 0.f && Left < 0.2f && !bBlocking)
 	{
+		UE_LOG(LogUnrealSoulslike, Verbose, TEXT("Clash demo: guard up at %.2f s before the strike"), Left);
 		BlockPressed();
 		const TWeakObjectPtr<ASoulsKnight> WeakThis(this);
 		FTimerHandle Snap, Lower;
@@ -1190,6 +1194,8 @@ void ASoulsKnight::StartSwing(int32 Index)
 	SwingIndex = Index;
 	bHeavySwing = false;
 	HitThisSwing.Reset();
+	BladeNear.Reset();
+	bBladeTracked = false;
 	SetActorRotation(FRotator(0.f, AttackDirection().Rotation().Yaw, 0.f));
 	const float Duration = Montage ? Montage->GetPlayLength() / AttackSpeed : 0.6f;
 	PlayAction(EKnightAction::LightAttack, Montage, Duration);
@@ -1261,6 +1267,8 @@ void ASoulsKnight::StartHeavy()
 	SetBlocking(false);
 	bHeavySwing = true;
 	HitThisSwing.Reset();
+	BladeNear.Reset();
+	bBladeTracked = false;
 	SetActorRotation(FRotator(0.f, AttackDirection().Rotation().Yaw, 0.f));
 	// The player's one slash is quick (about half again as fast as an enemy's heavy).
 	const float Duration = HeavyAttackMontage->GetPlayLength() / (AttackSpeed * (IsPlayerControlled() ? KPlayerSlashSpeed : 0.9f));
@@ -1376,7 +1384,7 @@ void ASoulsKnight::StartLunge(float MaxDistance, float Delay, float Window)
 		SetActorRotation(FRotator(0.f, LungeDirection.Rotation().Yaw, 0.f));
 		// Close to a comfortable sword's length (about 1.3 m between the two bodies), no further.
 		const float Gap = To.Size() - GetCapsuleComponent()->GetScaledCapsuleRadius() - Mark->GetCapsuleComponent()->GetScaledCapsuleRadius()
-			- 90.f * GetActorScale3D().X;
+			- 55.f * GetActorScale3D().X;
 		Distance = FMath::Clamp(Gap, 0.f, MaxDistance);
 	}
 	Window = FMath::Max(Window, 0.1f);
@@ -1461,13 +1469,130 @@ void ASoulsKnight::SwingHit()
 	{
 		return; // swinging a torch (UNR-T40)
 	}
-	if (bHeavySwing)
+	// The blade has been live since just before this moment and stays live a beat after; then any foe
+	// it brushed past (within a hand's breadth) is struck at the blade's nearest point.
+	SweepBlade();
+	BladeLiveUntil = GetWorld()->GetTimeSeconds() + KBladeTail;
+	const TWeakObjectPtr<ASoulsKnight> WeakThis(this);
+	const bool bHeavy = bHeavySwing;
+	GetWorldTimerManager().SetTimer(WhooshTimer, [WeakThis, bHeavy]()
 	{
-		MeleeSweep(HeavyDamage, 34.f, 32.f, true);
+		if (ASoulsKnight* K = WeakThis.Get())
+		{
+			K->SweepBlade();
+			if (bHeavy)
+			{
+				K->MeleeSweep(K->HeavyDamage, 34.f, 32.f, true);
+			}
+			else
+			{
+				K->MeleeSweep(K->LightDamage, 14.f, 12.f, false);
+			}
+			K->BladeNear.Reset();
+			K->bBladeTracked = false;
+		}
+	}, KBladeTail, false);
+}
+
+bool ASoulsKnight::GetBladeSegment(FVector& OutBase, FVector& OutTip) const
+{
+	if (!Sword || !Sword->GetStaticMesh() || !Sword->IsVisible())
+	{
+		return false;
 	}
-	else
+	// Blade along the mesh's +Z: from just above the guard to the tip.
+	const FBox Box = Sword->GetStaticMesh()->GetBoundingBox();
+	const FTransform& Xf = Sword->GetComponentTransform();
+	const float Length = Box.Max.Z - Box.Min.Z;
+	OutBase = Xf.TransformPosition(FVector(0.f, 0.f, Box.Min.Z + 0.22f * Length));
+	OutTip = Xf.TransformPosition(FVector(0.f, 0.f, Box.Max.Z));
+	return true;
+}
+
+void ASoulsKnight::SweepBlade()
+{
+	FVector Base, Tip;
+	if (!GetBladeSegment(Base, Tip))
 	{
-		MeleeSweep(LightDamage, 14.f, 12.f, false);
+		return;
+	}
+	if (!bBladeTracked)
+	{
+		BladePrevBase = Base;
+		BladePrevTip = Tip;
+		bBladeTracked = true;
+	}
+	const float Damage = bHeavySwing ? HeavyDamage : LightDamage;
+	const float PoiseHit = bHeavySwing ? 34.f : 14.f;
+	const float StanceHit = bHeavySwing ? 32.f : 12.f;
+	const float Radius = 7.f * GetActorScale3D().X;
+
+	// Sweep a few points along the blade from where they were last frame to where they are now,
+	// against bodies (each limb's collision shape, or the capsule where a mesh has none).
+	FCollisionObjectQueryParams Objects;
+	Objects.AddObjectTypesToQuery(ECC_Pawn);
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(KnightBlade), false, this);
+	Params.bReturnPhysicalMaterial = false;
+	for (int32 Sample = 0; Sample <= 4; ++Sample)
+	{
+		const float T = Sample / 4.f;
+		const FVector From = FMath::Lerp(BladePrevBase, BladePrevTip, T);
+		const FVector To = FMath::Lerp(Base, Tip, T);
+		TArray<FHitResult> Hits;
+		GetWorld()->SweepMultiByObjectType(Hits, From, To + (To - From).GetSafeNormal() * 0.1f, FQuat::Identity, Objects,
+			FCollisionShape::MakeSphere(Radius), Params);
+		for (const FHitResult& Hit : Hits)
+		{
+			ASoulsKnight* Victim = Cast<ASoulsKnight>(Hit.GetActor());
+			if (!Victim || Victim->Team == Team || Victim->IsDead() || HitThisSwing.Contains(Victim))
+			{
+				continue;
+			}
+			HitThisSwing.Add(Victim);
+			const FVector Impact = Hit.bStartPenetrating ? FMath::ClosestPointOnSegment(Victim->GetActorLocation(), Base, Tip) : FVector(Hit.ImpactPoint);
+			ResolveStrike(Victim, Impact, Damage, PoiseHit, StanceHit, bHeavySwing);
+		}
+	}
+
+	// Track how close the blade came to every foe nearby, for the near-miss pass.
+	for (TActorIterator<ASoulsKnight> It(GetWorld()); It; ++It)
+	{
+		ASoulsKnight* Other = *It;
+		if (Other == this || Other->Team == Team || Other->IsDead() || HitThisSwing.Contains(Other)
+			|| FVector::DistSquared(Other->GetActorLocation(), GetActorLocation()) > FMath::Square(600.f * GetActorScale3D().X))
+		{
+			continue;
+		}
+		float CapRadius = 0.f, CapHalf = 0.f;
+		Other->GetCapsuleComponent()->GetScaledCapsuleSize(CapRadius, CapHalf);
+		const FVector Up = FVector(0.f, 0.f, CapHalf - CapRadius);
+		FVector OnBlade, OnBody;
+		FMath::SegmentDistToSegment(Base, Tip, Other->GetActorLocation() - Up, Other->GetActorLocation() + Up, OnBlade, OnBody);
+		const float Gap = FVector::Dist(OnBlade, OnBody) - CapRadius;
+		TPair<float, FVector>* Near = BladeNear.Find(Other);
+		if (!Near || Gap < Near->Key)
+		{
+			BladeNear.Add(Other, TPair<float, FVector>(Gap, OnBlade));
+		}
+	}
+	BladePrevBase = Base;
+	BladePrevTip = Tip;
+}
+
+void ASoulsKnight::ResolveStrike(ASoulsKnight* Victim, const FVector& Impact, float Damage, float PoiseDamage, float StanceHit, bool bHeavy)
+{
+	const EMeleeResult Result = Victim->ReceiveMelee(this, Damage, PoiseDamage, StanceHit, bHeavy, Impact);
+	UE_LOG(LogUnrealSoulslike, Verbose, TEXT("Blade: %s struck %s -> result %d"), *GetName(), *Victim->GetName(), static_cast<int32>(Result));
+	if (Result == EMeleeResult::Hit)
+	{
+		Hitstop(bHeavy ? 0.11f : 0.065f);
+		KickCamera(bHeavy ? 0.6f : 0.3f);
+	}
+	else if (Result == EMeleeResult::Blocked)
+	{
+		Hitstop(bHeavy ? 0.09f : 0.08f);
+		KickCamera(0.35f);
+		RecoilFromGuard(bHeavy);
 	}
 }
 
@@ -1831,6 +1956,7 @@ void ASoulsKnight::RestoreAll()
 
 void ASoulsKnight::MeleeSweep(float Damage, float PoiseDamage, float StanceHit, bool bHeavy)
 {
+	UE_LOG(LogUnrealSoulslike, Verbose, TEXT("Blade: %s near-miss pass, %d tracked"), *GetName(), BladeNear.Num());
 	// Fear makes the hand shake: a shaken foe's swing can go wide.
 	if (Team != 0 && IsShaken() && FMath::FRand() < (IsTerrified() ? 0.5f : 0.3f))
 	{
@@ -1863,11 +1989,13 @@ void ASoulsKnight::MeleeSweep(float Damage, float PoiseDamage, float StanceHit, 
 		const float Distance = ToOther.Size();
 		if (Distance > Reach + Radius || FMath::Abs(Other->GetActorLocation().Z - Origin.Z) > 160.f * Scale + HalfHeight)
 		{
+			UE_LOG(LogUnrealSoulslike, Verbose, TEXT("Blade: %s out of reach (%.0f cm, dz %.0f)"), *Other->GetName(), Distance, Other->GetActorLocation().Z - Origin.Z);
 			continue;
 		}
 		// A forward arc of about 150 degrees; anything hugging the knight counts too.
 		if (Distance > Radius + 40.f && FVector::DotProduct(Forward, ToOther / FMath::Max(Distance, 1.f)) < 0.25f)
 		{
+			UE_LOG(LogUnrealSoulslike, Verbose, TEXT("Blade: %s outside the arc (dot %.2f)"), *Other->GetName(), FVector::DotProduct(Forward, ToOther / FMath::Max(Distance, 1.f)));
 			continue;
 		}
 		const FVector Impact = Other->GetActorLocation() - ToOther.GetSafeNormal() * Radius + FVector(0.f, 0.f, 40.f);
@@ -1878,18 +2006,23 @@ void ASoulsKnight::MeleeSweep(float Damage, float PoiseDamage, float StanceHit, 
 			{
 				continue;
 			}
+			// With a sword in hand the blade decides (UNR-T57): bodies it crossed were struck as it
+			// crossed them; here only a near miss (the blade within a hand's breadth) still lands, at
+			// the blade's nearest point. Bladeless swings keep the old reach test.
+			FVector BladeImpact = Impact;
+			FVector BladeBase, BladeTip;
+			if (GetBladeSegment(BladeBase, BladeTip))
+			{
+				const TPair<float, FVector>* Near = BladeNear.Find(Knight);
+				UE_LOG(LogUnrealSoulslike, Verbose, TEXT("Blade: %s passed %s at %.0f cm"), *GetName(), *Knight->GetName(), Near ? Near->Key : -1.f);
+				if (!Near || Near->Key > KBladeNearMiss * Scale)
+				{
+					continue;
+				}
+				BladeImpact = Near->Value;
+			}
 			HitThisSwing.Add(Other);
-			const EMeleeResult Result = Knight->ReceiveMelee(this, Damage, PoiseDamage, StanceHit, bHeavy, Impact);
-			if (Result == EMeleeResult::Hit)
-			{
-				bLanded = true;
-			}
-			else if (Result == EMeleeResult::Blocked)
-			{
-				Hitstop(bHeavy ? 0.09f : 0.08f);
-				KickCamera(0.35f);
-				RecoilFromGuard(bHeavy);
-			}
+			ResolveStrike(Knight, BladeImpact, Damage, PoiseDamage, StanceHit, bHeavy);
 		}
 		else if (ICombatDamageable* Damageable = Cast<ICombatDamageable>(Other))
 		{
@@ -1931,7 +2064,7 @@ ASoulsKnight::EMeleeResult ASoulsKnight::ReceiveMelee(ASoulsKnight* Attacker, fl
 		bKilledByAmbush = Damage >= CurrentHP;
 		PlayRandomSound(HitSounds, 1.f);
 		ReceivedDamage(Damage, ImpactPoint, -ToAttacker);
-		ASoulsGore::Spray(GetWorld(), ImpactPoint, -ToAttacker, 150, 1.6f);
+		FSoulsBlood::Splash(this, ImpactPoint, -ToAttacker, 2.5f);
 		LoseHealth(Damage, Attacker);
 		if (!IsDead() && bUnaware)
 		{
@@ -1946,6 +2079,8 @@ ASoulsKnight::EMeleeResult ASoulsKnight::ReceiveMelee(ASoulsKnight* Attacker, fl
 	// A guard raised just before the blow lands is a parry (players only; the AI blocks plainly).
 	const bool bTimedGuard = bBlocking && IsPlayerControlled()
 		&& GetWorld()->GetTimeSeconds() - BlockPressTime <= KGuardParryWindow;
+	UE_LOG(LogUnrealSoulslike, Verbose, TEXT("Melee on %s: blocking=%d facing=%d since guard %.2f"), *GetName(), bBlocking, bFacing,
+		GetWorld()->GetTimeSeconds() - BlockPressTime);
 	if (bFacing && (IsInParryWindow() || bTimedGuard))
 	{
 		PlaySound(ParrySound, 1.f);
@@ -1980,7 +2115,7 @@ ASoulsKnight::EMeleeResult ASoulsKnight::ReceiveMelee(ASoulsKnight* Attacker, fl
 	}
 	ReceivedDamage(Damage, ImpactPoint, -ToAttacker);
 	// Ludicrous gore: a fountain per hit, more for a heavy blow.
-	ASoulsGore::Spray(GetWorld(), ImpactPoint, -ToAttacker, bHeavy ? 140 : 90, bHeavy ? 1.6f : 1.2f);
+	FSoulsBlood::Splash(this, ImpactPoint, -ToAttacker, bHeavy ? 2.f : 1.f);
 	LoseHealth(Damage, Attacker);
 	if (!IsDead())
 	{
@@ -2021,7 +2156,7 @@ void ASoulsKnight::LoseHealth(float Amount, AActor* Source)
 		UE_LOG(LogUnrealSoulslike, Log, TEXT("%s felled by %s (%.0f damage)"), *GetName(), Source ? *Source->GetName() : TEXT("the world"), Amount);
 		CurrentHP = 0.f;
 		// Felled: one last gush in every direction.
-		ASoulsGore::Spray(GetWorld(), GetActorLocation() + FVector(0.f, 0.f, 40.f), FVector::UpVector, 260, 2.f, 1.f);
+		FSoulsBlood::Splash(this, GetActorLocation() + FVector(0.f, 0.f, 40.f), FVector::UpVector, 3.f);
 		HandleDeath();
 	}
 }
@@ -2127,7 +2262,7 @@ void ASoulsKnight::LandCritical()
 	PlayRandomSound(HitSounds, 1.f);
 	const FVector Impact = Victim->GetActorLocation() + FVector(0.f, 0.f, 50.f);
 	Victim->ReceivedDamage(CriticalDamage, Impact, GetActorForwardVector());
-	ASoulsGore::Spray(GetWorld(), Impact, GetActorForwardVector() + FVector(0.f, 0.f, 0.4f), 220, 1.9f, 0.9f);
+	FSoulsBlood::Splash(this, Impact, GetActorForwardVector() + FVector(0.f, 0.f, 0.4f), 3.f);
 	Victim->LoseHealth(CriticalDamage, this);
 	if (!Victim->IsDead() && Victim->StaggerMontage)
 	{
@@ -2339,6 +2474,20 @@ void ASoulsKnight::Tick(float DeltaSeconds)
 		return;
 	}
 	TickStealthDemo();
+	// The blade is live just before and after the strike moment: sweep it against bodies.
+	{
+		const float Left = GetWorldTimerManager().GetTimerRemaining(HitTimer);
+		const bool bLive = IsAttacking() && !ASoulsTorch::GetWielded(this)
+			&& ((Left > 0.f && Left <= KBladeLead) || Now < BladeLiveUntil);
+		if (bLive)
+		{
+			SweepBlade();
+		}
+		else if (!IsAttacking())
+		{
+			bBladeTracked = false;
+		}
+	}
 	// Standing in a burning field hurts.
 	if (!IsDead())
 	{
@@ -2381,7 +2530,17 @@ void ASoulsKnight::Tick(float DeltaSeconds)
 		LungeRemaining -= DeltaSeconds;
 		if (IsAttacking() && Movement->IsMovingOnGround())
 		{
-			Movement->Velocity = FVector(LungeDirection.X * LungeSpeed, LungeDirection.Y * LungeSpeed, Movement->Velocity.Z);
+			// Moved directly (the attack clips may carry root motion that would override a velocity):
+			// a swept step that stops against a body and slides along walls and slopes.
+			const FVector Step = LungeDirection * LungeSpeed * DeltaSeconds;
+			FHitResult Hit;
+			Movement->SafeMoveUpdatedComponent(Step, GetActorQuat(), true, Hit);
+			if (Hit.IsValidBlockingHit() && !Cast<APawn>(Hit.GetActor()))
+			{
+				const FVector Rest = FVector::VectorPlaneProject(Step * (1.f - Hit.Time), Hit.Normal);
+				FHitResult Slide;
+				Movement->SafeMoveUpdatedComponent(Rest, GetActorQuat(), true, Slide);
+			}
 		}
 		else
 		{
