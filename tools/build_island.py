@@ -1215,8 +1215,10 @@ def dress(models, route, pads, start):
     keep_out = [(HILL[0], HILL[1], ARENA_RADIUS + 300.0), (start[0], start[1], 1800.0)] + [(x, y, r + 300.0) for x, y, r in pads]
     path_clear = 700.0
     rocks = models["rock_moss_set_01"] + models["rock_moss_set_02"] + models["boulder_01"]
-    big = models["rock_face_02"] + models["mountainside"]
-    outcrop = models["rock_face_02"] + models["boulder_01"]
+    # rock_face_02 and mountainside are open scanned shells (one-sided: invisible from behind), so
+    # every rock that can be walked or swum around is one of the closed boulders.
+    massive = models["boulder_01"] + models["rock_moss_set_01"]
+    outcrop = models["boulder_01"] + models["rock_moss_set_01"]
     count = {"boulders": 0, "outcrops": 0, "coast": 0, "cliff": 0, "drift": 0}
 
     # Boulder clusters across the interior.
@@ -1242,7 +1244,7 @@ def dress(models, route, pads, start):
                 continue
             nz = normal_z(x, y)
             if nz < 0.74 and rng.random() < 0.4:
-                place_mesh(outcrop[rng.randrange(len(outcrop))], x, y, yaw=rng.uniform(0, 360), scale=rng.uniform(1.0, 1.9),
+                place_mesh(outcrop[rng.randrange(len(outcrop))], x, y, yaw=rng.uniform(0, 360), scale=rng.uniform(1.8, 3.4),
                            sink=0.4, pitch=rng.uniform(-10, 10), folder="Dressing/Outcrops")
                 count["outcrops"] += 1
 
@@ -1266,14 +1268,14 @@ def dress(models, route, pads, start):
             fx, fy = dx * (rr + 250.0), dy * (rr + 250.0)
             top = height(dx * (rr - 800.0), dy * (rr - 800.0))
             if i % 2 == 0:
-                mesh = models["mountainside"][0] if rng.random() < 0.65 else models["rock_face_02"][0]
-                s = rng.uniform(1.9, 2.7) if mesh is models["mountainside"][0] else rng.uniform(6.0, 9.0)
-                place_mesh(mesh, fx - dx * 150.0, fy - dy * 150.0, yaw=rng.uniform(0, 360), scale=s, sink=0.0, z=-1100.0,
-                           pitch=rng.uniform(-8, 8), folder="Dressing/Cliffs")
+                mesh = massive[rng.randrange(len(massive))]
+                s = rng.uniform(9.0, 13.0)
+                place_mesh(mesh, fx - dx * 150.0, fy - dy * 150.0, yaw=rng.uniform(0, 360), scale=(s, s, s * 1.3), sink=0.0,
+                           z=-1100.0, pitch=rng.uniform(-8, 8), folder="Dressing/Cliffs")
                 count["cliff"] += 1
             if i % 3 == 0 and top > 900.0:
-                place_mesh(models["rock_face_02"][0], dx * (rr + 50.0), dy * (rr + 50.0), yaw=rng.uniform(0, 360),
-                           scale=rng.uniform(2.0, 3.2), sink=0.0, z=top - rng.uniform(500.0, 900.0), pitch=rng.uniform(-15, 15),
+                place_mesh(massive[rng.randrange(len(massive))], dx * (rr + 50.0), dy * (rr + 50.0), yaw=rng.uniform(0, 360),
+                           scale=rng.uniform(3.5, 5.5), sink=0.0, z=top - rng.uniform(500.0, 900.0), pitch=rng.uniform(-15, 15),
                            roll=rng.uniform(-15, 15), folder="Dressing/Cliffs")
                 count["cliff"] += 1
         elif rng.random() < 0.3:
@@ -1291,9 +1293,11 @@ def dress(models, route, pads, start):
         while r > 4000.0 and height(dx * r, dy * r) < 0.0:
             r -= 100.0
         r += rng.uniform(1800.0, 5000.0)
-        mesh = models["mountainside"][0] if k % 3 else models["rock_face_02"][0]
-        s = rng.uniform(1.1, 2.0) if mesh is models["mountainside"][0] else rng.uniform(4.0, 6.5)
-        place_mesh(mesh, dx * r, dy * r, yaw=rng.uniform(0, 360), scale=s, sink=0.0, z=-1400.0, folder="Dressing/SeaStacks")
+        # A sea stack is a closed boulder stretched tall, so it reads from every side as you swim round it.
+        mesh = massive[k % len(massive)]
+        s = rng.uniform(7.0, 11.0)
+        place_mesh(mesh, dx * r, dy * r, yaw=rng.uniform(0, 360), scale=(s, s, s * rng.uniform(1.8, 2.6)), sink=0.0,
+                   z=-1400.0, folder="Dressing/SeaStacks")
         count["cliff"] += 1
     for k in range(14):
         ang = rng.uniform(0, 2 * math.pi)
