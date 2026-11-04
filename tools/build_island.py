@@ -1607,6 +1607,47 @@ def dress_biomes(world, models, route, pads):
                    scale=rng.uniform(0.8, 1.3), sink=0.15 if upright else 0.35, folder="Biomes/Marsh")
 
 
+def dress_more(world, models, route, pads, start):
+    """Beach pebbles, and more boulders, bushes and ruined fragments over the land (UNR-T61, UNR-T62)."""
+    rng = random.Random(8080)
+    keep = [(HILL[0], HILL[1], ARENA_RADIUS + 400.0), (start[0], start[1], 900.0)] + [(x, y, r + 250.0) for x, y, r in pads]
+
+    def land(x, y, min_h=300.0, path=650.0, flat=0.8):
+        return (height(x, y) > min_h and normal_z(x, y) > flat and LIB.get_path_distance(x, y) > path and clear_of(x, y, keep))
+
+    def beach(x, y):
+        h = height(x, y)
+        return 15.0 < h < 260.0 and normal_z(x, y) > 0.92 and biome(x, y)[3] < 0.2
+
+    # Pebbles over the sand: the small stone at pebble size, thick near the tideline.
+    pebble = models["rock_07"]
+    scatter(world, rng, pebble, 2600, lambda x, y: beach(x, y) and (height(x, y) < 120.0 or rng.random() < 0.35),
+            (0.25, 0.9), "Pebbles", cull=4500.0, sink=0.25)
+    # Boulders strewn over open ground, half-sunk, with collision.
+    scatter(world, rng, models["boulder_01"] + models["rock_moss_set_01"] + models["rock_moss_set_02"], 300,
+            lambda x, y: land(x, y, path=800.0, flat=0.75) and biome(x, y)[0] < 0.6, (0.6, 2.4), "Boulders",
+            collision=True, sink=0.3)
+    # Bushes: thicker in the woods, and out on the moor and the dunes' lee as well.
+    scatter(world, rng, models["shrub_02"], 380,
+            lambda x, y: land(x, y, min_h=200.0, path=450.0) and biome(x, y)[0] < 0.5 and (biome(x, y)[1] > 0.15 or rng.random() < 0.5),
+            (0.7, 1.7), "MoreShrubs", cull=9000.0)
+    # Ruined fragments: lone walls and corners scattered off the path, sunk and leaning.
+    pieces = ["wall_thin_straight_03", "wall_thin_corner_02", "wall_thick_thin_transition_01", "wall_thick_end_01",
+              "wall_thin_straight_04", "wall_thick_end_02"]
+    ruins = 0
+    for _ in range(400):
+        if ruins >= 10:
+            break
+        x, y = rng.uniform(-18000, 18000), rng.uniform(-16000, 16000)
+        if not land(x, y, min_h=350.0, path=1100.0, flat=0.85) or biome(x, y)[0] > 0.3:
+            continue
+        place_mesh(fort(models, rng.choice(pieces)), x, y, yaw=rng.uniform(0, 360), scale=0.62, sink=rng.uniform(0.25, 0.45),
+                   pitch=rng.uniform(-6, 6), roll=rng.uniform(-6, 6), folder="Ruins/Fragments")
+        keep.append((x, y, 1500.0))
+        ruins += 1
+    log("more dressing: 10 ruin fragments target, %d placed" % ruins)
+
+
 def build_islet(models):
     """The offshore islet: rocky shore, a ruined broch (grapple to its wall top) and a Grace."""
     rng = random.Random(777)
@@ -2125,9 +2166,9 @@ def build_wildlife(models, route, start):
     fish_mesh = critters.get("Fish")
     base_ang = math.atan2(start[1], start[0])
     if fish_mesh:
-        for k in range(14):
-            ang = base_ang + rng.uniform(-0.32, 0.32) if k < 10 else rng.uniform(0.0, 2.0 * math.pi)
-            if k >= 10 and math.cos(ang) * CLIFF_DIR[0] + math.sin(ang) * CLIFF_DIR[1] > 0.2:
+        for k in range(40):
+            ang = base_ang + rng.uniform(-0.32, 0.32) if k < 24 else rng.uniform(0.0, 2.0 * math.pi)
+            if k >= 24 and math.cos(ang) * CLIFF_DIR[0] + math.sin(ang) * CLIFF_DIR[1] > 0.2:
                 continue  # no beach under the cliffs
             x, y = shore_point(ang, rng.uniform(4.0, 20.0))
             if normal_z(x, y) < 0.9 or math.hypot(x - start[0], y - start[1]) < 300.0:
@@ -2561,6 +2602,7 @@ def build_everything(textures, models):
     build_ruins(models, route, pads)
     build_stone_circle(models, route)
     dress_biomes(world, models, route, pads)
+    dress_more(world, models, route, pads, start)
     broch = build_islet(models)
     build_markers(route, start)
     grapples = build_grapples_and_loot(world, route, pads, broch)

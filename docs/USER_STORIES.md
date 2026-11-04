@@ -80,4 +80,6 @@ _Nothing recorded yet._
 | UNR-T57 | 2026-11-04 | feature | open | Sword hits come from the blade actually intersecting the enemy | — |
 | UNR-T58 | 2026-11-04 | feature | open | Every run of the game records video via MindAttic.Capture, windowed 1920x1080 | — |
 | UNR-T59 | 2026-11-04 | fix | closed | Remove stamina completely: every move always available | — |
-| UNR-T60 | 2026-11-04 | fix | open | Deepest night is dark purple with visibility, never pitch black | — |
+| UNR-T60 | 2026-11-04 | fix | closed | Deepest night is dark purple with visibility, never pitch black | — |
+| UNR-T61 | 2026-11-04 | feature | open | Beach dressing: pebbles, shells, more dead fish along the shore | — |
+| UNR-T62 | 2026-11-04 | feature | open | More boulders, ruins and bushes across the island | — |
