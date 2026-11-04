@@ -295,7 +295,7 @@ void ASoulsHUD::DrawBoss(float DeltaSeconds)
 	const float Health = Boss->GetHealthFraction();
 	const float Since = GetWorld()->GetTimeSeconds() - Boss->GetLastDamagedTime();
 	BossTrail = Health > BossTrail ? Health : FMath::FInterpTo(BossTrail, Health, DeltaSeconds, Since > 0.8f ? 2.5f : 0.f);
-	Text(Boss->DisplayName.ToString(), X, Y - 38.f * S, HudParchment, (TitleFont ? 0.45f : 1.0f) * S, false, TitleFont);
+	Text(Boss->DisplayName.ToString(), X, Y - 52.f * S, HudParchment, (TitleFont ? 0.4f : 1.0f) * S, false, TitleFont);
 	Bar(X, Y, Width, 14.f * S, Health, BossTrail, HudHealthRed);
 }
 
