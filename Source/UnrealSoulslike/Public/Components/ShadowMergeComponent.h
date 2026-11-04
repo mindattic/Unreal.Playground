@@ -45,6 +45,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ShadowMerge")
 	float MergeReach = 150.f;
 
+	// The knight's shadow melt (UNR-T71): any surface will do, in sun or shade, for as long as you like.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ShadowMerge")
+	bool bAnySurface = false;
+
+	// Material the blob is drawn with (tinted near-black through its "Color" parameter).
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ShadowMerge")
+	TObjectPtr<UMaterialInterface> BlobBaseMaterial;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ShadowMerge")
 	float CrawlSpeed = 350.f;
 

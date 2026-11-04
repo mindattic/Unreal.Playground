@@ -55,6 +55,10 @@ void UShadowMergeComponent::BeginPlay()
 	Blob->SetupAttachment(Owner->GetRootComponent());
 	Blob->RegisterComponent();
 	Blob->SetVisibility(false);
+	if (BlobBaseMaterial)
+	{
+		Blob->SetMaterial(0, BlobBaseMaterial);
+	}
 	BlobMaterial = Blob->CreateDynamicMaterialInstance(0);
 	if (BlobMaterial)
 	{
@@ -123,6 +127,10 @@ bool UShadowMergeComponent::IsAllowedSurface(const FHitResult& Hit) const
 	if (!Hit.bBlockingHit || Cast<APawn>(Hit.GetActor()))
 	{
 		return false;
+	}
+	if (bAnySurface)
+	{
+		return true;
 	}
 	const UPrimitiveComponent* Component = Hit.GetComponent();
 	if (Component && Component->ComponentHasTag(SoulslikeTags::Mergeable))
@@ -473,6 +481,11 @@ void UShadowMergeComponent::TickServerEnergy(float DeltaTime)
 		return;
 	}
 
+	if (bAnySurface)
+	{
+		Energy = MaxEnergy; // no limit: stay a shadow as long as you like
+		return;
+	}
 	SurfaceCheckTimer -= DeltaTime;
 	if (SurfaceCheckTimer <= 0.f)
 	{

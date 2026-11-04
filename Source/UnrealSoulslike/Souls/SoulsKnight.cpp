@@ -8,6 +8,7 @@
 #include "SoulsBlood.h"
 #include "SoulsFire.h"
 #include "SoulsTorch.h"
+#include "Components/ShadowMergeComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Camera/CameraComponent.h"
@@ -90,6 +91,12 @@ ASoulsKnight::ASoulsKnight()
 	GrappleLine->SetUsingAbsoluteLocation(true);
 	GrappleLine->SetUsingAbsoluteRotation(true);
 	GrappleLine->SetUsingAbsoluteScale(true);
+	ShadowMelt = CreateDefaultSubobject<UShadowMergeComponent>(TEXT("ShadowMelt"));
+	ShadowMelt->bAnySurface = true;
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> ShadowBlobMaterial(TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
+	ShadowMelt->BlobBaseMaterial = ShadowBlobMaterial.Object;
+	ShadowMelt->CrawlSpeed = 520.f;
+	ShadowMelt->MinEnergyToEnter = 0.f;
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> LineMesh(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
 	if (LineMesh.Succeeded())
 	{
@@ -190,6 +197,10 @@ void ASoulsKnight::BeginPlay()
 	if (Team == 0 && FParse::Param(FCommandLine::Get(), TEXT("GrappleDemo")))
 	{
 		RunGrappleDemo();
+	}
+	if (Team == 0 && FParse::Param(FCommandLine::Get(), TEXT("ShadowDemo")))
+	{
+		RunShadowDemo();
 	}
 	if (Team == 0 && FParse::Param(FCommandLine::Get(), TEXT("ClashDemo")))
 	{
@@ -886,6 +897,92 @@ void ASoulsKnight::RunWhistleDemo()
 	}, 10.f, false);
 }
 
+void ASoulsKnight::RunShadowDemo()
+{
+	GEngine->Exec(GetWorld(), TEXT("r.MotionBlurQuality 0"));
+	GetCameraBoom()->bEnableCameraLag = false;
+	const TWeakObjectPtr<ASoulsKnight> WeakThis(this);
+	const TSharedRef<float> StartZ = MakeShared<float>(0.f);
+	auto Log = [](const FString& Text) { UE_LOG(LogUnrealSoulslike, Log, TEXT("Shadow check: %s"), *Text); };
+	FTimerHandle Setup, Melt, Crawl, Shot1, Shot2, Stop, Rise, Done;
+	GetWorldTimerManager().SetTimer(Setup, [WeakThis, StartZ, Log]()
+	{
+		ASoulsKnight* K = WeakThis.Get();
+		AGrapplePoint* Best = nullptr;
+		for (TActorIterator<AGrapplePoint> It(K->GetWorld()); It; ++It)
+		{
+			if (!Best || K->GetDistanceTo(*It) < K->GetDistanceTo(Best))
+			{
+				Best = *It;
+			}
+		}
+		if (!Best)
+		{
+			Log(TEXT("no wall to climb FAIL"));
+			return;
+		}
+		// Four metres out from the wall under a grapple hook, facing it.
+		const FVector Out = -Best->GetActorForwardVector().GetSafeNormal2D();
+		FVector Spot = Best->GetActorLocation() + Out * 450.f;
+		FHitResult Ground;
+		if (K->GetWorld()->LineTraceSingleByChannel(Ground, Spot + FVector(0.f, 0.f, 3000.f), Spot - FVector(0.f, 0.f, 6000.f), ECC_Visibility))
+		{
+			Spot = Ground.ImpactPoint + FVector(0.f, 0.f, 100.f);
+		}
+		K->SetActorLocation(Spot, false, nullptr, ETeleportType::TeleportPhysics);
+		K->SetActorRotation(FRotator(0.f, (-Out).Rotation().Yaw, 0.f));
+		if (K->Controller)
+		{
+			K->Controller->SetControlRotation(FRotator(-15.f, (-Out).Rotation().Yaw, 0.f));
+		}
+	}, 3.f, false);
+	GetWorldTimerManager().SetTimer(Melt, [WeakThis, Log]()
+	{
+		if (ASoulsKnight* K = WeakThis.Get())
+		{
+			K->InputTestKey(EKeys::Gamepad_LeftTrigger, true);
+			K->InputTestKey(EKeys::Gamepad_LeftTrigger, false);
+			K->Shot(TEXT("Shadow_1_melted"));
+		}
+	}, 3.8f, false);
+	GetWorldTimerManager().SetTimer(Crawl, [WeakThis, StartZ, Log]()
+	{
+		if (ASoulsKnight* K = WeakThis.Get())
+		{
+			Log(FString::Printf(TEXT("melted %s"), K->ShadowMelt && K->ShadowMelt->IsMerged() ? TEXT("PASS") : TEXT("FAIL")));
+			*StartZ = K->GetActorLocation().Z;
+			K->InputTestKey(EKeys::W, true);
+		}
+	}, 4.2f, false);
+	GetWorldTimerManager().SetTimer(Shot1, [WeakThis]() { if (WeakThis.IsValid()) { WeakThis->Shot(TEXT("Shadow_2_crawl")); } }, 5.2f, false);
+	GetWorldTimerManager().SetTimer(Shot2, [WeakThis]() { if (WeakThis.IsValid()) { WeakThis->Shot(TEXT("Shadow_3_wall")); } }, 7.2f, false);
+	GetWorldTimerManager().SetTimer(Stop, [WeakThis, StartZ, Log]()
+	{
+		if (ASoulsKnight* K = WeakThis.Get())
+		{
+			K->InputTestKey(EKeys::W, false);
+			const float Climbed = K->GetActorLocation().Z - *StartZ;
+			Log(FString::Printf(TEXT("crawled up %.0f cm %s"), Climbed, Climbed > 150.f ? TEXT("PASS") : TEXT("FAIL")));
+		}
+	}, 8.5f, false);
+	GetWorldTimerManager().SetTimer(Rise, [WeakThis]()
+	{
+		if (ASoulsKnight* K = WeakThis.Get())
+		{
+			K->InputTestKey(EKeys::Gamepad_LeftTrigger, true);
+			K->InputTestKey(EKeys::Gamepad_LeftTrigger, false);
+		}
+	}, 9.f, false);
+	GetWorldTimerManager().SetTimer(Done, [WeakThis, Log]()
+	{
+		if (ASoulsKnight* K = WeakThis.Get())
+		{
+			Log(FString::Printf(TEXT("LT again rises %s"), K->ShadowMelt && !K->ShadowMelt->IsMerged() ? TEXT("PASS") : TEXT("FAIL")));
+			K->Shot(TEXT("Shadow_4_risen"));
+		}
+	}, 10.f, false);
+}
+
 void ASoulsKnight::RunGrappleDemo()
 {
 	GEngine->Exec(GetWorld(), TEXT("r.MotionBlurQuality 0"));
@@ -1073,6 +1170,7 @@ void ASoulsKnight::EnsureKnightInput()
 	SprintAction = MakeAction(TEXT("IA_KnightSprint"));
 	KnightJumpAction = MakeAction(TEXT("IA_KnightJump"));
 	AttackAction = MakeAction(TEXT("IA_KnightAttack"));
+	ShadowAction = MakeAction(TEXT("IA_KnightShadow"));
 	CrouchAction = MakeAction(TEXT("IA_KnightCrouch"));
 
 	if (SharedContext)
@@ -1101,6 +1199,9 @@ void ASoulsKnight::EnsureKnightInput()
 	KnightMappingContext->MapKey(AttackAction, EKeys::LeftMouseButton);
 	KnightMappingContext->MapKey(InteractAction, EKeys::Gamepad_DPad_Up);
 	KnightMappingContext->MapKey(InteractAction, EKeys::F);
+	// The shadow melt (UNR-T71).
+	KnightMappingContext->MapKey(ShadowAction, EKeys::Gamepad_LeftTrigger);
+	KnightMappingContext->MapKey(ShadowAction, EKeys::Q);
 	// The grappling gun (UNR-T70).
 	KnightMappingContext->MapKey(GrappleAction, EKeys::Gamepad_RightTrigger);
 	KnightMappingContext->MapKey(GrappleAction, EKeys::G);
@@ -1138,6 +1239,7 @@ void ASoulsKnight::SetupPlayerInputComponent(UInputComponent* PlayerInputCompone
 		Input->BindAction(InteractAction, ETriggerEvent::Started, this, &ASoulsKnight::InteractPressed);
 		Input->BindAction(GrappleAction, ETriggerEvent::Started, this, &ASoulsKnight::GrapplePressed);
 		Input->BindAction(AttackAction, ETriggerEvent::Started, this, &ASoulsKnight::AttackPressed);
+		Input->BindAction(ShadowAction, ETriggerEvent::Started, this, &ASoulsKnight::ShadowPressed);
 		Input->BindAction(CrouchAction, ETriggerEvent::Started, this, &ASoulsKnight::CrouchToggle);
 	}
 }
@@ -1223,6 +1325,12 @@ void ASoulsKnight::Hitstop(float Seconds)
 
 void ASoulsKnight::DoMove(float Right, float Forward)
 {
+	// Melted: the stick crawls the shadow over the ground and up the walls.
+	if (ShadowMelt && ShadowMelt->IsMerged())
+	{
+		ShadowMelt->AddMergeInput(FVector2D(Right, Forward));
+		return;
+	}
 	if (IsDead() || IsBusy())
 	{
 		return;
@@ -1760,8 +1868,30 @@ void ASoulsKnight::ResolveStrike(ASoulsKnight* Victim, const FVector& Impact, fl
 	}
 }
 
+void ASoulsKnight::ShadowPressed()
+{
+	// Melt into the shadow underfoot, or rise out of it.
+	if (!ShadowMelt || IsDead() || (!ShadowMelt->IsMerged() && (IsBusy() || IsSwimming() || GetCharacterMovement()->IsFalling())))
+	{
+		return;
+	}
+	if (bGliding)
+	{
+		EndGlide();
+	}
+	SetStance(EKnightStance::Standing);
+	bSprintToggled = false;
+	ShadowMelt->ToggleMerge();
+	UE_LOG(LogUnrealSoulslike, Log, TEXT("Shadow: %s"), ShadowMelt->IsMerged() ? TEXT("melted") : TEXT("risen"));
+}
+
 void ASoulsKnight::AttackPressed()
 {
+	if (ShadowMelt && ShadowMelt->IsMerged())
+	{
+		ShadowMelt->ToggleMerge(); // rise out of the shadow to strike
+		return;
+	}
 	if (ASoulsTorch::GetWielded(this))
 	{
 		DoComboAttackStart(); // the torch swing (SwingHit hands it to the torch)

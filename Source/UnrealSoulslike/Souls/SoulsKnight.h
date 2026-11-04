@@ -9,6 +9,7 @@ class UMaterialInterface;
 class USoundBase;
 class UStaticMeshComponent;
 class UInputAction;
+class UShadowMergeComponent;
 class UInputMappingContext;
 class ASiteOfGrace;
 class AGrapplePoint;
@@ -79,6 +80,10 @@ public:
 	// The grapple's line, stretched from the off hand to the hook while it's out.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Knight")
 	TObjectPtr<UStaticMeshComponent> GrappleLine;
+
+	// Melt into a shadow that crawls over the ground and up walls (UNR-T71): LT / Q.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Knight")
+	TObjectPtr<UShadowMergeComponent> ShadowMelt;
 
 	// 0 = players, 1 = the island's enemies. Knights never hurt their own team.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight")
@@ -407,6 +412,7 @@ public:
 	void Whistle();
 	void ToggleLockOn();
 	void GrapplePressed();
+	void ShadowPressed();
 	// X: the one normal attack (the full overhead swing), or a torch swing with a torch in hand.
 	void AttackPressed();
 	// R3: crouch, or stand back up (from prone too).
@@ -472,6 +478,8 @@ private:
 	void RunChainShots();
 	// -GrappleDemo: RT at a grapple point, the zip, the launch, A at the apex to glide, the landing.
 	void RunGrappleDemo();
+	// -ShadowDemo: melt (LT), crawl to a ruin wall and up it, rise out (LT).
+	void RunShadowDemo();
 	// -ClashDemo: a foe attacks into the raised guard (sparks, jolt, bounce), then a timed guard parries.
 	// -WhistleDemo: whistle from out of sight; the foe wanders over to look.
 	void RunClashDemo();
@@ -587,6 +595,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> AttackAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> ShadowAction;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> CrouchAction;
