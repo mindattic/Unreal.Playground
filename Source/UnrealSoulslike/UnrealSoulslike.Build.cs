@@ -27,6 +27,8 @@ public class UnrealSoulslike : ModuleRules
 			"RenderCore",
 			"SlateCore",
 			"AssetRegistry",
+			"MeshDescription",       // blood FX quad, built at runtime (UNR-T56)
+			"StaticMeshDescription",
 		});
 		if (Target.bBuildEditor)
 		{

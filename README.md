@@ -87,5 +87,9 @@ Run these with `-RenderOffscreen` to check a build without anyone at the control
 - `-InputTest` presses real controller buttons through the player controller (crouch, crouch-walk,
   sprint on R3 and L3, roll, prone, crawl, get up, a light attack's reach) and logs `Input check:` PASS/FAIL.
 - `-HandShots` takes close shots of the sword fist and the shield arm, at rest and on guard.
+- `-BloodDemo` splashes a light, a heavy and a critical hit in front of the player under a fixed
+  camera, shoots each mid-spurt (`BloodDemo_1_Light` … `BloodDemo_3_Critical_Drops`) and the blood
+  on the ground after (`BloodDemo_4_Decals_Side`, `BloodDemo_5_Decals_Top`), logs `BloodDemo:` lines
+  ending in `BLOOD_DEMO_OK`, then quits.
 
 Screenshots land in `Saved/Screenshots`.

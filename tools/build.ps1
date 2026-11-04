@@ -60,6 +60,8 @@ Invoke-EditorScript (Join-Path $PSScriptRoot 'build_souls_character.py') (Join-P
 Invoke-EditorScript (Join-Path $PSScriptRoot 'build_shadow_boss.py') (Join-Path $repo 'Saved\shadow_boss.log') 'SHADOW_BOSS_OK'
 # The torches' Niagara fire (UNR-T51): CC0 Kenney sprites from SourceArt/FX, tuned via unreal.SoulsFxLibrary.
 Invoke-EditorScript (Join-Path $PSScriptRoot 'build_torch_fire.py') (Join-Path $repo 'Saved\torch_fire.log') 'TORCH_FIRE_OK'
+# Blood and guts (UNR-T56): CC0 blood sheets from SourceArt/FX/Blood -> /Game/Souls/FX/Blood (SoulsBlood.cpp).
+Invoke-EditorScript (Join-Path $PSScriptRoot 'build_blood_fx.py') (Join-Path $repo 'Saved\blood_fx.log') 'BLOOD_FX_OK'
 Invoke-EditorScript (Join-Path $PSScriptRoot 'build_island.py') (Join-Path $repo 'Saved\island.log') 'ISLAND_OK'
 
 if ($LegacyContent) {
