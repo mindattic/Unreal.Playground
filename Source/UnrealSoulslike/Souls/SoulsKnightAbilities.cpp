@@ -5,6 +5,7 @@
 #include "SoulsEnemy.h"
 #include "GrapplePoint.h"
 #include "SoulsTorch.h"
+#include "UnrealSoulslike.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Components/CapsuleComponent.h"
@@ -21,7 +22,12 @@ namespace
 {
 	const FName AbilityOffHand(TEXT("hand_l"));
 	constexpr float AbilityHookThrowTime = 0.22f;
-	constexpr float AbilityGrappleSpeed = 2600.f;
+	constexpr float AbilityGrappleSpeed = 3600.f;   // the zip
+	constexpr float AbilityLaunchUp = 1250.f;        // flung up and over the ledge on arrival...
+	constexpr float AbilityLaunchForward = 700.f;    // ...and on past it
+	constexpr float AbilityGlideSpeed = 1150.f;      // gliding: forward speed
+	constexpr float AbilityGlideSink = 230.f;        // gliding: the most it sinks per second
+	constexpr float AbilityGlideTurn = 120.f;        // gliding: degrees a second it banks round
 	constexpr float AbilityPounceWindup = 0.6f;
 	constexpr float AbilityPounceFlight = 0.75f;
 }
@@ -103,9 +109,29 @@ void ASoulsKnight::GrapplePressed()
 		return;
 	}
 	AActor* Target = FindGrappleTarget();
+	if (!Target && IsPlayerControlled())
+	{
+		// No grapple point or foe in view: hook whatever ledge the camera is on.
+		FVector Hook, Ground;
+		if (FindLedge(Hook, Ground))
+		{
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			const FVector Out = (GetActorLocation() - Hook).GetSafeNormal2D();
+			if (AGrapplePoint* Anchor = GetWorld()->SpawnActor<AGrapplePoint>(AGrapplePoint::StaticClass(), Hook, (-Out).Rotation(), Params))
+			{
+				Anchor->MakeLedgeAnchor(Ground);
+				Target = Anchor;
+			}
+		}
+	}
 	if (!Target || !SpendStamina(GrappleCost))
 	{
 		return;
+	}
+	if (bGliding)
+	{
+		EndGlide();
 	}
 	ASoulsTorch::DropWielded(this);
 	StartGrapple(Target);
@@ -267,6 +293,135 @@ void ASoulsKnight::EndGrapple(bool bArrived)
 		Foe->Shock(bArrived ? 1.4f : 0.8f);
 	}
 	EndAction();
+	if (Mode == EGrappleMode::ToPoint && bArrived && IsPlayerControlled())
+	{
+		// Reeled up to the ledge: flung up and over it, tumbling - and free to glide (A) from the top.
+		const FVector Forward = GetActorForwardVector().GetSafeNormal2D();
+		LaunchCharacter(Forward * AbilityLaunchForward + FVector(0.f, 0.f, AbilityLaunchUp), true, true);
+		GrappleLaunchTime = GetWorld()->GetTimeSeconds();
+		if (UAnimInstance* Anim = GetMesh()->GetAnimInstance(); Anim && RollMontage)
+		{
+			Anim->Montage_Play(RollMontage, 1.25f);
+		}
+		PlayRandomSound(SwingSounds, 0.6f);
+		UE_LOG(LogUnrealSoulslike, Log, TEXT("Grapple: launched off the ledge at %s"), *GetActorLocation().ToCompactString());
+	}
+}
+
+bool ASoulsKnight::FindLedge(FVector& OutHook, FVector& OutGround) const
+{
+	const AController* C = GetController();
+	if (!C)
+	{
+		return false;
+	}
+	FVector ViewLoc;
+	FRotator ViewRot;
+	C->GetPlayerViewPoint(ViewLoc, ViewRot);
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(GrappleLedge), true, this);
+	FHitResult Hit;
+	if (!GetWorld()->LineTraceSingleByChannel(Hit, ViewLoc, ViewLoc + ViewRot.Vector() * GrappleRange, ECC_Visibility, Params)
+		|| Cast<APawn>(Hit.GetActor()))
+	{
+		return false;
+	}
+	const FVector Point = Hit.ImpactPoint;
+	if (FVector::Dist(Point, GetActorLocation()) < 300.f)
+	{
+		return false;
+	}
+	if (Hit.ImpactNormal.Z > 0.7f)
+	{
+		// Looking at a top: land on it.
+		OutGround = Point;
+		OutHook = Point + FVector(0.f, 0.f, 20.f);
+	}
+	else
+	{
+		// Looking at a wall: find its top edge above the hit, and the walkable ground just behind it.
+		const FVector Into = Point - FVector(Hit.ImpactNormal.X, Hit.ImpactNormal.Y, 0.f).GetSafeNormal() * 60.f;
+		FHitResult Top;
+		if (!GetWorld()->LineTraceSingleByChannel(Top, Into + FVector(0.f, 0.f, 1600.f), Into - FVector(0.f, 0.f, 60.f), ECC_Visibility, Params)
+			|| Top.ImpactNormal.Z < 0.7f || Top.bStartPenetrating)
+		{
+			return false;
+		}
+		OutGround = Top.ImpactPoint;
+		OutHook = FVector(Point.X, Point.Y, Top.ImpactPoint.Z);
+	}
+	// Somewhere worth going: not below the feet, and room to stand.
+	if (OutGround.Z < GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight() - 50.f)
+	{
+		return false;
+	}
+	const float Half = GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	return !GetWorld()->OverlapBlockingTestByChannel(OutGround + FVector(0.f, 0.f, Half + 10.f), FQuat::Identity, ECC_Pawn,
+		FCollisionShape::MakeCapsule(GetCapsuleComponent()->GetScaledCapsuleRadius() * 0.8f, Half), Params);
+}
+
+void ASoulsKnight::StartGlide()
+{
+	UCharacterMovementComponent* Movement = GetCharacterMovement();
+	if (bGliding || IsDead() || IsSwimming() || !Movement->IsFalling() || GrappleMode != EGrappleMode::None)
+	{
+		return;
+	}
+	bGliding = true;
+	Movement->GravityScale = 0.15f;
+	Movement->bOrientRotationToMovement = false;
+	// Spread out flat, face down, arms wide.
+	if (UAnimInstance* Anim = GetMesh()->GetAnimInstance(); Anim && SwimMontage)
+	{
+		Anim->Montage_Play(SwimMontage, 1.f);
+		Anim->Montage_Pause(SwimMontage);
+	}
+	UE_LOG(LogUnrealSoulslike, Log, TEXT("Grapple: gliding from %.0f cm up"), GetActorLocation().Z);
+}
+
+void ASoulsKnight::EndGlide()
+{
+	if (!bGliding)
+	{
+		return;
+	}
+	bGliding = false;
+	UCharacterMovementComponent* Movement = GetCharacterMovement();
+	Movement->GravityScale = 1.f;
+	Movement->bOrientRotationToMovement = true;
+	if (UAnimInstance* Anim = GetMesh()->GetAnimInstance(); Anim && SwimMontage && Anim->Montage_IsActive(SwimMontage))
+	{
+		Anim->Montage_Stop(0.25f, SwimMontage);
+	}
+}
+
+void ASoulsKnight::TickGlide(float DeltaSeconds)
+{
+	if (!bGliding)
+	{
+		return;
+	}
+	UCharacterMovementComponent* Movement = GetCharacterMovement();
+	if (IsDead() || IsSwimming() || !Movement->IsFalling())
+	{
+		EndGlide();
+		return;
+	}
+	// Bank round toward the stick.
+	const FVector Stick = Movement->GetCurrentAcceleration().GetSafeNormal2D();
+	FRotator Facing(0.f, GetActorRotation().Yaw, 0.f);
+	if (!Stick.IsNearlyZero())
+	{
+		Facing = FMath::RInterpConstantTo(Facing, FRotator(0.f, Stick.Rotation().Yaw, 0.f), DeltaSeconds, AbilityGlideTurn);
+		SetActorRotation(Facing);
+	}
+	// Carried forward on the air, sinking slowly.
+	FVector Velocity = Movement->Velocity;
+	const FVector Want = Facing.Vector() * AbilityGlideSpeed;
+	const FVector Flat = FMath::VInterpTo(FVector(Velocity.X, Velocity.Y, 0.f), Want, DeltaSeconds, 1.8f);
+	Velocity.X = Flat.X;
+	Velocity.Y = Flat.Y;
+	Velocity.Z = FMath::Max(Velocity.Z, -AbilityGlideSink);
+	Movement->Velocity = Velocity;
 }
 
 void ASoulsKnight::UpdateGrappleLine()

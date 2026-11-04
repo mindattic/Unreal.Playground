@@ -60,3 +60,19 @@ void AGrapplePoint::Tick(float DeltaSeconds)
 	Phase += DeltaSeconds;
 	Glint->SetIntensity(1500.f + 700.f * FMath::Sin(Phase * 3.f));
 }
+
+void AGrapplePoint::MakeLedgeAnchor(const FVector& Ground)
+{
+	LandingGround = Ground;
+	bHasLanding = true;
+	if (Anchor)
+	{
+		Anchor->SetVisibility(false);
+		Anchor->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+	if (Glint)
+	{
+		Glint->SetVisibility(false);
+	}
+	SetLifeSpan(8.f);
+}

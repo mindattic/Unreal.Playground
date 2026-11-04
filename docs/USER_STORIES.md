@@ -85,7 +85,7 @@ _Nothing recorded yet._
 | UNR-T62 | 2026-11-04 | feature | closed | More boulders, ruins and bushes across the island | — |
 | UNR-T63 | 2026-11-04 | feature | open | Ship graveyard round the landing harbour; one rowboat dragged up the beach where you came ashore | — |
 | UNR-T64 | 2026-11-04 | feature | open | High-quality free rigged characters instead of the Unreal mannequin | — |
-| UNR-T65 | 2026-11-04 | fix | open | Hit lands mid-swing as the blade crosses, not after the swing ends | — |
+| UNR-T65 | 2026-11-04 | fix | closed | Hit lands mid-swing as the blade crosses, not after the swing ends | — |
 | UNR-T66 | 2026-11-04 | fix | closed | After dying, roll is lost and attacks move to RT: the knight's input mapping is gone on respawn | — |
 | UNR-T67 | 2026-11-04 | feature | open | Every free high-quality rigged non-player model becomes an enemy type with its own AI | — |
 | UNR-T68 | 2026-11-04 | feature | open | Operable mech you can climb into: legs and an independently rotating torso | — |

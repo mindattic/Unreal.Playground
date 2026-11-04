@@ -470,6 +470,8 @@ private:
 	void RunHandShots();
 	// -ChainShots: X, X: the slash and the back-slash, frame by frame from the side.
 	void RunChainShots();
+	// -GrappleDemo: RT at a grapple point, the zip, the launch, A at the apex to glide, the landing.
+	void RunGrappleDemo();
 	// -ClashDemo: a foe attacks into the raised guard (sparks, jolt, bounce), then a timed guard parries.
 	// -WhistleDemo: whistle from out of sight; the foe wanders over to look.
 	void RunClashDemo();
@@ -535,6 +537,11 @@ private:
 	void StartGrapple(AActor* Target);
 	void LaunchGrapple();
 	void TickGrapple(float DeltaSeconds);
+	// The grappling gun (UNR-T70): any ledge in view; zip, launch over the top, then glide on A.
+	bool FindLedge(FVector& OutHook, FVector& OutGround) const;
+	void StartGlide();
+	void EndGlide();
+	void TickGlide(float DeltaSeconds);
 	void EndGrapple(bool bArrived);
 	void UpdateGrappleLine();
 	ASoulsKnight* FindIncomingPouncer() const;
@@ -588,6 +595,8 @@ private:
 	FTimerHandle StrikeTimer;
 	FTimerHandle RecoilTimer;
 	float LungeDelay = 0.f;
+	bool bGliding = false;
+	float GrappleLaunchTime = -100.f;
 	bool bBladeTracked = false;
 	FVector BladePrevBase = FVector::ZeroVector;
 	FVector BladePrevTip = FVector::ZeroVector;

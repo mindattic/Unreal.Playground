@@ -30,6 +30,9 @@ public:
 	// Where a character's capsule centre should end up (ledge top, found by a downward trace).
 	FVector GetLandingLocation(float CapsuleHalfHeight) const;
 
+	// The grappling gun (UNR-T70): an invisible, short-lived anchor on any ledge the player aims at.
+	void MakeLedgeAnchor(const FVector& Ground);
+
 	virtual void Tick(float DeltaSeconds) override;
 
 protected:

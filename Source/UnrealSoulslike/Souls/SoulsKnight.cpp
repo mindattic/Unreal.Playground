@@ -187,6 +187,10 @@ void ASoulsKnight::BeginPlay()
 	{
 		RunChainShots();
 	}
+	if (Team == 0 && FParse::Param(FCommandLine::Get(), TEXT("GrappleDemo")))
+	{
+		RunGrappleDemo();
+	}
 	if (Team == 0 && FParse::Param(FCommandLine::Get(), TEXT("ClashDemo")))
 	{
 		RunClashDemo();
@@ -586,8 +590,8 @@ void ASoulsKnight::RunInputTest()
 		{ 8.8f, [Check](ASoulsKnight* K) { Check(TEXT("tap R3 crouches"), K->Stance == EKnightStance::Crouched, FString::Printf(TEXT("stance=%d"), (int32)K->Stance)); K->Shot(TEXT("Input_6_crouch")); } },
 		{ 9.0f, [Tap](ASoulsKnight* K) { Tap(K, EKeys::Gamepad_RightThumbstick, 0.08f); } },
 		{ 9.4f, [Check](ASoulsKnight* K) { Check(TEXT("tap R3 again stands"), K->Stance == EKnightStance::Standing, FString::Printf(TEXT("stance=%d"), (int32)K->Stance)); } },
-		{ 9.8f, [Tap](ASoulsKnight* K) { Tap(K, EKeys::Gamepad_FaceButton_Top, 0.08f); Tap(K, EKeys::Gamepad_LeftTrigger, 0.08f); Tap(K, EKeys::Gamepad_RightTrigger, 0.3f); } },
-		{ 10.3f, [Check](ASoulsKnight* K) { Check(TEXT("Y, LT and RT do nothing"), K->Action == EKnightAction::None && K->GrappleMode == EGrappleMode::None && !K->bBlocking, FString::Printf(TEXT("action=%d grapple=%d"), (int32)K->Action, (int32)K->GrappleMode)); } },
+		{ 9.8f, [Tap](ASoulsKnight* K) { Tap(K, EKeys::Gamepad_FaceButton_Top, 0.08f); Tap(K, EKeys::Gamepad_LeftTrigger, 0.08f); } },
+		{ 10.3f, [Check](ASoulsKnight* K) { Check(TEXT("Y and LT do nothing"), K->Action == EKnightAction::None && K->GrappleMode == EGrappleMode::None && !K->bBlocking, FString::Printf(TEXT("action=%d grapple=%d"), (int32)K->Action, (int32)K->GrappleMode)); } },
 		// Reach: a foe (looking away) 3.3 m ahead; one tap of X must step in and land the blow.
 		{ 13.5f, [Side](ASoulsKnight* K)
 			{
@@ -882,6 +886,104 @@ void ASoulsKnight::RunWhistleDemo()
 	}, 10.f, false);
 }
 
+void ASoulsKnight::RunGrappleDemo()
+{
+	GEngine->Exec(GetWorld(), TEXT("r.MotionBlurQuality 0"));
+	GetCameraBoom()->bEnableCameraLag = false;
+	struct FGrappleProbe { float StartZ = 0.f; float PeakZ = -1e9f; bool bLaunched = false; bool bGlided = false; float GlideStart = 0.f; };
+	const TSharedRef<FGrappleProbe> Probe = MakeShared<FGrappleProbe>();
+	const TWeakObjectPtr<ASoulsKnight> WeakThis(this);
+	auto Log = [](const FString& Text) { UE_LOG(LogUnrealSoulslike, Log, TEXT("Grapple check: %s"), *Text); };
+	auto Tap = [](ASoulsKnight* K, const FKey& Key, float Hold)
+	{
+		K->InputTestKey(Key, true);
+		FTimerHandle Handle;
+		const TWeakObjectPtr<ASoulsKnight> WeakK(K);
+		K->GetWorldTimerManager().SetTimer(Handle, [WeakK, Key]() { if (WeakK.IsValid()) { WeakK->InputTestKey(Key, false); } }, Hold, false);
+	};
+	FTimerHandle Setup;
+	GetWorldTimerManager().SetTimer(Setup, [WeakThis, Probe, Log]()
+	{
+		ASoulsKnight* K = WeakThis.Get();
+		AGrapplePoint* Best = nullptr;
+		for (TActorIterator<AGrapplePoint> It(K->GetWorld()); It; ++It)
+		{
+			if (!Best || K->GetDistanceTo(*It) < K->GetDistanceTo(Best))
+			{
+				Best = *It;
+			}
+		}
+		if (!Best)
+		{
+			Log(TEXT("no grapple point FAIL"));
+			return;
+		}
+		// Stand 12 m out from the hook, at ground level, looking at it.
+		const FVector Out = -Best->GetActorForwardVector().GetSafeNormal2D();
+		FVector Spot = Best->GetActorLocation() + Out * 1200.f;
+		FHitResult Ground;
+		if (K->GetWorld()->LineTraceSingleByChannel(Ground, Spot + FVector(0.f, 0.f, 3000.f), Spot - FVector(0.f, 0.f, 6000.f), ECC_Visibility))
+		{
+			Spot = Ground.ImpactPoint + FVector(0.f, 0.f, 100.f);
+		}
+		K->SetActorLocation(Spot, false, nullptr, ETeleportType::TeleportPhysics);
+		const FVector ToHook = Best->GetActorLocation() - K->GetActorLocation();
+		K->SetActorRotation(FRotator(0.f, ToHook.Rotation().Yaw, 0.f));
+		if (K->Controller)
+		{
+			K->Controller->SetControlRotation(ToHook.Rotation());
+		}
+		Probe->StartZ = K->GetActorLocation().Z;
+		Log(FString::Printf(TEXT("standing %.0f cm from %s"), ToHook.Size(), *Best->GetName()));
+	}, 3.f, false);
+	FTimerHandle Fire;
+	GetWorldTimerManager().SetTimer(Fire, [WeakThis, Tap]() { if (WeakThis.IsValid()) { Tap(WeakThis.Get(), EKeys::Gamepad_RightTrigger, 0.1f); WeakThis->Shot(TEXT("Grapple_1_fire")); } }, 3.6f, false);
+	// Watch the flight: note the launch, press A at the apex, follow the glide down.
+	FTimerHandle Watch;
+	GetWorldTimerManager().SetTimer(Watch, [WeakThis, Probe, Log, Tap]()
+	{
+		ASoulsKnight* K = WeakThis.Get();
+		if (!K)
+		{
+			return;
+		}
+		const float Now = K->GetWorld()->GetTimeSeconds();
+		const float Z = K->GetActorLocation().Z;
+		if (!Probe->bLaunched && Now - K->GrappleLaunchTime < 0.2f)
+		{
+			Probe->bLaunched = true;
+			Log(FString::Printf(TEXT("zipped up and launched PASS (%.0f cm above the start)"), Z - Probe->StartZ));
+			K->Shot(TEXT("Grapple_2_launch"));
+		}
+		if (Probe->bLaunched && !Probe->bGlided)
+		{
+			Probe->PeakZ = FMath::Max(Probe->PeakZ, Z);
+			if (K->GetVelocity().Z < 0.f)
+			{
+				Tap(K, EKeys::Gamepad_FaceButton_Bottom, 0.1f);
+				Probe->bGlided = true;
+				Probe->GlideStart = Now;
+				Log(FString::Printf(TEXT("apex %.0f cm above the start; A to glide"), Probe->PeakZ - Probe->StartZ));
+			}
+		}
+		if (Probe->bGlided && K->bGliding && Now - Probe->GlideStart > 1.2f && Now - Probe->GlideStart < 1.3f)
+		{
+			Log(FString::Printf(TEXT("gliding PASS (sink %.0f cm/s, air %.0f cm/s)"), -K->GetVelocity().Z, K->GetVelocity().Size2D()));
+			K->Shot(TEXT("Grapple_3_glide"));
+		}
+	}, 0.05f, true, 3.7f);
+	FTimerHandle Done;
+	GetWorldTimerManager().SetTimer(Done, [WeakThis, Probe, Log]()
+	{
+		if (ASoulsKnight* K = WeakThis.Get())
+		{
+			Log(FString::Printf(TEXT("done: launched=%d glided=%d gliding=%d grounded=%d %s"), Probe->bLaunched, Probe->bGlided, K->bGliding,
+				K->GetCharacterMovement()->IsMovingOnGround(), Probe->bLaunched && Probe->bGlided ? TEXT("PASS") : TEXT("FAIL")));
+			K->Shot(TEXT("Grapple_4_done"));
+		}
+	}, 14.f, false);
+}
+
 void ASoulsKnight::RunChainShots()
 {
 	GEngine->Exec(GetWorld(), TEXT("r.MotionBlurQuality 0"));
@@ -999,6 +1101,9 @@ void ASoulsKnight::EnsureKnightInput()
 	KnightMappingContext->MapKey(AttackAction, EKeys::LeftMouseButton);
 	KnightMappingContext->MapKey(InteractAction, EKeys::Gamepad_DPad_Up);
 	KnightMappingContext->MapKey(InteractAction, EKeys::F);
+	// The grappling gun (UNR-T70).
+	KnightMappingContext->MapKey(GrappleAction, EKeys::Gamepad_RightTrigger);
+	KnightMappingContext->MapKey(GrappleAction, EKeys::G);
 }
 
 void ASoulsKnight::NotifyControllerChanged()
@@ -1691,6 +1796,11 @@ void ASoulsKnight::CrouchToggle()
 
 void ASoulsKnight::DodgePressed()
 {
+	if (bGliding)
+	{
+		EndGlide(); // drop out of the glide
+		return;
+	}
 	// B: the roll, on press (Elden Ring). Prone or crouched, it gets you up instead.
 	if (IsDead() || GetUpFirst())
 	{
@@ -1726,6 +1836,16 @@ void ASoulsKnight::SprintPressed()
 
 void ASoulsKnight::JumpPressed()
 {
+	if (bGliding)
+	{
+		EndGlide();
+		return;
+	}
+	if (GetCharacterMovement()->IsFalling() && !IsSwimming() && !IsDead())
+	{
+		StartGlide();
+		return;
+	}
 	if (IsDead() || IsSwimming() || GetUpFirst())
 	{
 		return;
@@ -2535,6 +2655,7 @@ void ASoulsKnight::Tick(float DeltaSeconds)
 		return;
 	}
 	TickStealthDemo();
+	TickGlide(DeltaSeconds);
 	// Verification: how fast the blade tip moves through a swing (-LogCmds="LogUnrealSoulslike Verbose").
 	if (IsPlayerControlled() && IsAttacking() && UE_LOG_ACTIVE(LogUnrealSoulslike, Verbose))
 	{

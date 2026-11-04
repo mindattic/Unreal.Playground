@@ -110,8 +110,8 @@ void ASoulsHUD::DrawHUD()
 
 		DrawLockOn(Knight);
 
-		// Grapple: no button for it now (UNR-T46), so no hook glyph either.
-		if (const AActor* Hook = false ? Knight->GetGrappleCandidate() : nullptr)
+		// Grapple: a hook glyph on whatever the grappling gun would catch.
+		if (const AActor* Hook = Knight->GetGrappleCandidate())
 		{
 			const bool bPoint = Hook->IsA<AGrapplePoint>();
 			const FVector Screen = Project(Hook->GetActorLocation() + FVector(0.f, 0.f, bPoint ? 0.f : 60.f), false);
@@ -215,7 +215,7 @@ void ASoulsHUD::DrawHUD()
 			const float Alpha = FMath::Clamp((HintUntil - Now) / 3.f, 0.f, 1.f) * 0.9f;
 			static const TCHAR* Lines[] = {
 				TEXT("Attack  X / LMB     Shield  LB / RMB  (raise it just in time to parry)     Roll  B / E     Jump  A / Space"),
-				TEXT("Run  L3 / Shift  (toggle)     Crouch  R3 / Ctrl  (toggle)     Flask  RB / R     Use / whistle  D-pad up / F"),
+				TEXT("Run  L3 / Shift  (toggle)     Crouch  R3 / Ctrl  (toggle)     Flask  RB / R     Use / whistle  D-pad up / F     Grapple  RT / G  (A in the air: glide)"),
 				TEXT("Shield up against a leaping foe to brace     Strike the unaware for an ambush"),
 			};
 			float LineY = Canvas->ClipY - 170.f * S;
