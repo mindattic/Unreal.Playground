@@ -132,21 +132,18 @@ public:
 	UPROPERTY()
 	TObjectPtr<UMaterialInterface> IronMaterial;
 
-	// UNR-T51 fire (tools/build_torch_fire.py); null until that has run, then the blobs are used.
-	UPROPERTY()
-	TObjectPtr<UNiagaraSystem> FlameSystem;
-
-	UPROPERTY()
-	TObjectPtr<UNiagaraSystem> GroundFlameSystem;
-
-	UPROPERTY()
-	TObjectPtr<UNiagaraSystem> EmberSystem;
-
-	UPROPERTY()
-	TObjectPtr<UNiagaraSystem> SmokeSystem;
-
-	// True when the Niagara fire assets were found (the class default's view).
+	// UNR-T51 fire: /Game/Souls/FX/Fire/NS_Torch* (tools/build_torch_fire.py), loaded on first use in
+	// play, never from this class's constructor. In a packaged (monolithic) build class defaults are
+	// built before the Niagara module has started; loading a Niagara system then crashes in
+	// UNiagaraStatelessEmitter::Serialize. They're cooked through DirectoriesToAlwaysCook (/Game/Souls).
+	// True when they exist (else the torches fall back to the flame blobs).
 	static bool HasFireFx();
+	// The loaded systems (null without them): the flame in a hand / bracket / flight, the ground fire,
+	// the embers and the smoke.
+	static UNiagaraSystem* GetFlameSystem();
+	static UNiagaraSystem* GetGroundFlameSystem();
+	static UNiagaraSystem* GetEmberSystem();
+	static UNiagaraSystem* GetSmokeSystem();
 
 protected:
 	virtual void BeginPlay() override;

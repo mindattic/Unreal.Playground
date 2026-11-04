@@ -2,7 +2,8 @@
 
 Imports the CC0 Kenney flame and smoke sprites (SourceArt/FX/KenneyParticlePack, see SourceArt/FX/CREDITS.md),
 builds their particle materials and four Niagara systems under /Game/Souls/FX/Fire, which
-Source/UnrealSoulslike/Souls/SoulsTorch.cpp hard-references (so a packaged build cooks them):
+Source/UnrealSoulslike/Souls/SoulsTorch.cpp loads by path on first use in play (a packaged build cooks
+them through DirectoriesToAlwaysCook=/Game/Souls in Config/DefaultGame.ini):
 
   NS_TorchFlame        the tall tongue of a torch in a hand, in a bracket or in flight
   NS_TorchFlameGround  the wider little fire of a torch lying on the ground (and of a knight set alight)

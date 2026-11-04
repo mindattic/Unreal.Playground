@@ -81,6 +81,46 @@ namespace
 	const TCHAR* const TorchEmberFxPath = TEXT("/Game/Souls/FX/Fire/NS_TorchEmbers.NS_TorchEmbers");
 	const TCHAR* const TorchSmokeFxPath = TEXT("/Game/Souls/FX/Fire/NS_TorchSmoke.NS_TorchSmoke");
 
+	struct FTorchFireSystems
+	{
+		UNiagaraSystem* Flame = nullptr;
+		UNiagaraSystem* GroundFlame = nullptr;
+		UNiagaraSystem* Ember = nullptr;
+		UNiagaraSystem* Smoke = nullptr;
+	};
+
+	// Loaded once, on first use in play (never while class defaults are built: in a packaged build that
+	// is before the Niagara module has started, and loading a Niagara system then crashes). Rooted so
+	// they stay resident between torches. A run without them (Content not built yet) keeps that answer
+	// until the process restarts.
+	const FTorchFireSystems& TorchFireSystems()
+	{
+		static FTorchFireSystems Systems;
+		static bool bLoaded = false;
+		if (!bLoaded)
+		{
+			bLoaded = true;
+			auto Load = [](const TCHAR* Path) -> UNiagaraSystem*
+			{
+				UNiagaraSystem* System = LoadObject<UNiagaraSystem>(nullptr, Path, {}, LOAD_NoWarn | LOAD_Quiet);
+				if (System)
+				{
+					System->AddToRoot();
+				}
+				else
+				{
+					UE_LOG(LogUnrealSoulslike, Warning, TEXT("Torch fire: %s missing (run tools/build_torch_fire.py); using flame blobs"), Path);
+				}
+				return System;
+			};
+			Systems.Flame = Load(TorchFlameFxPath);
+			Systems.GroundFlame = Load(TorchGroundFlameFxPath);
+			Systems.Ember = Load(TorchEmberFxPath);
+			Systems.Smoke = Load(TorchSmokeFxPath);
+		}
+		return Systems;
+	}
+
 	// Starts (from fresh) or lets die out (live particles finish) one of the torch's fire effects.
 	void TorchSetFx(UNiagaraComponent* Fx, bool bOn)
 	{
@@ -289,14 +329,7 @@ ASoulsTorch::ASoulsTorch()
 	FlameCoreMaterial = CoreFinder.Object;
 	FlameMaterial = FlameFinder.Object ? FlameFinder.Object : CoreFinder.Object;
 	IronMaterial = IronFinder.Object;
-	static ConstructorHelpers::FObjectFinder<UNiagaraSystem> FlameFxFinder(TorchFlameFxPath);
-	static ConstructorHelpers::FObjectFinder<UNiagaraSystem> GroundFlameFxFinder(TorchGroundFlameFxPath);
-	static ConstructorHelpers::FObjectFinder<UNiagaraSystem> EmberFxFinder(TorchEmberFxPath);
-	static ConstructorHelpers::FObjectFinder<UNiagaraSystem> SmokeFxFinder(TorchSmokeFxPath);
-	FlameSystem = FlameFxFinder.Object;
-	GroundFlameSystem = GroundFlameFxFinder.Object;
-	EmberSystem = EmberFxFinder.Object;
-	SmokeSystem = SmokeFxFinder.Object;
+	// (The Niagara fire is NOT loaded here: see HasFireFx.)
 
 	Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	RootComponent = Root;
@@ -356,9 +389,14 @@ ASoulsTorch::ASoulsTorch()
 
 bool ASoulsTorch::HasFireFx()
 {
-	const ASoulsTorch* Defaults = GetDefault<ASoulsTorch>();
-	return Defaults->FlameSystem && Defaults->GroundFlameSystem;
+	const FTorchFireSystems& Systems = TorchFireSystems();
+	return Systems.Flame && Systems.GroundFlame;
 }
+
+UNiagaraSystem* ASoulsTorch::GetFlameSystem() { return TorchFireSystems().Flame; }
+UNiagaraSystem* ASoulsTorch::GetGroundFlameSystem() { return TorchFireSystems().GroundFlame; }
+UNiagaraSystem* ASoulsTorch::GetEmberSystem() { return TorchFireSystems().Ember; }
+UNiagaraSystem* ASoulsTorch::GetSmokeSystem() { return TorchFireSystems().Smoke; }
 
 void ASoulsTorch::BeginPlay()
 {
@@ -371,10 +409,10 @@ void ASoulsTorch::BeginPlay()
 	FlameRoot->SetWorldRotation(FRotator::ZeroRotator);
 	if (HasFireFx())
 	{
-		FlameFx->SetAsset(FlameSystem);
-		GroundFlameFx->SetAsset(GroundFlameSystem);
-		EmberFx->SetAsset(EmberSystem);
-		SmokeFx->SetAsset(SmokeSystem);
+		FlameFx->SetAsset(GetFlameSystem());
+		GroundFlameFx->SetAsset(GetGroundFlameSystem());
+		EmberFx->SetAsset(GetEmberSystem());
+		SmokeFx->SetAsset(GetSmokeSystem());
 	}
 	else
 	{
@@ -1128,12 +1166,11 @@ void USoulsBurnComponent::Ignite(ASoulsKnight* Victim, AActor* InSource, float S
 		USkeletalMeshComponent* Mesh = Victim->GetMesh();
 		const FName Bone = Mesh && Mesh->GetBoneIndex(TorchBurnBone) != INDEX_NONE ? TorchBurnBone : NAME_None;
 		USceneComponent* Parent = Mesh ? static_cast<USceneComponent*>(Mesh) : Victim->GetRootComponent();
-		const ASoulsTorch* Defaults = GetDefault<ASoulsTorch>();
 		if (ASoulsTorch::HasFireFx())
 		{
 			// The torch's ground fire and embers on the chest, upright whichever way the body turns,
 			// spread wider over the torso.
-			for (UNiagaraSystem* System : { Defaults->GroundFlameSystem.Get(), Defaults->EmberSystem.Get() })
+			for (UNiagaraSystem* System : { ASoulsTorch::GetGroundFlameSystem(), ASoulsTorch::GetEmberSystem() })
 			{
 				if (!System)
 				{
