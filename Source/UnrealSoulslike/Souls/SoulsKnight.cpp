@@ -160,7 +160,26 @@ void ASoulsKnight::BeginPlay()
 	}
 	if (Team == 0 && FParse::Param(FCommandLine::Get(), TEXT("InputTest")))
 	{
-		RunInputTest();
+		// -RespawnFirst: die once, and run the test on the knight that respawns (UNR-T66).
+		static bool bRespawnTestKilled = false;
+		if (FParse::Param(FCommandLine::Get(), TEXT("RespawnFirst")) && !bRespawnTestKilled)
+		{
+			bRespawnTestKilled = true;
+			const TWeakObjectPtr<ASoulsKnight> WeakThis(this);
+			FTimerHandle Die;
+			GetWorldTimerManager().SetTimer(Die, [WeakThis]()
+			{
+				if (WeakThis.IsValid())
+				{
+					UE_LOG(LogUnrealSoulslike, Log, TEXT("Input check: dying first, to test the respawned knight"));
+					WeakThis->LoseHealth(100000.f, nullptr);
+				}
+			}, 1.f, false);
+		}
+		else
+		{
+			RunInputTest();
+		}
 	}
 	if (Team == 0 && FParse::Param(FCommandLine::Get(), TEXT("HandShots")))
 	{
@@ -881,9 +900,9 @@ void ASoulsKnight::RunChainShots()
 				K->Controller->SetControlRotation(FRotator(-5.f, K->GetActorRotation().Yaw - 90.f, 0.f));
 			}
 		}
-	}, 3.f, false);
-	GetWorldTimerManager().SetTimer(First, [WeakThis]() { if (WeakThis.IsValid()) { WeakThis->AttackPressed(); } }, 3.5f, false);
-	GetWorldTimerManager().SetTimer(Second, [WeakThis]() { if (WeakThis.IsValid()) { WeakThis->AttackPressed(); } }, 3.75f, false);
+	}, 8.f, false);
+	GetWorldTimerManager().SetTimer(First, [WeakThis]() { if (WeakThis.IsValid()) { WeakThis->AttackPressed(); } }, 8.5f, false);
+	GetWorldTimerManager().SetTimer(Second, [WeakThis]() { if (WeakThis.IsValid()) { WeakThis->AttackPressed(); } }, 8.75f, false);
 	for (int32 Index = 0; Index < 24; ++Index)
 	{
 		FTimerHandle Snap;
@@ -894,7 +913,7 @@ void ASoulsKnight::RunChainShots()
 				UE_LOG(LogUnrealSoulslike, Log, TEXT("Chain frame %d: action %d swing %d progress %.2f"), Index, static_cast<int32>(K->Action), K->SwingIndex, K->GetActionProgress());
 				K->Shot(*FString::Printf(TEXT("Chain_%02d"), Index));
 			}
-		}, 3.5f + Index * 0.08f, false);
+		}, 8.5f + Index * 0.08f, false);
 	}
 }
 
@@ -914,10 +933,21 @@ void ASoulsKnight::EnsureKnightInput()
 		return;
 	}
 
-	auto MakeAction = [this](const TCHAR* Name)
+	// One set of actions and one mapping context for every knight the game ever makes (UNR-T66): a
+	// per-pawn context outlived its pawn after a death - still registered with the input subsystem, it
+	// kept consuming every key for actions nobody listened to, so the respawned knight had no controls.
+	static TMap<FName, UInputAction*> SharedActions;
+	static UInputMappingContext* SharedContext = nullptr;
+	auto MakeAction = [](const TCHAR* Name)
 	{
-		UInputAction* NewAction = NewObject<UInputAction>(this, Name);
+		if (UInputAction** Found = SharedActions.Find(FName(Name)))
+		{
+			return *Found;
+		}
+		UInputAction* NewAction = NewObject<UInputAction>(GetTransientPackage(), Name);
 		NewAction->ValueType = EInputActionValueType::Boolean;
+		NewAction->AddToRoot();
+		SharedActions.Add(FName(Name), NewAction);
 		return NewAction;
 	};
 	DodgeAction = MakeAction(TEXT("IA_KnightDodge"));
@@ -932,7 +962,14 @@ void ASoulsKnight::EnsureKnightInput()
 	AttackAction = MakeAction(TEXT("IA_KnightAttack"));
 	CrouchAction = MakeAction(TEXT("IA_KnightCrouch"));
 
-	KnightMappingContext = NewObject<UInputMappingContext>(this, TEXT("IMC_Knight"));
+	if (SharedContext)
+	{
+		KnightMappingContext = SharedContext;
+		return;
+	}
+	KnightMappingContext = NewObject<UInputMappingContext>(GetTransientPackage(), TEXT("IMC_Knight"));
+	KnightMappingContext->AddToRoot();
+	SharedContext = KnightMappingContext;
 	// The combat template's map has no jump at all, so the knight carries its own.
 	KnightMappingContext->MapKey(KnightJumpAction, EKeys::Gamepad_FaceButton_Bottom);
 	KnightMappingContext->MapKey(KnightJumpAction, EKeys::SpaceBar);
@@ -2474,6 +2511,18 @@ void ASoulsKnight::Tick(float DeltaSeconds)
 		return;
 	}
 	TickStealthDemo();
+	// Verification: how fast the blade tip moves through a swing (-LogCmds="LogUnrealSoulslike Verbose").
+	if (IsPlayerControlled() && IsAttacking() && UE_LOG_ACTIVE(LogUnrealSoulslike, Verbose))
+	{
+		FVector TipBase, Tip;
+		if (GetBladeSegment(TipBase, Tip))
+		{
+			static FVector LastTip = FVector::ZeroVector;
+			UE_LOG(LogUnrealSoulslike, Verbose, TEXT("Swing %d progress %.2f tip speed %.0f"), static_cast<int32>(Action), GetActionProgress(),
+				FVector::Dist(Tip, LastTip) / FMath::Max(DeltaSeconds, 0.001f));
+			LastTip = Tip;
+		}
+	}
 	// The blade is live just before and after the strike moment: sweep it against bodies.
 	{
 		const float Left = GetWorldTimerManager().GetTimerRemaining(HitTimer);
