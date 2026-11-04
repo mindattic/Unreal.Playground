@@ -1,60 +1,82 @@
 # Unreal.Soulslike
 
-A co-op souls-like demo built in Unreal Engine 5.7: third-person combat on an isolated island in
-the Outer Hebrides. Land on the beach, fight through the crofts and past the broch and the
-standing stones, and take the ruined keep from the Hollow Laird. Play alone or with friends.
-
-![Island](docs/island_preview.png)
+A vertical slice of an Elden-Ring-style action game in Unreal Engine 5.8. You wash up on an
+isolated Hebridean island, fight through Hollow knights and take on two bosses: the Callanish
+Warden in the stone circle and Morrigan of the Mire, a shade who melts into shadow.
 
 ## What's in it
 
-- **The island** is generated from a heightmap (`tools/generate_heightmap.py` →
-  `Content/Terrain/`). It has a ragged coastline, a sea loch, low moorland and a keep in a rocky
-  bowl. The open sea surrounds it, with Hebridean mist, sky and sun on top.
-- **Ruins**: crofts, an Iron Age broch, a Callanish-style stone circle and avenue, the keep, and
-  scattered boulders.
-- **Characters**: CC0 [KayKit](https://kaylousberg.itch.io/) knight and skeletons sharing one
-  rig and animation set (`SourceArt/`, credits in `SourceArt/CREDITS.md`).
-- **Combat** is server-authoritative and replicated for co-op. Dodge (i-frames), block
-  (stamina, guard break), parry (staggers the attacker), light and heavy attacks with readable
-  wind-ups, flask heals, hit-stun, death and respawn on the beach.
-- **Skeletons** see in a cone and hear you running. They grow suspicious (?), go on alert (!),
-  call nearby allies, chase and attack, raise shields, and give up if you outrun their leash.
-  The Hollow Laird guards the keep.
+- **The island.** A real Landscape about 400 m across in an open ocean, with five biomes along
+  the route:
+  - machair dunes with marram grass
+  - leafy, wind-bent woodland with ferns and wildflowers
+  - a ruined keep
+  - a misty peat marsh with pools
+  - heather highland rising to a Callanish-style stone circle on the clifftop
+
+  There are cliffs, sea stacks and an offshore islet with a broch, a Site of Grace and loot. The
+  sky has a low sun, volumetric fog and Lumen lighting. All the art is CC0 (Poly Haven, ambientCG,
+  Quaternius); credits are under `SourceArt/`.
+- **Combat.** The player and every enemy use the same kit, built on Epic's Manny with retargeted
+  CC0 animation:
+  - a three-swing combo and a heavy attack
+  - tap to roll (with i-frames), hold to sprint
+  - a guard that breaks when stamina runs out
+  - a timed parry, then a riposte, and backstabs
+  - poise interrupts and stance breaks
+  - hitstop and camera kick on hits
+  - flasks
+  - lock-on
+- **Grapple.** Hook a glinting point on a ledge to be hauled up onto it. Hook a smaller enemy to
+  yank it to your blade, dazed. Hook a big one to pull yourself in for a falling cut.
+- **Brace and impale.** Leapers crouch and spring at you from range. Brace your blade while one is
+  in the air and it's run through, held aloft and slides off dead. If you don't brace, you're
+  knocked flat.
+- **Surprise is rewarded.** An enemy you hit or startle while it's unaware freezes in shock: it
+  takes extra damage and is open to a critical. Ambush kills pay half again in runes and spread
+  fear. Shaken enemies hesitate and miss their swings; terrified ones flee or cower.
+- **Swimming and exploration.** You can swim the sea and the marsh pools, at a cost in stamina.
+  You only drown when exhausted. Golden Seeds (+1 flask), a Crimson Tear (stronger flasks) and
+  rune purses wait on grapple ledges, in the marsh and on the islet.
+- **Elden Ring trappings.**
+  - Sites of Grace: rest to refill, which also brings the enemies back.
+  - Runes, which you lose when you die.
+  - Boss bars, YOU DIED, GREAT ENEMY FELLED.
+  - CC0 sound and boss music.
 
 ## Controls
 
 | Action | Gamepad | Mouse / keyboard |
 |---|---|---|
 | Move / look | L-stick / R-stick | WASD / mouse |
-| Light attack / stealth execute | X | LMB |
+| Light attack (combo, riposte, backstab) | X | LMB |
 | Heavy attack | Y | F |
-| Jump / climb-jump | A | Space |
-| Dodge (let go while climbing) | B | Shift |
-| Block (hold) | LB | RMB |
-| Parry | LT | Q |
-| Heal | RB | R |
-| Shadow merge | R3 | E |
+| Roll (tap) / sprint (hold) | B | Shift |
+| Jump | A | Space |
+| Guard (hold) | LB | RMB |
+| Parry, or brace against a leaping enemy | LT | C |
+| Flask | RB | R |
+| Grapple | RT | G / mouse thumb |
+| Lock on | R3 | Q / MMB |
+| Rest at grace / pick up | D-pad up | E |
 
 ## Build and run
 
-Requires Unreal Engine 5.7 from the Epic Launcher and Visual Studio's C++ game tools.
+Requires Unreal Engine 5.8 (`tools/find-engine.ps1` finds an installed engine) and Visual Studio
+with the C++ game workload.
 
 ```powershell
-./run.ps1                  # compile, import art + build the map, then play
-./run.ps1 -Players 2       # co-op: a listen server plus one client on this machine
-./run.ps1 -SkipContent     # recompile and play without re-importing art
+./tools/build.ps1      # compile, then build the knight, the shadow boss and the island in the editor
+./tools/run.ps1        # play Lvl_Isle
+./tools/package.ps1 -Only Cpp   # standalone Builds\Cpp\Windows\Unreal.Soulslike.Cpp.exe
 ```
 
-To check a build without playing it, add `-Extra "-DemoBot -AutoShot=5 -QuitAfter=60"`. The bot
-plays the game by itself, a screenshot lands in `Saved/Screenshots` every 5 seconds, and the game
-exits after a minute.
+Content is generated by the scripts in `tools/` from `SourceArt/`: `Content/` is not
+committed.
 
-## Roadmap
+Run these with `-RenderOffscreen` to check a build without anyone at the controls:
+- `-KnightDemo` performs every move and mechanic against real enemies and screenshots each one.
+- `-IslandTour` screenshots each Site of Grace and boss arena.
+- `-ShadowBossTest -ShadowBossDemo` stages the shade's fight.
 
-These have tickets in `docs/USER_STORIES.md`:
-- jumping and free climbing
-- stealth executions
-- shadow-merging into walls
-- buried ruins and the guarded loch bridge
-- a C# (UnrealSharp) twin of the whole game, to compare against the C++ build
+Screenshots land in `Saved/Screenshots`.
