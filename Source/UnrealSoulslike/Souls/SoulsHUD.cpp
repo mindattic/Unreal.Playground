@@ -13,11 +13,11 @@
 
 namespace
 {
-	const FLinearColor Gold(0.78f, 0.66f, 0.42f);
-	const FLinearColor Parchment(0.86f, 0.82f, 0.72f);
-	const FLinearColor HealthRed(0.58f, 0.06f, 0.05f);
-	const FLinearColor StaminaGreen(0.2f, 0.5f, 0.22f);
-	const FLinearColor TrailYellow(0.85f, 0.7f, 0.3f);
+	const FLinearColor HudGold(0.78f, 0.66f, 0.42f);
+	const FLinearColor HudParchment(0.86f, 0.82f, 0.72f);
+	const FLinearColor HudHealthRed(0.58f, 0.06f, 0.05f);
+	const FLinearColor HudStaminaGreen(0.2f, 0.5f, 0.22f);
+	const FLinearColor HudTrailYellow(0.85f, 0.7f, 0.3f);
 }
 
 void ASoulsHUD::BeginPlay()
@@ -43,12 +43,12 @@ float ASoulsHUD::Ui() const
 void ASoulsHUD::Bar(float X, float Y, float Width, float Height, float Fraction, float Trail, const FLinearColor& Fill)
 {
 	DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.55f), X - 3.f, Y - 3.f, Width + 6.f, Height + 6.f);
-	DrawRect(FLinearColor(Gold.R, Gold.G, Gold.B, 0.55f), X - 1.f, Y - 1.f, Width + 2.f, 1.f);
-	DrawRect(FLinearColor(Gold.R, Gold.G, Gold.B, 0.35f), X - 1.f, Y + Height, Width + 2.f, 1.f);
+	DrawRect(FLinearColor(HudGold.R, HudGold.G, HudGold.B, 0.55f), X - 1.f, Y - 1.f, Width + 2.f, 1.f);
+	DrawRect(FLinearColor(HudGold.R, HudGold.G, HudGold.B, 0.35f), X - 1.f, Y + Height, Width + 2.f, 1.f);
 	DrawRect(FLinearColor(0.05f, 0.05f, 0.05f, 0.85f), X, Y, Width, Height);
 	if (Trail > Fraction)
 	{
-		DrawRect(TrailYellow, X + Width * Fraction, Y, Width * (Trail - Fraction), Height);
+		DrawRect(HudTrailYellow, X + Width * Fraction, Y, Width * (Trail - Fraction), Height);
 	}
 	DrawRect(Fill, X, Y, Width * FMath::Clamp(Fraction, 0.f, 1.f), Height);
 	DrawRect(FLinearColor(1.f, 1.f, 1.f, 0.08f), X, Y, Width * FMath::Clamp(Fraction, 0.f, 1.f), Height * 0.4f);
@@ -86,25 +86,25 @@ void ASoulsHUD::DrawHUD()
 		const float Health = Knight->GetHealthFraction();
 		PlayerTrail = Health > PlayerTrail ? Health : FMath::FInterpTo(PlayerTrail, Health, Delta, (Now - Knight->GetLastDamagedTime()) > 0.7f ? 3.f : 0.f);
 		StaminaShown = FMath::FInterpTo(StaminaShown, Knight->GetStaminaFraction(), Delta, 18.f);
-		Bar(X, Y, Knight->MaxHealth * 4.2f * S, 13.f * S, Health, PlayerTrail, HealthRed);
-		Bar(X, Y + 26.f * S, Knight->MaxStamina * 3.4f * S, 9.f * S, StaminaShown, StaminaShown, StaminaGreen);
+		Bar(X, Y, Knight->MaxHealth * 4.2f * S, 13.f * S, Health, PlayerTrail, HudHealthRed);
+		Bar(X, Y + 26.f * S, Knight->MaxStamina * 3.4f * S, 9.f * S, StaminaShown, StaminaShown, HudStaminaGreen);
 
 		// Flask, bottom-left.
 		const float FX = 70.f * S, FY = Canvas->ClipY - 150.f * S;
 		DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.45f), FX - 8.f * S, FY - 8.f * S, 76.f * S, 96.f * S);
-		DrawRect(FLinearColor(Gold.R, Gold.G, Gold.B, 0.4f), FX - 8.f * S, FY - 8.f * S, 76.f * S, 1.f);
+		DrawRect(FLinearColor(HudGold.R, HudGold.G, HudGold.B, 0.4f), FX - 8.f * S, FY - 8.f * S, 76.f * S, 1.f);
 		const FLinearColor FlaskColor = Knight->Flasks > 0 ? FLinearColor(0.95f, 0.55f, 0.12f) : FLinearColor(0.2f, 0.2f, 0.2f);
 		DrawRect(FLinearColor(0.75f, 0.72f, 0.65f, 0.9f), FX + 24.f * S, FY + 2.f * S, 12.f * S, 12.f * S);
 		DrawRect(FlaskColor, FX + 14.f * S, FY + 14.f * S, 32.f * S, 46.f * S);
 		DrawRect(FLinearColor(1.f, 1.f, 1.f, 0.18f), FX + 17.f * S, FY + 18.f * S, 6.f * S, 36.f * S);
-		Text(FString::FromInt(Knight->Flasks), FX + 52.f * S, FY + 52.f * S, Parchment, 1.0f * S, false);
+		Text(FString::FromInt(Knight->Flasks), FX + 52.f * S, FY + 52.f * S, HudParchment, 1.0f * S, false);
 
 		// Interaction prompt.
 		if (const ASiteOfGrace* Grace = Knight->GetNearbyGrace())
 		{
 			const FString Prompt = TEXT("Rest at Site of Grace      [ E ]  /  D-pad Up");
 			DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.55f), Canvas->ClipX * 0.5f - 320.f * S, Canvas->ClipY * 0.74f - 10.f * S, 640.f * S, 50.f * S);
-			Text(Prompt, Canvas->ClipX * 0.5f, Canvas->ClipY * 0.74f, Parchment, 1.1f * S, true);
+			Text(Prompt, Canvas->ClipX * 0.5f, Canvas->ClipY * 0.74f, HudParchment, 1.1f * S, true);
 		}
 
 		DrawLockOn(Knight);
@@ -129,7 +129,7 @@ void ASoulsHUD::DrawHUD()
 			}
 			const float W = 110.f * S, H = 5.f * S;
 			DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.6f), Screen.X - W * 0.5f - 1.f, Screen.Y - 1.f, W + 2.f, H + 2.f);
-			DrawRect(HealthRed, Screen.X - W * 0.5f, Screen.Y, W * Enemy->GetHealthFraction(), H);
+			DrawRect(HudHealthRed, Screen.X - W * 0.5f, Screen.Y, W * Enemy->GetHealthFraction(), H);
 		}
 
 		if (Now < HintUntil)
@@ -143,7 +143,7 @@ void ASoulsHUD::DrawHUD()
 			float LineY = Canvas->ClipY - 140.f * S;
 			for (const TCHAR* Line : Lines)
 			{
-				Text(Line, Canvas->ClipX - 60.f * S - 760.f * S, LineY, FLinearColor(Parchment.R, Parchment.G, Parchment.B, Alpha), 0.8f * S, false);
+				Text(Line, Canvas->ClipX - 60.f * S - 760.f * S, LineY, FLinearColor(HudParchment.R, HudParchment.G, HudParchment.B, Alpha), 0.8f * S, false);
 				LineY += 30.f * S;
 			}
 		}
@@ -155,15 +155,15 @@ void ASoulsHUD::DrawHUD()
 		const FString Runes = FString::Printf(TEXT("%d"), GameMode->Runes);
 		const float RX = Canvas->ClipX - 70.f * S, RY = Canvas->ClipY - 70.f * S;
 		DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.45f), RX - 230.f * S, RY - 8.f * S, 240.f * S, 46.f * S);
-		DrawRect(FLinearColor(Gold.R, Gold.G, Gold.B, 0.5f), RX - 230.f * S, RY - 8.f * S, 240.f * S, 1.f);
+		DrawRect(FLinearColor(HudGold.R, HudGold.G, HudGold.B, 0.5f), RX - 230.f * S, RY - 8.f * S, 240.f * S, 1.f);
 		float W = 0.f, H = 0.f;
 		GetTextSize(Runes, W, H, GEngine->GetLargeFont(), 1.1f * S);
-		Text(Runes, RX - W, RY, Parchment, 1.1f * S, false);
-		DrawRect(Gold, RX - 220.f * S, RY + 8.f * S, 14.f * S, 14.f * S);
+		Text(Runes, RX - W, RY, HudParchment, 1.1f * S, false);
+		DrawRect(HudGold, RX - 220.f * S, RY + 8.f * S, 14.f * S, 14.f * S);
 		if (Now - GameMode->LastRunesTime < 2.5f && GameMode->LastRunesGained > 0)
 		{
 			Text(FString::Printf(TEXT("+%d"), GameMode->LastRunesGained), RX, RY - 40.f * S,
-				FLinearColor(Gold.R, Gold.G, Gold.B, FMath::Clamp(2.5f - (Now - GameMode->LastRunesTime), 0.f, 1.f)), 1.f * S, false);
+				FLinearColor(HudGold.R, HudGold.G, HudGold.B, FMath::Clamp(2.5f - (Now - GameMode->LastRunesTime), 0.f, 1.f)), 1.f * S, false);
 		}
 		DrawBoss(Delta);
 		DrawBanner(Now);
@@ -193,7 +193,7 @@ void ASoulsHUD::DrawLockOn(const ASoulsKnight* Knight)
 	if (Stance > 0.02f)
 	{
 		DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.6f), Screen.X - 30.f * S, Screen.Y + 16.f * S, 60.f * S, 4.f * S);
-		DrawRect(TrailYellow, Screen.X - 30.f * S, Screen.Y + 16.f * S, 60.f * S * Stance, 4.f * S);
+		DrawRect(HudTrailYellow, Screen.X - 30.f * S, Screen.Y + 16.f * S, 60.f * S * Stance, 4.f * S);
 	}
 }
 
@@ -213,8 +213,8 @@ void ASoulsHUD::DrawBoss(float DeltaSeconds)
 	const float Health = Boss->GetHealthFraction();
 	const float Since = GetWorld()->GetTimeSeconds() - Boss->GetLastDamagedTime();
 	BossTrail = Health > BossTrail ? Health : FMath::FInterpTo(BossTrail, Health, DeltaSeconds, Since > 0.8f ? 2.5f : 0.f);
-	Text(Boss->DisplayName.ToString(), X, Y - 34.f * S, Parchment, 1.0f * S, false, TitleFont);
-	Bar(X, Y, Width, 14.f * S, Health, BossTrail, HealthRed);
+	Text(Boss->DisplayName.ToString(), X, Y - 38.f * S, HudParchment, (TitleFont ? 0.45f : 1.0f) * S, false, TitleFont);
+	Bar(X, Y, Width, 14.f * S, Health, BossTrail, HudHealthRed);
 }
 
 void ASoulsHUD::DrawBanner(float Now)
@@ -243,7 +243,7 @@ void ASoulsHUD::DrawBanner(float Now)
 	const float Grow = 1.f + 0.06f * FMath::Clamp(Age / GameMode->BannerDuration, 0.f, 1.f);
 	const FLinearColor Color(GameMode->BannerColor.R, GameMode->BannerColor.G, GameMode->BannerColor.B, Alpha);
 	UFont* Font = TitleFont ? TitleFont.Get() : GEngine->GetLargeFont();
-	const float Scale = (TitleFont ? 1.f : 3.2f) * S * Grow;
+	const float Scale = (TitleFont ? 1.45f : 3.2f) * S * Grow;
 	float W = 0.f, H = 0.f;
 	GetTextSize(GameMode->BannerText.ToString(), W, H, Font, Scale);
 	DrawText(GameMode->BannerText.ToString(), Color, Canvas->ClipX * 0.5f - W * 0.5f, CY - H * 0.5f, Font, Scale);

@@ -51,7 +51,7 @@ public:
 	float PhaseTwoAt = 0.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy|Boss")
-	TObjectPtr<UMaterialInterface> PhaseTwoMaterial;
+	TArray<TObjectPtr<UMaterialInterface>> PhaseTwoMaterials;
 
 	bool bPhaseTwo = false;
 	FVector HomeLocation = FVector::ZeroVector;

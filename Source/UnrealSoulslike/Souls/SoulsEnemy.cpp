@@ -57,13 +57,7 @@ void ASoulsEnemy::EnterPhaseTwo()
 	HeavyChance += 0.1f;
 	LightDamage *= 1.15f;
 	HeavyDamage *= 1.15f;
-	if (PhaseTwoMaterial)
-	{
-		for (int32 i = 0; i < GetMesh()->GetNumMaterials(); ++i)
-		{
-			GetMesh()->SetMaterial(i, PhaseTwoMaterial);
-		}
-	}
+	ApplyBodyMaterials(PhaseTwoMaterials);
 	if (ASoulsGameMode* GameMode = GetWorld()->GetAuthGameMode<ASoulsGameMode>())
 	{
 		if (GameMode->BossRoar)

@@ -349,43 +349,38 @@ def finish(mat):
     return mat
 
 
-def armour_material(name, base, metallic, roughness, ember=None):
-    """Forged-metal armour for the island's knights; ember adds a fresnel glow (boss phase two)."""
-    mat = new_material(SOULS + "/Materials", name)
-    # Grime: a large-scale noise darkens and roughens the metal so it doesn't read as chrome.
-    noise = MEL.create_material_expression(mat, unreal.MaterialExpressionNoise, -900, 200)
-    noise.set_editor_property("scale", 0.08)
-    noise.set_editor_property("levels", 3)
-    noise.set_editor_property("output_min", 0.0)
-    noise.set_editor_property("output_max", 1.0)
-    dark = const3(mat, [v * 0.45 for v in base], -900, -100)
-    bright = const3(mat, base, -900, 0)
-    lerp = MEL.create_material_expression(mat, unreal.MaterialExpressionLinearInterpolate, -600, 0)
-    MEL.connect_material_expressions(dark, "", lerp, "A")
-    MEL.connect_material_expressions(bright, "", lerp, "B")
-    MEL.connect_material_expressions(noise, "", lerp, "Alpha")
-    MEL.connect_material_property(lerp, "", unreal.MaterialProperty.MP_BASE_COLOR)
-    MEL.connect_material_property(const1(mat, metallic, -600, 200), "", unreal.MaterialProperty.MP_METALLIC)
-    rough = MEL.create_material_expression(mat, unreal.MaterialExpressionLinearInterpolate, -600, 300)
-    MEL.connect_material_expressions(const1(mat, roughness + 0.25, -900, 400), "", rough, "A")
-    MEL.connect_material_expressions(const1(mat, roughness, -900, 480), "", rough, "B")
-    MEL.connect_material_expressions(noise, "", rough, "Alpha")
-    MEL.connect_material_property(rough, "", unreal.MaterialProperty.MP_ROUGHNESS)
-    if ember:
-        fres = MEL.create_material_expression(mat, unreal.MaterialExpressionFresnel, -900, 600)
-        fres.set_editor_property("exponent", 3.0)
-        mul = MEL.create_material_expression(mat, unreal.MaterialExpressionMultiply, -600, 600)
-        MEL.connect_material_expressions(fres, "", mul, "A")
-        MEL.connect_material_expressions(const3(mat, ember, -900, 700), "", mul, "B")
-        MEL.connect_material_property(mul, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
-    return finish(mat)
+MANNY_SLOTS = ("/Game/Characters/Mannequins/Materials/Manny/MI_Manny_01_New",
+               "/Game/Characters/Mannequins/Materials/Manny/MI_Manny_02_New")
+
+
+def armour_instances(name, tint, metallic, roughness, logo, glow):
+    """Per-slot instances of Epic's mannequin material (keeps its panel normals and wear), tinted
+    as faction armour with a glowing chest sigil."""
+    folder = SOULS + "/Materials"
+    ensure_dir(folder)
+    out = []
+    for i, parent_path in enumerate(MANNY_SLOTS):
+        mi_name = "%s_%d" % (name, i)
+        path = "%s/%s" % (folder, mi_name)
+        mi = eal.load_asset(path) if eal.does_asset_exist(path) else             tools.create_asset(mi_name, folder, unreal.MaterialInstanceConstant, unreal.MaterialInstanceConstantFactoryNew())
+        mi.set_editor_property("parent", eal.load_asset(parent_path))
+        MEL.set_material_instance_vector_parameter_value(mi, "Paint Tint", unreal.LinearColor(tint[0], tint[1], tint[2], 1.0))
+        MEL.set_material_instance_scalar_parameter_value(mi, "MetalPaintMetallic", metallic)
+        MEL.set_material_instance_scalar_parameter_value(mi, "MetalPaintRoughness", roughness)
+        MEL.set_material_instance_vector_parameter_value(mi, "LogoTint", unreal.LinearColor(logo[0], logo[1], logo[2], 1.0))
+        MEL.set_material_instance_scalar_parameter_value(mi, "EmissivePower", glow if i == 1 else 0.0)
+        MEL.update_material_instance(mi)
+        eal.save_loaded_asset(mi)
+        out.append(mi)
+    return out
 
 
 def build_armour_materials():
     out = {
-        "enemy": armour_material("M_HollowIron", (0.05, 0.047, 0.043), 0.85, 0.42),
-        "boss": armour_material("M_WardenGold", (0.62, 0.45, 0.2), 1.0, 0.3),
-        "boss2": armour_material("M_WardenEmber", (0.55, 0.36, 0.15), 1.0, 0.34, ember=(6.0, 1.4, 0.15)),
+        "player": armour_instances("MI_KnightSteel", (0.62, 0.6, 0.56), 1.0, 0.28, (1.0, 0.7, 0.25), 3.0),
+        "enemy": armour_instances("MI_HollowIron", (0.035, 0.032, 0.03), 0.7, 0.5, (1.0, 0.07, 0.02), 9.0),
+        "boss": armour_instances("MI_WardenGold", (0.78, 0.55, 0.2), 1.0, 0.22, (1.0, 0.62, 0.15), 10.0),
+        "boss2": armour_instances("MI_WardenEmber", (0.45, 0.2, 0.06), 1.0, 0.3, (1.0, 0.22, 0.02), 40.0),
     }
     log("armour materials: %s" % sorted(out))
     return out
@@ -495,8 +490,8 @@ def configure_knight(bp, montages, weapons, sounds, body_material=None):
         place(cdo.get_editor_property("Sword"), weapons["sword"], SWORD_TRANSFORM)
     if "shield" in weapons:
         place(cdo.get_editor_property("Shield"), weapons["shield"], SHIELD_TRANSFORM)
-    if body_material is not None:
-        cdo.set_editor_property("BodyMaterial", body_material)
+    if body_material:
+        cdo.set_editor_property("BodyMaterials", body_material)
     for prop, role in (("SwingSounds", "sword_swing"), ("HitSounds", "sword_hit_flesh"), ("BlockSounds", "shield_block"),
                        ("HurtSounds", "armor_hurt"), ("FootstepSounds", "footstep_grass")):
         cdo.set_editor_property(prop, sounds.get(role, []))
@@ -515,7 +510,7 @@ def build_blueprints(montages, weapons, armour, sounds):
     template = "/Game/Variant_Combat/Blueprints/BP_CombatCharacter"
 
     knight = duplicate_blueprint(template, "BP_SoulsKnight", script("SoulsKnight"))
-    configure_knight(knight, montages, weapons, sounds)
+    configure_knight(knight, montages, weapons, sounds, armour.get("player"))
     log("BP_SoulsKnight ready")
 
     enemy = duplicate_blueprint(template, "BP_SoulsEnemy", script("SoulsEnemy"))
@@ -529,7 +524,7 @@ def build_blueprints(montages, weapons, armour, sounds):
 
     boss = duplicate_blueprint(template, "BP_SoulsBoss", script("SoulsBoss"))
     cdo = configure_knight(boss, montages, weapons, sounds, armour.get("boss"))
-    cdo.set_editor_property("PhaseTwoMaterial", armour.get("boss2"))
+    cdo.set_editor_property("PhaseTwoMaterials", armour.get("boss2"))
     cdo.set_editor_property("ai_controller_class", script("SoulsEnemyController"))
     cdo.set_editor_property("auto_possess_ai", unreal.AutoPossessAI.PLACED_IN_WORLD_OR_SPAWNED)
     cdo.set_editor_property("tags", ["Enemy", "Boss"])

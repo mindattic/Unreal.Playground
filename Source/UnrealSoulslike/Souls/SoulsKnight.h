@@ -56,9 +56,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight")
 	FText DisplayName;
 
-	// Overrides every material slot of the body mesh (enemy armour); empty keeps the mesh's own.
+	// Per-slot overrides for the body mesh (faction armour); empty entries keep the mesh's own.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight")
-	TObjectPtr<UMaterialInterface> BodyMaterial;
+	TArray<TObjectPtr<UMaterialInterface>> BodyMaterials;
+
+	void ApplyBodyMaterials(const TArray<TObjectPtr<UMaterialInterface>>& Materials);
 
 	// ---- Animation ----
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight|Animation")

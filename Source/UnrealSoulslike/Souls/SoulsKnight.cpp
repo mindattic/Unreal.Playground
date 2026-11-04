@@ -37,22 +37,22 @@
 
 namespace
 {
-	const FName SwordSocket(TEXT("hand_r"));
-	const FName ShieldSocket(TEXT("hand_l"));
-	constexpr float BlockWalkSpeed = 230.f;
-	constexpr float SprintSpeed = 760.f;
-	constexpr float SprintStaminaPerSecond = 14.f;
-	constexpr float DodgeHoldToSprint = 0.28f;
-	constexpr float ParryCost = 10.f;
-	constexpr float LockRange = 2200.f;
-	constexpr float LockBreakRange = 2900.f;
-	constexpr float CriticalRange = 240.f;
-	constexpr float CriticalDuration = 1.7f;
-	constexpr float ParriedDuration = 2.4f;
-	constexpr float StanceBrokenDuration = 2.8f;
-	constexpr float PoiseRecoverDelay = 2.5f;
-	constexpr float StanceRecoverDelay = 4.f;
-	constexpr float StanceRecoverPerSecond = 12.f;
+	const FName KSwordSocket(TEXT("hand_r"));
+	const FName KShieldSocket(TEXT("hand_l"));
+	constexpr float KBlockWalkSpeed = 230.f;
+	constexpr float KSprintSpeed = 760.f;
+	constexpr float KSprintStaminaPerSecond = 14.f;
+	constexpr float KDodgeHoldToSprint = 0.28f;
+	constexpr float KParryCost = 10.f;
+	constexpr float KLockRange = 2200.f;
+	constexpr float KLockBreakRange = 2900.f;
+	constexpr float KCriticalRange = 240.f;
+	constexpr float KCriticalDuration = 1.7f;
+	constexpr float KParriedDuration = 2.4f;
+	constexpr float KStanceBrokenDuration = 2.8f;
+	constexpr float KPoiseRecoverDelay = 2.5f;
+	constexpr float KStanceRecoverDelay = 4.f;
+	constexpr float KStanceRecoverPerSecond = 12.f;
 }
 
 ASoulsKnight::ASoulsKnight()
@@ -60,11 +60,11 @@ ASoulsKnight::ASoulsKnight()
 	PrimaryActorTick.bCanEverTick = true;
 
 	Sword = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Sword"));
-	Sword->SetupAttachment(GetMesh(), SwordSocket);
+	Sword->SetupAttachment(GetMesh(), KSwordSocket);
 	Sword->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
 	Shield = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Shield"));
-	Shield->SetupAttachment(GetMesh(), ShieldSocket);
+	Shield->SetupAttachment(GetMesh(), KShieldSocket);
 	Shield->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
 	RespawnTime = 5.f;
@@ -89,13 +89,7 @@ void ASoulsKnight::BeginPlay()
 	Poise = MaxPoise;
 	GetCharacterMovement()->MaxWalkSpeed = RunSpeed;
 
-	if (BodyMaterial)
-	{
-		for (int32 i = 0; i < GetMesh()->GetNumMaterials(); ++i)
-		{
-			GetMesh()->SetMaterial(i, BodyMaterial);
-		}
-	}
+	ApplyBodyMaterials(BodyMaterials);
 	// The player's vitals are on the HUD; enemies show a bar over the head only once hurt.
 	if (UWidgetComponent* FloatingBar = FindComponentByClass<UWidgetComponent>())
 	{
@@ -553,7 +547,7 @@ void ASoulsKnight::DodgePressed()
 
 void ASoulsKnight::DodgeReleased()
 {
-	const bool bWasTap = bDodgeHeld && GetWorld()->GetTimeSeconds() - DodgePressTime < DodgeHoldToSprint;
+	const bool bWasTap = bDodgeHeld && GetWorld()->GetTimeSeconds() - DodgePressTime < KDodgeHoldToSprint;
 	bDodgeHeld = false;
 	bSprinting = false;
 	if (bWasTap)
@@ -610,7 +604,7 @@ void ASoulsKnight::SetBlocking(bool bNewBlocking)
 		return;
 	}
 	bBlocking = bNewBlocking;
-	GetCharacterMovement()->MaxWalkSpeed = bBlocking ? BlockWalkSpeed : RunSpeed;
+	GetCharacterMovement()->MaxWalkSpeed = bBlocking ? KBlockWalkSpeed : RunSpeed;
 	UAnimInstance* Anim = GetMesh()->GetAnimInstance();
 	if (!Anim || !BlockMontage)
 	{
@@ -641,7 +635,7 @@ void ASoulsKnight::SetBlocking(bool bNewBlocking)
 
 void ASoulsKnight::ParryPressed()
 {
-	if (IsDead() || IsBusy() || GetCharacterMovement()->IsFalling() || !ParryMontage || !SpendStamina(ParryCost))
+	if (IsDead() || IsBusy() || GetCharacterMovement()->IsFalling() || !ParryMontage || !SpendStamina(KParryCost))
 	{
 		return;
 	}
@@ -680,6 +674,17 @@ void ASoulsKnight::FinishHeal()
 		if (LifeBarWidget)
 		{
 			LifeBarWidget->SetLifePercentage(GetHealthFraction());
+		}
+	}
+}
+
+void ASoulsKnight::ApplyBodyMaterials(const TArray<TObjectPtr<UMaterialInterface>>& Materials)
+{
+	for (int32 i = 0; i < Materials.Num() && i < GetMesh()->GetNumMaterials(); ++i)
+	{
+		if (Materials[i])
+		{
+			GetMesh()->SetMaterial(i, Materials[i]);
 		}
 	}
 }
@@ -893,7 +898,7 @@ void ASoulsKnight::TakePoiseAndStance(float InPoiseDamage, float StanceHit)
 		StanceDamage = 0.f;
 		Poise = MaxPoise;
 		Interrupt();
-		PlayAction(EKnightAction::Parried, GuardBreakMontage ? GuardBreakMontage.Get() : HitMontage.Get(), StanceBrokenDuration);
+		PlayAction(EKnightAction::Parried, GuardBreakMontage ? GuardBreakMontage.Get() : HitMontage.Get(), KStanceBrokenDuration);
 		PlaySound(ParrySound, 0.6f);
 	}
 	else if (Poise <= 0.f)
@@ -911,7 +916,7 @@ void ASoulsKnight::GetParried(ASoulsKnight* Parrier)
 		return;
 	}
 	Interrupt();
-	PlayAction(EKnightAction::Parried, GuardBreakMontage ? GuardBreakMontage.Get() : HitMontage.Get(), ParriedDuration);
+	PlayAction(EKnightAction::Parried, GuardBreakMontage ? GuardBreakMontage.Get() : HitMontage.Get(), KParriedDuration);
 	Hitstop(0.14f);
 }
 
@@ -930,7 +935,7 @@ bool ASoulsKnight::TryCritical()
 		}
 		const FVector ToOther = (Other->GetActorLocation() - GetActorLocation()).GetSafeNormal2D();
 		const float Distance = FVector::Dist2D(Other->GetActorLocation(), GetActorLocation());
-		if (Distance > CriticalRange * Other->GetActorScale3D().X || FVector::DotProduct(Facing, ToOther) < 0.4f)
+		if (Distance > KCriticalRange * Other->GetActorScale3D().X || FVector::DotProduct(Facing, ToOther) < 0.4f)
 		{
 			continue;
 		}
@@ -959,9 +964,9 @@ bool ASoulsKnight::TryCritical()
 	SetActorLocation(Spot, true);
 	FaceTowards(Best->GetActorLocation());
 	CriticalVictim = Best;
-	Best->ReceiveCritical(this, CriticalDuration);
-	PlayAction(EKnightAction::Critical, CriticalMontage, CriticalDuration);
-	GetWorldTimerManager().SetTimer(HitTimer, this, &ASoulsKnight::LandCritical, CriticalDuration * 0.45f, false);
+	Best->ReceiveCritical(this, KCriticalDuration);
+	PlayAction(EKnightAction::Critical, CriticalMontage, KCriticalDuration);
+	GetWorldTimerManager().SetTimer(HitTimer, this, &ASoulsKnight::LandCritical, KCriticalDuration * 0.45f, false);
 	return true;
 }
 
@@ -1105,7 +1110,7 @@ ASoulsKnight* ASoulsKnight::FindLockTarget() const
 		const FVector To = Other->GetActorLocation() - GetActorLocation();
 		const float Distance = To.Size();
 		const float Dot = FVector::DotProduct(ViewDir, To.GetSafeNormal2D());
-		if (Distance > LockRange || Dot < 0.3f)
+		if (Distance > KLockRange || Dot < 0.3f)
 		{
 			continue;
 		}
@@ -1144,7 +1149,7 @@ void ASoulsKnight::ToggleLockOn()
 void ASoulsKnight::UpdateLockOn(float DeltaSeconds)
 {
 	ASoulsKnight* Target = LockTarget.Get();
-	if (Target && (Target->IsDead() || GetDistanceTo(Target) > LockBreakRange))
+	if (Target && (Target->IsDead() || GetDistanceTo(Target) > KLockBreakRange))
 	{
 		// The target fell: hop to the next one in view, if any.
 		LockTarget = Target->IsDead() ? FindLockTarget() : nullptr;
@@ -1222,11 +1227,11 @@ void ASoulsKnight::Tick(float DeltaSeconds)
 		const FVector Vel = GetVelocity();
 		const bool bMoving = Vel.Size2D() > 50.f;
 		bSprinting = bDodgeHeld && !IsBusy() && !bBlocking && bMoving && Stamina > 0.f
-			&& Now - DodgePressTime >= DodgeHoldToSprint;
-		Movement->MaxWalkSpeed = bBlocking ? BlockWalkSpeed : (bSprinting ? SprintSpeed : RunSpeed);
+			&& Now - DodgePressTime >= KDodgeHoldToSprint;
+		Movement->MaxWalkSpeed = bBlocking ? KBlockWalkSpeed : (bSprinting ? KSprintSpeed : RunSpeed);
 		if (bSprinting)
 		{
-			Stamina -= SprintStaminaPerSecond * DeltaSeconds;
+			Stamina -= KSprintStaminaPerSecond * DeltaSeconds;
 			StaminaIdleTime = 0.f;
 		}
 
@@ -1265,12 +1270,12 @@ void ASoulsKnight::Tick(float DeltaSeconds)
 		}
 	}
 
-	if (Now - LastDamagedTime > PoiseRecoverDelay)
+	if (Now - LastDamagedTime > KPoiseRecoverDelay)
 	{
 		Poise = MaxPoise;
 	}
-	if (Now - LastDamagedTime > StanceRecoverDelay && StanceDamage > 0.f)
+	if (Now - LastDamagedTime > KStanceRecoverDelay && StanceDamage > 0.f)
 	{
-		StanceDamage = FMath::Max(0.f, StanceDamage - StanceRecoverPerSecond * DeltaSeconds);
+		StanceDamage = FMath::Max(0.f, StanceDamage - KStanceRecoverPerSecond * DeltaSeconds);
 	}
 }

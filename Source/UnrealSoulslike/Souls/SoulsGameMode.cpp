@@ -106,10 +106,10 @@ void ASoulsGameMode::GatherSpawns()
 		Add(FVector(1150.f, 300.f, 0.f), false);
 		if (!FParse::Param(FCommandLine::Get(), TEXT("NoBoss")))
 		{
-			Add(FVector(2600.f, 0.f, 0.f), true);
-			BossPoint = Origin + Fwd * 2600.f;
+			Add(FVector(1700.f, 0.f, 0.f), true);
+			BossPoint = Origin + Fwd * 1700.f;
 			bHasBossPoint = true;
-			BossArenaRadius = 1500.f;
+			BossArenaRadius = 1000.f;
 		}
 		GracePoints.Add(FTransform(Start.GetRotation(), Origin + Fwd * 250.f + Right * 250.f - FVector(0.f, 0.f, 90.f)));
 	}
