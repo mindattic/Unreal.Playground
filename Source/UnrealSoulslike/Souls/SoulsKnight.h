@@ -607,6 +607,8 @@ private:
 	FTimerHandle RecoilTimer;
 	float LungeDelay = 0.f;
 	bool bGliding = false;
+	// Airborne off a grapple launch: the only time A spreads into a glide (UNR-T76).
+	bool bGrappleLaunched = false;
 	float GrappleLaunchTime = -100.f;
 	bool bBladeTracked = false;
 	FVector BladePrevBase = FVector::ZeroVector;

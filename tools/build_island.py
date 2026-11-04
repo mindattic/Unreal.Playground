@@ -3354,6 +3354,191 @@ def build_mech(world, route, pads, start):
     return mech
 
 
+# ----------------------------------------------------------------------------------------------
+# The star fighter (UNR-T69): Quaternius's CC0 "Striker" split into hull / canopy / landing legs, and "Bob" for the
+# AI drones, by tools/convert_fighter.py; flown at runtime by ASoulsFighter (Source/UnrealSoulslike/Souls/SoulsFighter.*),
+# which also spawns the drones.
+# ----------------------------------------------------------------------------------------------
+
+FIGHTER_ART = os.path.join(ART, "Fighter")
+FIGHTER_DIR = ROOT + "/Models/Fighter"       # ASoulsFighter loads SM_Fighter_<Part> from here (FighterRig::MeshFolder)
+FIGHTER_MATS = ROOT + "/Materials/Fighter"   # M_FighterGlow / M_FighterSmoke paths are in SoulsFighter.cpp too
+FIGHTER_PARTS = ("Hull", "Canopy", "GearN", "GearL", "GearR", "Drone")
+FIGHTER_REST_Z = 245.4                       # origin above the ground on its legs (-FighterRig::GearFloor)
+
+
+def import_fighter():
+    """SourceArt/Environment/Fighter/SM_Fighter_<Part>.obj -> /Game/Island/Models/Fighter/SM_Fighter_<Part>, plus textures."""
+    out = {}
+    for part in FIGHTER_PARTS:
+        target = "%s/SM_Fighter_%s" % (FIGHTER_DIR, part)
+        src = os.path.join(FIGHTER_ART, "SM_Fighter_%s.obj" % part)
+        if not os.path.exists(src):
+            warn("fighter part %s missing (run tools/convert_fighter.py in Blender)" % src)
+            continue
+        if REIMPORT or not eal.does_asset_exist(target):
+            tmp = "%s/Import/%s" % (FIGHTER_DIR, part)
+            if eal.does_directory_exist(tmp):
+                eal.delete_directory(tmp)
+            if eal.does_asset_exist(target):
+                eal.delete_asset(target)
+            import_files([src], tmp)
+            meshes = assets_of(tmp, unreal.StaticMesh)
+            if not meshes:
+                warn("fighter part %s: no static mesh imported" % part)
+                continue
+            if not eal.rename_asset(meshes[0].get_path_name().split(".")[0], target):
+                warn("fighter part %s: could not move the mesh to %s" % (part, target))
+                continue
+        mesh = eal.load_asset(target)
+        if mesh is None:
+            continue
+        # Moving parts: no Nanite, no collision of their own (the ship's sphere collides).
+        nanite_and_collision(mesh, nanite=False, complex_collision=False)
+        out[part] = mesh
+    texs = {}
+    for name, png in (("T_Fighter", "Fighter_Texture.png"), ("T_FighterDrone", "Drone_Texture.png")):
+        tex_path = FIGHTER_DIR + "/" + name
+        if REIMPORT or not eal.does_asset_exist(tex_path):
+            tmp = FIGHTER_DIR + "/Import/" + name
+            if eal.does_directory_exist(tmp):
+                eal.delete_directory(tmp)
+            if eal.does_asset_exist(tex_path):
+                eal.delete_asset(tex_path)
+            import_files([os.path.join(FIGHTER_ART, png)], tmp)
+            found = assets_of(tmp, unreal.Texture2D)
+            if found:
+                eal.rename_asset(found[0].get_path_name().split(".")[0], tex_path)
+        texs[name] = eal.load_asset(tex_path) if eal.does_asset_exist(tex_path) else None
+    log("fighter: %d/%d parts imported, textures %s" % (len(out), len(FIGHTER_PARTS), {k: v is not None for k, v in texs.items()}))
+    return out, texs
+
+
+def build_fighter_materials(texs):
+    """M_Fighter / M_FighterDrone (the pack's painted textures, tinted, with a 'Scorch' parameter that chars them as the
+    hull goes), M_FighterGlow (unlit additive 'Color': laser bolts, engines, muzzle flashes, fireballs) and M_FighterSmoke
+    (soft lit puff, 'Opacity' driven per puff from code)."""
+    def sparam(g, name, value):
+        return g.new(E.MaterialExpressionScalarParameter, parameter_name=name, default_value=value)
+
+    def vparam(g, name, rgb):
+        return g.new(E.MaterialExpressionVectorParameter, parameter_name=name, default_value=unreal.LinearColor(rgb[0], rgb[1], rgb[2], 1.0))
+
+    noise_tex = eal.load_asset(ROOT + "/Textures/Generated/T_IslandNoise")
+    hulls = {}
+    for name, tex, tint, metal in (("M_Fighter", texs.get("T_Fighter"), (1.0, 1.0, 1.0), 0.45),
+                                   ("M_FighterDrone", texs.get("T_FighterDrone"), (1.0, 0.55, 0.5), 0.4)):
+        mat, g = new_material(name, FIGHTER_MATS)
+        uv = g.new(E.MaterialExpressionTextureCoordinate)
+        base = (g.tex(tex, uv, "color"), "RGB") if tex else g.val((0.3, 0.32, 0.36))
+        color = g.mul(base, (vparam(g, "Tint", tint), "RGB"))
+        patch = (g.tex(noise_tex, g.mul(uv, 3.0), "masks"), "B") if noise_tex else 0.5
+        burnt = g.sat(g.mul(g.sub(g.add(patch, sparam(g, "Scorch", 0.0)), 1.0), 3.0))
+        g.out(g.lerp(color, (0.025, 0.022, 0.02), burnt), E.MaterialProperty.MP_BASE_COLOR)
+        g.out(g.lerp(sparam(g, "Roughness", 0.45), 0.92, burnt), E.MaterialProperty.MP_ROUGHNESS)
+        g.out(sparam(g, "Metallic", metal), E.MaterialProperty.MP_METALLIC)
+        finish_material(mat)
+        hulls[name] = mat
+
+    glow, g = new_material("M_FighterGlow", FIGHTER_MATS)
+    setp(glow, "shading_model", E.MaterialShadingModel.MSM_UNLIT)
+    setp(glow, "blend_mode", E.BlendMode.BLEND_ADDITIVE)
+    soft = g.one_minus(g.new(E.MaterialExpressionFresnel, exponent=1.2))
+    g.out(g.mul((vparam(g, "Color", (16.0, 7.5, 2.0)), "RGB"), soft), E.MaterialProperty.MP_EMISSIVE_COLOR)
+    finish_material(glow)
+
+    smoke, g = new_material("M_FighterSmoke", FIGHTER_MATS)
+    setp(smoke, "blend_mode", E.BlendMode.BLEND_TRANSLUCENT)
+    soft = g.one_minus(g.new(E.MaterialExpressionFresnel, exponent=1.6))
+    opacity = g.mul(sparam(g, "Opacity", 0.5), soft)
+    if noise_tex:
+        wisp = (g.tex(noise_tex, g.mul(g.new(E.MaterialExpressionTextureCoordinate), 2.0), "masks"), "R")
+        opacity = g.mul(opacity, g.lerp(0.5, 1.0, wisp))
+    g.out((vparam(g, "Tint", (0.17, 0.16, 0.15)), "RGB"), E.MaterialProperty.MP_BASE_COLOR)
+    g.out(1.0, E.MaterialProperty.MP_ROUGHNESS)
+    g.out(g.sat(opacity), E.MaterialProperty.MP_OPACITY)
+    finish_material(smoke)
+    return hulls
+
+
+def build_fighter(world, route, pads, start):
+    """One star fighter parked on open, flat ground near the start beach, off the path, its left side (where the pilot
+    climbs in) turned to the start. Its AI drones are spawned by the fighter itself at runtime."""
+    parts, texs = import_fighter()
+    if parts:
+        hulls = build_fighter_materials(texs)
+        for part, mesh in parts.items():
+            mesh.set_material(0, hulls["M_FighterDrone" if part == "Drone" else "M_Fighter"])
+            eal.save_loaded_asset(mesh)
+    cls = getattr(unreal, "SoulsFighter", None)
+    if cls is None:
+        warn("fighter: unreal.SoulsFighter not found (compile the C++ first); no fighter placed")
+        return None
+    sx, sy = start
+    grace = route.offset(0.035, 450.0)
+    others = [a.get_actor_location() for a in actors_sub.get_all_level_actors()
+              if getattr(unreal, "SoulsMech", None) is not None and isinstance(a, unreal.SoulsMech)]
+
+    def flat_and_clear(x, y):
+        h = height(x, y)
+        if h < 130.0 or LIB.get_path_distance(x, y) < 600.0 or normal_z(x, y) < 0.97:
+            return False
+        if math.hypot(x - grace[0], y - grace[1]) < 1300.0:
+            return False
+        if any(math.hypot(x - o.x, y - o.y) < 2600.0 for o in others):
+            return False
+        if any(math.hypot(x - px, y - py) < pr + 900.0 for px, py, pr in pads):
+            return False
+        for i in range(12):  # wings ~7 m across, ~12 m nose to tail: level and free of props out to 8 m
+            a = i * math.pi / 6.0
+            for r in (450.0, 800.0):
+                rx, ry = x + math.cos(a) * r, y + math.sin(a) * r
+                if abs(height(rx, ry) - h) > 80.0 or normal_z(rx, ry) < 0.94:
+                    return False
+                hit = trace_down(world, rx, ry, h + 3000.0, h - 500.0)
+                if hit is not None and hit[0].z > h + 60.0:
+                    return False
+        hit = trace_down(world, x, y, h + 3000.0, h - 500.0)
+        return hit is None or hit[0].z < h + 60.0
+
+    spot = None
+    for r in (1600.0, 2100.0, 2600.0, 3100.0, 3700.0, 4400.0, 5200.0):
+        for k in range(24):
+            a = k * math.pi / 12.0
+            x, y = sx + math.cos(a) * r, sy + math.sin(a) * r
+            if flat_and_clear(x, y):
+                spot = (x, y)
+                break
+        if spot:
+            break
+    if spot is None:
+        for t in (0.04, 0.06, 0.08, 0.10, 0.03):
+            for side in (1300.0, -1300.0, 1800.0, -1800.0):
+                x, y = route.offset(t, side)
+                if flat_and_clear(x, y):
+                    spot = (x, y)
+                    break
+            if spot:
+                break
+    if spot is None:
+        spot = route.offset(0.05, -1300.0)
+        warn("fighter: no clear flat spot found; parked at route 0.05 anyway")
+    x, y = spot
+    to_start = math.degrees(math.atan2(sy - y, sx - x))
+    yaw = to_start + 90.0  # left side to the start
+    fighter = spawn(cls, (x, y, height(x, y) + FIGHTER_REST_Z + 20.0), unreal.Rotator(yaw=yaw), "Fighter_Parked", "Gameplay/Vehicles")
+    log("fighter parked at (%.0f, %.0f, %.0f) yaw %.0f, %.0f cm from the start, %.0f cm off the path" % (
+        x, y, height(x, y), yaw, math.hypot(x - sx, y - sy), LIB.get_path_distance(x, y)))
+    # A shot for -IslandShots: from the start side, looking at it.
+    path = os.path.join(PROJECT, "Saved", "island_shots.txt")
+    if os.path.exists(path):
+        d = math.hypot(sx - x, sy - y) or 1.0
+        cx, cy = x + (sx - x) / d * 1500.0, y + (sy - y) / d * 1500.0
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(shot("fighter_parked", cx, cy, height(cx, cy) + 260.0, x, y, height(x, y) + 250.0, fov=70) + "\n")
+    return fighter
+
+
 def build_everything(textures, models):
     route, pads = plan_layout()
     start = route.points[0]
@@ -3395,6 +3580,7 @@ def build_everything(textures, models):
     build_wildlife(models, route, start)
     build_ship_graveyard(models, route, start)
     build_mech(world, route, pads, start)
+    build_fighter(world, route, pads, start)
 
     gm = unreal.load_class(None, GAME_MODE)
     if gm:

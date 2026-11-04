@@ -1,0 +1,11 @@
+Ultimate Spaceships Pack (May 2021) by Quaternius (quaternius.com)
+Downloaded 2026-11-04 from https://opengameart.org/content/lowpoly-spaceships-pack
+(file ultimate_spaceships_-_may_2021.zip, sha256 ab7a725a2a1066d1f4c01fe27b2135f6138ca0b8a0a709eb9469957d26777670).
+
+The OpenGameArt page lists the licence as CC0 (Creative Commons Zero 1.0 Universal, public domain dedication):
+https://creativecommons.org/publicdomain/zero/1.0/
+The zip ships no licence file of its own; this note records the licence shown on the download page.
+
+Kept here (originals, unmodified):
+  Striker.blend + Striker_Blue.png  -> the player's star fighter (tools/convert_fighter.py)
+  Bob.blend + Bob_Orange.png        -> the AI drone fighters (tools/convert_fighter.py)

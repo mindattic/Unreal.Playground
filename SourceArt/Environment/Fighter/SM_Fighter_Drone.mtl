@@ -1,0 +1,4 @@
+# Quaternius Ultimate Spaceships Pack (CC0), baked by tools/convert_fighter.py
+newmtl Drone
+Kd 1 1 1
+map_Kd Drone_Texture.png

@@ -68,3 +68,16 @@ autocannon barrels and missile pods added), `Mech/Mech_Texture.png` and `Mech/me
 | Asset | Author | Source | License |
 |---|---|---|---|
 | Animated Mech Pack (March 2021): `George.blend` + `George_Texture.png` -> the walking mech | Quaternius (quaternius.com) | https://opengameart.org/content/animated-mech-pack (`animated_mech_pack_-_march_2021.zip`) | CC0 1.0 - https://creativecommons.org/publicdomain/zero/1.0/ |
+
+## Star fighter and drones (tools/convert_fighter.py + tools/build_island.py, UNR-T69)
+
+Downloaded 2026-11-04 without a login. The originals used (`Striker.blend` + `Striker_Blue.png`, `Bob.blend` +
+`Bob_Orange.png`, unmodified) are kept under `Fighter/Source/` with a `License.txt` recording the licence shown on the
+download page (the zip has none of its own). `Fighter/SM_Fighter_*.obj` (hull with an added cockpit tub and seat, the
+cockpit glass as a hinged canopy, three added landing legs, and the drone), `Fighter/Fighter_Texture.png`,
+`Fighter/Drone_Texture.png` and `Fighter/fighter_rig.json` are baked from them by `tools/convert_fighter.py`
+(Blender 4.4+). CC0 1.0, no attribution required; given anyway.
+
+| Asset | Author | Source | License |
+|---|---|---|---|
+| Ultimate Spaceships Pack (May 2021): `Striker` -> the player's star fighter; `Bob` -> the AI drone fighters | Quaternius (quaternius.com) | https://opengameart.org/content/lowpoly-spaceships-pack (`ultimate_spaceships_-_may_2021.zip`) | CC0 1.0 - https://creativecommons.org/publicdomain/zero/1.0/ |

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "Engine/TimerHandle.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "SoulsKnight.h"
 #include "SoulsMech.generated.h"
@@ -41,12 +42,13 @@ enum class EMechState : uint8
 // and the gun arms pitch to the aim. Every step is procedural: each foot plants and lifts on its own,
 // solved by a pantograph IK for the bird leg (thigh, shin, metatarsal, foot), the hips bob and roll with
 // the gait and dip under each footfall, which shakes the camera, thuds and kicks up dust.
-// Weapons: twin arm autocannons (X / LMB / RT, hold) and four-tube shoulder missile pods (Y / RMB / LT),
+// Weapons: twin arm autocannons (RT / LMB, hold) and four-tube shoulder missile pods (LT / RMB),
 // on a shared heat scale (overheat locks them out) and an ammo count refilled whenever someone boards.
+// X / F walks the legs round under the torso (which keeps its aim); A / X key is a full stop.
 // Enemies notice it, come for it and hack at its legs; it takes the hits on its armour, is wrecked at
 // zero (the pilot is thrown clear) and reboots itself after a while.
-// Interact (D-pad up / F) next to it to climb in (ASoulsMech::TryBoard, called from the knight), and
-// again inside to climb out beside it. R3 / V swaps between the chase camera and the cockpit view.
+// Interact (D-pad up / F) next to it to climb in (ASoulsMech::TryBoard, called from the knight); D-pad up / E
+// inside climbs out beside it. R3 / V swaps between the chase camera and the cockpit view.
 // -MechDemo (with -RenderOffscreen) boards, walks, turns, twists, fires both weapons at a target, lets an
 // enemy attack and climbs out, screenshotting each beat (Saved/Screenshots/Mech_*) and logging PASS/FAIL.
 UCLASS()
@@ -76,7 +78,12 @@ public:
 	int32 GetMissilesFired() const { return MissilesFired; }
 	int32 GetHitsLanded() const { return HitsLanded; }
 	int32 GetFootfalls() const { return Footfalls; }
+	// Steps taken by one foot (0 = left, 1 = right).
+	int32 GetFootSteps(int32 Leg) const { return FootSteps[Leg & 1]; }
 	float GetArmor() const { return Armor; }
+	float GetAimPitch() const { return AimPitch; }
+	bool IsAligning() const { return bAligning; }
+	bool IsFullStopped() const { return bStopLatched; }
 
 	// Driving inputs (the player's actions, or -MechDemo directly). Throttle/Turn -1..1 (held);
 	// look adds degrees to the torso's twist and the arms' aim.
@@ -86,6 +93,10 @@ public:
 	void SetFiring(bool bCannons) { bCannonHeld = bCannons; }
 	void FireMissiles();
 	void ToggleView();
+	// X / F: the legs walk round to face where the torso points; the torso holds its world aim meanwhile.
+	void AlignLegsToTorso();
+	// A / X key: throttle to zero and brake hard; the legs stay halted until the stick is let go.
+	void FullStop();
 
 	// Armour damage from any source (enemy blades, TakeDamage, a demo).
 	void ApplyMechDamage(float Amount, AActor* Causer, const FVector& Where);
@@ -116,6 +127,13 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mech|Torso")
 	FVector2D AimPitchLimits = FVector2D(-24.f, 22.f);
+
+	// Playtest (UNR-T73): pushing the stick / mouse up must aim up. Flip these if a device reads the other way.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mech|Torso")
+	bool bInvertStickPitch = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mech|Torso")
+	bool bInvertMousePitch = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mech|Armour")
 	float MaxArmor = 1400.f;
@@ -215,8 +233,8 @@ private:
 	void OnMissiles(const FInputActionValue& Value);
 	void OnExit(const FInputActionValue& Value);
 	void OnView(const FInputActionValue& Value);
-	void OnAlignStart(const FInputActionValue& Value);
-	void OnAlignStop(const FInputActionValue& Value);
+	void OnAlign(const FInputActionValue& Value);
+	void OnStop(const FInputActionValue& Value);
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputMappingContext> MechContext;
@@ -236,6 +254,8 @@ private:
 	TObjectPtr<UInputAction> ViewAction;
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> AlignAction;
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> StopAction;
 
 	// ---- Assembly and animation ----
 	void LoadParts();
@@ -362,7 +382,9 @@ private:
 	float TurnInput = 0.f;
 	FVector2D StickLook = FVector2D::ZeroVector;
 	bool bCannonHeld = false;
-	bool bAlignHeld = false;
+	bool bAligning = false;     // legs coming round under the torso
+	bool bStopLatched = false;  // full stop: drive input ignored until the stick returns to centre
+	int32 FootSteps[2] = { 0, 0 };
 	bool bCockpitView = false;
 
 	float Speed = 0.f;          // cm/s along the legs' heading (negative = reverse)
@@ -447,6 +469,15 @@ private:
 	float StartYaw = 0.f;
 	float TargetHealth = 0.f;
 	float ArmorBefore = 0.f;
+	float Probe = 0.f;
+	float ProbeYaw = 0.f;
+	int32 ProbeCount = 0;
+	// Holds an analog key (a stick axis, the mouse) for a while, re-sent every frame like a real device.
+	void HoldAxis(const FKey& InKey, float Value, float Seconds);
+	FTimerHandle AxisTimer;
+	FKey AxisKey;
+	float AxisValue = 0.f;
+	float AxisUntil = 0.f;
 	int32 Passes = 0;
 	int32 Fails = 0;
 };

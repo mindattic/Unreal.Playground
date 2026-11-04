@@ -549,6 +549,7 @@ void ASoulsMech::EnsureMechInput()
 	ExitAction = MakeAction(TEXT("IA_MechExit"), EInputActionValueType::Boolean);
 	ViewAction = MakeAction(TEXT("IA_MechView"), EInputActionValueType::Boolean);
 	AlignAction = MakeAction(TEXT("IA_MechAlign"), EInputActionValueType::Boolean);
+	StopAction = MakeAction(TEXT("IA_MechStop"), EInputActionValueType::Boolean);
 
 	if (MechSharedContext)
 	{
@@ -581,18 +582,20 @@ void ASoulsMech::EnsureMechInput()
 	// Torso: the mouse (deltas) and the right stick (rates).
 	Context->MapKey(LookMouseAction, EKeys::Mouse2D);
 	Context->MapKey(LookStickAction, EKeys::Gamepad_Right2D).Modifiers.Add(DeadZone());
-	Context->MapKey(FireAction, EKeys::Gamepad_FaceButton_Left);
-	Context->MapKey(FireAction, EKeys::LeftMouseButton);
+	// Weapons on the triggers (UNR-T73): RT / LMB the autocannons (hold), LT / RMB a missile salvo.
 	Context->MapKey(FireAction, EKeys::Gamepad_RightTrigger);
-	Context->MapKey(MissileAction, EKeys::Gamepad_FaceButton_Top);
-	Context->MapKey(MissileAction, EKeys::RightMouseButton);
+	Context->MapKey(FireAction, EKeys::LeftMouseButton);
 	Context->MapKey(MissileAction, EKeys::Gamepad_LeftTrigger);
+	Context->MapKey(MissileAction, EKeys::RightMouseButton);
+	// X / F: bring the legs round to the torso. A / X key: full stop. D-pad up / E: climb out.
+	Context->MapKey(AlignAction, EKeys::Gamepad_FaceButton_Left);
+	Context->MapKey(AlignAction, EKeys::F);
+	Context->MapKey(StopAction, EKeys::Gamepad_FaceButton_Bottom);
+	Context->MapKey(StopAction, EKeys::X);
 	Context->MapKey(ExitAction, EKeys::Gamepad_DPad_Up);
-	Context->MapKey(ExitAction, EKeys::F);
+	Context->MapKey(ExitAction, EKeys::E);
 	Context->MapKey(ViewAction, EKeys::Gamepad_RightThumbstick);
 	Context->MapKey(ViewAction, EKeys::V);
-	Context->MapKey(AlignAction, EKeys::Gamepad_LeftShoulder);
-	Context->MapKey(AlignAction, EKeys::C);
 }
 
 void ASoulsMech::NotifyControllerChanged()
@@ -616,7 +619,9 @@ void ASoulsMech::NotifyControllerChanged()
 	}
 	ThrottleInput = TurnInput = 0.f;
 	StickLook = FVector2D::ZeroVector;
-	bCannonHeld = bAlignHeld = false;
+	bCannonHeld = false;
+	bAligning = false;
+	bStopLatched = false;
 }
 
 void ASoulsMech::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -635,8 +640,8 @@ void ASoulsMech::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent
 		Input->BindAction(MissileAction, ETriggerEvent::Started, this, &ASoulsMech::OnMissiles);
 		Input->BindAction(ExitAction, ETriggerEvent::Started, this, &ASoulsMech::OnExit);
 		Input->BindAction(ViewAction, ETriggerEvent::Started, this, &ASoulsMech::OnView);
-		Input->BindAction(AlignAction, ETriggerEvent::Started, this, &ASoulsMech::OnAlignStart);
-		Input->BindAction(AlignAction, ETriggerEvent::Completed, this, &ASoulsMech::OnAlignStop);
+		Input->BindAction(AlignAction, ETriggerEvent::Started, this, &ASoulsMech::OnAlign);
+		Input->BindAction(StopAction, ETriggerEvent::Started, this, &ASoulsMech::OnStop);
 	}
 }
 
@@ -654,7 +659,7 @@ void ASoulsMech::OnMoveStop(const FInputActionValue& Value)
 void ASoulsMech::OnLookMouse(const FInputActionValue& Value)
 {
 	const FVector2D Axis = Value.Get<FVector2D>();
-	AddAimInput(Axis.X * 0.3f, Axis.Y * 0.22f);
+	AddAimInput(Axis.X * 0.3f, Axis.Y * 0.22f * (bInvertMousePitch ? -1.f : 1.f));
 }
 
 void ASoulsMech::OnLookStick(const FInputActionValue& Value)
@@ -672,8 +677,28 @@ void ASoulsMech::OnFireStop(const FInputActionValue& Value) { SetFiring(false); 
 void ASoulsMech::OnMissiles(const FInputActionValue& Value) { FireMissiles(); }
 void ASoulsMech::OnExit(const FInputActionValue& Value) { Disembark(); }
 void ASoulsMech::OnView(const FInputActionValue& Value) { ToggleView(); }
-void ASoulsMech::OnAlignStart(const FInputActionValue& Value) { bAlignHeld = true; }
-void ASoulsMech::OnAlignStop(const FInputActionValue& Value) { bAlignHeld = false; }
+void ASoulsMech::OnAlign(const FInputActionValue& Value) { AlignLegsToTorso(); }
+void ASoulsMech::OnStop(const FInputActionValue& Value) { FullStop(); }
+
+void ASoulsMech::AlignLegsToTorso()
+{
+	if (State == EMechState::Piloted && (FMath::Abs(TorsoYawTarget) > 1.5f || FMath::Abs(TorsoYaw) > 1.5f))
+	{
+		bAligning = true;
+		PlayMechSound(EMechSound::Servo, GetActorLocation(), 0.5f, 0.8f);
+	}
+}
+
+void ASoulsMech::FullStop()
+{
+	if (State != EMechState::Piloted)
+	{
+		return;
+	}
+	bStopLatched = true;
+	bAligning = false;
+	PlayMechSound(EMechSound::Servo, GetActorLocation(), 0.5f, 0.6f);
+}
 
 void ASoulsMech::AddAimInput(float YawDegrees, float PitchDegrees)
 {
@@ -896,6 +921,11 @@ void ASoulsMech::TickSequence(float DeltaSeconds)
 				{
 					OnDestroyed.RemoveAll(PC);
 					Knight->OnDestroyed.RemoveAll(PC);
+					// Its keys (A among them) must stop answering before the knight takes over (UNR-T73).
+					if (UEnhancedInputLocalPlayerSubsystem* KnightInput = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
+					{
+						KnightInput->RemoveMappingContext(MechContext);
+					}
 					PC->Possess(Knight);
 					PC->SetControlRotation(FRotator(-10.f, Yaw, 0.f));
 				}
@@ -965,16 +995,29 @@ void ASoulsMech::Tick(float DeltaSeconds)
 void ASoulsMech::TickDrive(float DeltaSeconds)
 {
 	const bool bDriving = State == EMechState::Piloted && !bExitQueued;
-	float Throttle = bDriving ? ThrottleInput : 0.f;
-	float Turn = bDriving ? TurnInput : 0.f;
-	if (bDriving && bAlignHeld && FMath::Abs(TorsoYaw) > 1.5f)
+	// Full stop holds until the stick (or WASD) is let go, then driving resumes as normal.
+	if (bStopLatched && FMath::Abs(ThrottleInput) < 0.1f && FMath::Abs(TurnInput) < 0.1f && FMath::Abs(Speed) < 5.f)
 	{
-		Turn = FMath::Clamp(TorsoYaw / 25.f, -1.f, 1.f); // bring the legs round under the torso
+		bStopLatched = false;
+	}
+	const bool bHalted = bStopLatched || !bDriving;
+	const float Throttle = bHalted ? 0.f : ThrottleInput;
+	float Turn = bHalted ? 0.f : TurnInput;
+	if (bAligning)
+	{
+		if (!bDriving || FMath::Abs(TurnInput) > 0.35f || (FMath::Abs(TorsoYawTarget) < 1.5f && FMath::Abs(TorsoYaw) < 3.f))
+		{
+			bAligning = false; // done, or the pilot took the legs back
+		}
+		else
+		{
+			Turn = FMath::Clamp(TorsoYawTarget / 20.f, -1.f, 1.f); // bring the legs round under the torso
+		}
 	}
 	const float Target = Throttle >= 0.f ? Throttle * MaxForwardSpeed : Throttle * MaxReverseSpeed;
 	const bool bSpeedingUp = FMath::Abs(Target) > FMath::Abs(Speed) && Target * Speed >= 0.f;
 	LastSpeed = Speed;
-	Speed = FMath::FInterpConstantTo(Speed, Target, DeltaSeconds, bSpeedingUp ? Acceleration : Deceleration);
+	Speed = FMath::FInterpConstantTo(Speed, Target, DeltaSeconds, bSpeedingUp ? Acceleration : (bStopLatched ? Deceleration * 2.2f : Deceleration));
 
 	// Walking into something: the legs can't outrun the body.
 	const float Actual = FVector::DotProduct(GetVelocity(), GetActorForwardVector());
@@ -985,12 +1028,12 @@ void ASoulsMech::TickDrive(float DeltaSeconds)
 
 	const float SpeedFrac = FMath::Clamp(FMath::Abs(Speed) / MaxForwardSpeed, 0.f, 1.f);
 	const float MaxTurn = FMath::Lerp(TurnRate.X, TurnRate.Y, SpeedFrac);
-	YawRate = FMath::FInterpTo(YawRate, Turn * MaxTurn, DeltaSeconds, FMath::IsNearlyZero(Turn) ? 6.f : 3.5f);
+	YawRate = FMath::FInterpTo(YawRate, Turn * MaxTurn, DeltaSeconds, bStopLatched ? 10.f : (FMath::IsNearlyZero(Turn) ? 6.f : 3.5f));
 	const float YawStep = YawRate * DeltaSeconds;
 	if (FMath::Abs(YawStep) > KINDA_SMALL_NUMBER)
 	{
 		SetActorRotation(FRotator(0.f, GetActorRotation().Yaw + YawStep, 0.f));
-		if (bAlignHeld)
+		if (bAligning)
 		{
 			// Aligning keeps the torso on its world heading while the legs swing round beneath it.
 			TorsoYaw -= YawStep;
@@ -1008,7 +1051,7 @@ void ASoulsMech::TickTorso(float DeltaSeconds)
 	if (State == EMechState::Piloted)
 	{
 		TorsoYawTarget = FMath::Clamp(TorsoYawTarget + StickLook.X * 95.f * DeltaSeconds, -TorsoTwistLimit, TorsoTwistLimit);
-		AimPitchTarget = FMath::Clamp(AimPitchTarget + StickLook.Y * 55.f * DeltaSeconds, AimPitchLimits.X, AimPitchLimits.Y);
+		AimPitchTarget = FMath::Clamp(AimPitchTarget + StickLook.Y * (bInvertStickPitch ? -55.f : 55.f) * DeltaSeconds, AimPitchLimits.X, AimPitchLimits.Y);
 	}
 	else if (State != EMechState::Boarding)
 	{
@@ -1085,25 +1128,31 @@ void ASoulsMech::TickGait(float DeltaSeconds)
 		return FootHome(Leg, Base + Velocity * (Ahead + Lead), Yaw + YawRate * (Ahead + Lead));
 	};
 
-	// Start a step: one foot in the air at a time, the one furthest from where it should be.
+	// Start a step: one foot in the air at a time, and the feet take turns. The foot that has stood longest
+	// goes next; the one that just landed may only step again (to settle when stopping) once it has stood a
+	// while. (UNR-T73: picking simply the foot furthest off re-picked the one that had just landed - at speed
+	// it is always behind again at once - so one leg did all the walking while the other never moved.)
 	const bool bAnySwinging = Feet[0].IsSwinging() || Feet[1].IsSwinging();
 	if (!bAnySwinging)
 	{
 		const bool bIdle = FMath::Abs(Speed) < 15.f && FMath::Abs(YawRate) < 3.f;
-		int32 Pick = INDEX_NONE;
-		float PickErr = 0.f;
-		for (int32 Leg = 0; Leg < 2; ++Leg)
+		const float Threshold = bIdle ? 22.f : 34.f;
+		auto Error = [&](int32 Leg)
 		{
 			const FVector Want = Predict(Leg, StepTime, StepTime * 0.85f);
-			const float Err = FVector::Dist2D(Feet[Leg].Planted, Want)
+			return FVector::Dist2D(Feet[Leg].Planted, Want)
 				+ 4.f * FMath::Abs(FMath::FindDeltaAngleDegrees(Feet[Leg].PlantedYaw, Yaw + YawRate * StepTime * 2.f));
-			const float SinceOther = Now - Feet[1 - Leg].LandedAt;
-			const float Threshold = bIdle ? 22.f : 34.f;
-			if (Err > Threshold && Err > PickErr && SinceOther > (bIdle ? 0.3f : 0.04f))
-			{
-				Pick = Leg;
-				PickErr = Err;
-			}
+		};
+		const int32 Older = Feet[0].LandedAt <= Feet[1].LandedAt ? 0 : 1;
+		const int32 Newer = 1 - Older;
+		int32 Pick = INDEX_NONE;
+		if (Error(Older) > Threshold && Now - Feet[Newer].LandedAt > (bIdle ? 0.2f : 0.03f))
+		{
+			Pick = Older;
+		}
+		else if (Error(Newer) > Threshold && Now - Feet[Newer].LandedAt > FMath::Max(0.35f, StepTime * 1.2f))
+		{
+			Pick = Newer;
 		}
 		if (Pick != INDEX_NONE)
 		{
@@ -1142,6 +1191,7 @@ void ASoulsMech::TickGait(float DeltaSeconds)
 			Foot.Current = Target;
 			Foot.SwingT = -1.f;
 			Foot.LandedAt = Now;
+			++FootSteps[Leg];
 			Footfall(Leg);
 		}
 	}
@@ -1942,7 +1992,8 @@ void ASoulsMech::TickThreats(float DeltaSeconds)
 		const float Distance = To.Size2D();
 
 		// A war machine stomping about is hard to miss: foes in sight (and further than they'd spot a knight) come for it.
-		if (bScan && Knight && State == EMechState::Piloted && Distance < Foe->SightRange * 1.8f)
+		if (bScan && Knight && State == EMechState::Piloted && Distance < Foe->SightRange * 1.8f
+			&& FVector::Dist2D(Center, Foe->HomeLocation) < Foe->LeashRange)
 		{
 			ASoulsEnemyController* Brain = Cast<ASoulsEnemyController>(Foe->GetController());
 			if (Brain && Brain->GetMind() != EEnemyMind::Engage)
@@ -2007,6 +2058,11 @@ void ASoulsMech::Wreck()
 		{
 			OnDestroyed.RemoveAll(PC);
 			Knight->OnDestroyed.RemoveAll(PC);
+			// Its keys (A among them) must stop answering before the knight takes over (UNR-T73).
+			if (UEnhancedInputLocalPlayerSubsystem* KnightInput = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
+			{
+				KnightInput->RemoveMappingContext(MechContext);
+			}
 			PC->Possess(Knight);
 			PC->SetControlRotation(FRotator(-15.f, (GetActorLocation() - Knight->GetActorLocation()).Rotation().Yaw, 0.f));
 		}
@@ -2255,7 +2311,16 @@ void ASoulsMech::DrawCockpitHUD(UCanvas* Canvas) const
 			Rect(0.f, 0.f, Canvas->ClipX, 16.f * S, Col);
 		}
 	}
-	Text(Font, TEXT("[F] / D-pad Up  climb out      [V] / R3  view      [C] / LB  align legs"), Cx, Canvas->ClipY - 46.f * S, Dim, 0.9f, true);
+	Text(Font, TEXT("RT / LMB  cannons    LT / RMB  missiles    X / F  legs to torso    A / X  full stop    R3 / V  view    D-pad Up / E  climb out"),
+		Cx, Canvas->ClipY - 46.f * S, Dim, 0.85f, true);
+	if (bAligning)
+	{
+		Text(Font, TEXT("ALIGNING LEGS"), Cx, Canvas->ClipY - 150.f * S, Amber, 0.9f, true);
+	}
+	else if (bStopLatched)
+	{
+		Text(Font, TEXT("FULL STOP"), Cx, Canvas->ClipY - 150.f * S, Amber, 0.9f, true);
+	}
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -2291,6 +2356,31 @@ void UMechDemoSubsystem::Key(const FKey& InKey, bool bDown)
 	{
 		PC->InputKey(FInputKeyEventArgs::CreateSimulated(InKey, bDown ? IE_Pressed : IE_Released, bDown ? 1.f : 0.f));
 	}
+}
+
+void UMechDemoSubsystem::HoldAxis(const FKey& InKey, float Value, float Seconds)
+{
+	AxisKey = InKey;
+	AxisValue = Value;
+	AxisUntil = GetWorld()->GetTimeSeconds() + Seconds;
+	const TWeakObjectPtr<UMechDemoSubsystem> WeakThis(this);
+	GetWorld()->GetTimerManager().SetTimer(AxisTimer, [WeakThis]()
+	{
+		UMechDemoSubsystem* D = WeakThis.Get();
+		if (!D)
+		{
+			return;
+		}
+		const bool bDone = D->GetWorld()->GetTimeSeconds() >= D->AxisUntil;
+		if (APlayerController* PC = D->GetWorld()->GetFirstPlayerController())
+		{
+			PC->InputKey(FInputKeyEventArgs::CreateSimulated(D->AxisKey, IE_Axis, bDone ? 0.f : D->AxisValue, 1));
+		}
+		if (bDone)
+		{
+			D->GetWorld()->GetTimerManager().ClearTimer(D->AxisTimer);
+		}
+	}, 0.016f, true);
 }
 
 void UMechDemoSubsystem::Run()
@@ -2403,7 +2493,7 @@ void UMechDemoSubsystem::Run()
 				D->StartYaw = M->GetActorRotation().Yaw;
 				Shot(TEXT("3_aboard"));
 			} },
-		// 3. Walk: hold W (through the real input mapping) for four seconds.
+		// 3. Walk: hold W (through the real input mapping) for four seconds; both legs must take steps.
 		{ 6.6f, [](UMechDemoSubsystem* D) { D->Key(EKeys::W, true); } },
 		{ 8.9f, [Shot](UMechDemoSubsystem* D) { Shot(TEXT("4_walking")); } },
 		{ 9.25f, [Shot](UMechDemoSubsystem* D) { Shot(TEXT("4b_stride")); } },
@@ -2412,8 +2502,10 @@ void UMechDemoSubsystem::Run()
 				D->Key(EKeys::W, false);
 				ASoulsMech* M = D->Mech();
 				const float Moved = FVector::Dist2D(M->GetActorLocation(), D->StartLocation);
+				const int32 L = M->GetFootSteps(0), R = M->GetFootSteps(1);
 				D->Check(TEXT("W walks the mech forward"), Moved > 500.f, FString::Printf(TEXT("moved %.0f cm, speed %.0f"), Moved, M->GetForwardSpeed()));
-				D->Check(TEXT("the feet step (footfalls)"), M->GetFootfalls() >= 4, FString::Printf(TEXT("%d footfalls"), M->GetFootfalls()));
+				D->Check(TEXT("both legs step, taking turns"), L >= 2 && R >= 2 && FMath::Abs(L - R) <= 2,
+					FString::Printf(TEXT("left foot %d steps, right foot %d"), L, R));
 			} },
 		// 4. Turn the legs: hold D.
 		{ 11.6f, [](UMechDemoSubsystem* D) { D->StartYaw = D->Mech()->GetActorRotation().Yaw; D->Key(EKeys::D, true); } },
@@ -2423,7 +2515,6 @@ void UMechDemoSubsystem::Run()
 				D->Key(EKeys::D, false);
 				const float Turned = FMath::FindDeltaAngleDegrees(D->StartYaw, D->Mech()->GetActorRotation().Yaw);
 				D->Check(TEXT("D turns the legs"), Turned > 25.f, FString::Printf(TEXT("turned %.0f deg"), Turned));
-				D->StartYaw = D->Mech()->GetActorRotation().Yaw;
 			} },
 		// 5. Twist the torso over the standing legs, past its stop.
 		{ 14.2f, [](UMechDemoSubsystem* D) { D->StartYaw = D->Mech()->GetActorRotation().Yaw; D->Mech()->SetTorsoTarget(150.f, 0.f); } },
@@ -2435,10 +2526,62 @@ void UMechDemoSubsystem::Run()
 					M->GetTorsoYaw() > 85.f && M->GetTorsoYaw() <= M->TorsoTwistLimit + 0.1f && LegsTurned < 5.f,
 					FString::Printf(TEXT("torso %.0f deg, limit %.0f, legs moved %.1f deg"), M->GetTorsoYaw(), M->TorsoTwistLimit, LegsTurned));
 				Shot(TEXT("6_torso_twist"));
+			} },
+		// 6. X (gamepad): the legs come round under the torso, which keeps pointing the same way.
+		{ 15.8f, [](UMechDemoSubsystem* D)
+			{
+				ASoulsMech* M = D->Mech();
+				D->StartYaw = M->GetActorRotation().Yaw;
+				D->ProbeYaw = M->GetActorRotation().Yaw + M->GetTorsoYaw();
+				D->Key(EKeys::Gamepad_FaceButton_Left, true);
+			} },
+		{ 15.9f, [](UMechDemoSubsystem* D) { D->Key(EKeys::Gamepad_FaceButton_Left, false); } },
+		{ 16.7f, [Shot](UMechDemoSubsystem* D) { Shot(TEXT("7_aligning")); } },
+		{ 19.0f, [Shot](UMechDemoSubsystem* D)
+			{
+				ASoulsMech* M = D->Mech();
+				const float LegsTurned = FMath::Abs(FMath::FindDeltaAngleDegrees(D->StartYaw, M->GetActorRotation().Yaw));
+				const float TorsoDrift = FMath::Abs(FMath::FindDeltaAngleDegrees(D->ProbeYaw, M->GetActorRotation().Yaw + M->GetTorsoYaw()));
+				D->Check(TEXT("X turns the legs to face the torso (torso holds its heading)"),
+					!M->IsAligning() && FMath::Abs(M->GetTorsoYaw()) < 4.f && LegsTurned > 70.f && TorsoDrift < 8.f,
+					FString::Printf(TEXT("legs turned %.0f deg, torso now %.1f deg off the legs, torso heading drifted %.1f deg"), LegsTurned, M->GetTorsoYaw(), TorsoDrift));
+				Shot(TEXT("7b_aligned"));
+				M->SetTorsoTarget(-45.f, 0.f);
+			} },
+		// ...and F on the keyboard does the same.
+		{ 20.2f, [](UMechDemoSubsystem* D) { D->StartYaw = D->Mech()->GetActorRotation().Yaw; D->Key(EKeys::F, true); } },
+		{ 20.3f, [](UMechDemoSubsystem* D) { D->Key(EKeys::F, false); } },
+		{ 22.2f, [](UMechDemoSubsystem* D)
+			{
+				ASoulsMech* M = D->Mech();
+				const float LegsTurned = FMath::FindDeltaAngleDegrees(D->StartYaw, M->GetActorRotation().Yaw);
+				D->Check(TEXT("F turns the legs to face the torso"), FMath::Abs(M->GetTorsoYaw()) < 4.f && LegsTurned < -30.f,
+					FString::Printf(TEXT("legs turned %.0f deg, torso %.1f deg off the legs"), LegsTurned, M->GetTorsoYaw()));
 				M->SetTorsoTarget(0.f, 0.f);
 			} },
-		// 6. A foe ahead; the autocannons (X through the input mapping) cut it down.
-		{ 17.f, [NearestFoe, PlaceOnGround, AimAt](UMechDemoSubsystem* D)
+		// 7. Pitch: the right stick and the mouse, through the real mappings (UNR-T73: up aims up).
+		{ 23.0f, [](UMechDemoSubsystem* D) { D->Probe = D->Mech()->GetAimPitch(); D->HoldAxis(EKeys::Gamepad_RightY, 1.f, 0.6f); } },
+		{ 23.8f, [](UMechDemoSubsystem* D)
+			{
+				ASoulsMech* M = D->Mech();
+				const float Delta = M->GetAimPitch() - D->Probe;
+				const float Want = M->bInvertStickPitch ? -1.f : 1.f;
+				D->Check(TEXT("right stick Y pitches the aim the playtested way"), Delta * Want > 3.f,
+					FString::Printf(TEXT("RightY +1 moved the aim %+.1f deg (invert %d)"), Delta, M->bInvertStickPitch));
+				M->SetTorsoTarget(0.f, 0.f);
+			} },
+		{ 24.6f, [](UMechDemoSubsystem* D) { D->Probe = D->Mech()->GetAimPitch(); D->HoldAxis(EKeys::MouseY, 3.f, 0.4f); } },
+		{ 25.3f, [](UMechDemoSubsystem* D)
+			{
+				ASoulsMech* M = D->Mech();
+				const float Delta = M->GetAimPitch() - D->Probe;
+				const float Want = M->bInvertMousePitch ? -1.f : 1.f;
+				D->Check(TEXT("mouse Y pitches the aim the same way as the stick"), Delta * Want > 1.f,
+					FString::Printf(TEXT("MouseY +3/frame moved the aim %+.1f deg (invert %d)"), Delta, M->bInvertMousePitch));
+				M->SetTorsoTarget(0.f, 0.f);
+			} },
+		// 8. A foe ahead; RT (through the mapping) fires the autocannons, and only them.
+		{ 25.8f, [NearestFoe, PlaceOnGround, AimAt](UMechDemoSubsystem* D)
 			{
 				ASoulsMech* M = D->Mech();
 				const FVector Ahead = M->GetActorLocation() + M->GetActorForwardVector() * 2600.f;
@@ -2460,55 +2603,92 @@ void UMechDemoSubsystem::Run()
 				{
 					PlaceOnGround(Target, Ahead, 100.f);
 					Target->SetActorRotation(FRotator(0.f, (M->GetActorLocation() - Ahead).Rotation().Yaw, 0.f));
+					Cast<ASoulsEnemy>(Target)->HomeLocation = Target->GetActorLocation();
 					D->TargetHealth = Cast<ASoulsKnight>(Target)->GetHealth();
 				}
 				D->DemoTarget = Target;
 				AimAt(M, Target->GetActorLocation());
 			} },
-		{ 17.8f, [AimAt](UMechDemoSubsystem* D) { if (D->DemoTarget.IsValid()) { AimAt(D->Mech(), D->DemoTarget->GetActorLocation()); } } },
-		{ 18.3f, [](UMechDemoSubsystem* D) { D->Key(EKeys::Gamepad_FaceButton_Left, true); } },
-		{ 18.55f, [Shot](UMechDemoSubsystem* D) { Shot(TEXT("7_autocannon")); } },
-		{ 19.1f, [Shot, AimAt](UMechDemoSubsystem* D) { Shot(TEXT("8_impacts")); if (D->DemoTarget.IsValid()) { AimAt(D->Mech(), D->DemoTarget->GetActorLocation()); } } },
-		{ 20.1f, [](UMechDemoSubsystem* D)
+		{ 26.6f, [AimAt](UMechDemoSubsystem* D) { if (D->DemoTarget.IsValid()) { AimAt(D->Mech(), D->DemoTarget->GetActorLocation()); } } },
+		{ 27.1f, [](UMechDemoSubsystem* D) { D->ProbeCount = D->Mech()->GetMissilesFired(); D->Key(EKeys::Gamepad_RightTrigger, true); } },
+		{ 27.35f, [Shot](UMechDemoSubsystem* D) { Shot(TEXT("8_autocannon")); } },
+		{ 27.9f, [Shot, AimAt](UMechDemoSubsystem* D) { Shot(TEXT("9_impacts")); if (D->DemoTarget.IsValid()) { AimAt(D->Mech(), D->DemoTarget->GetActorLocation()); } } },
+		{ 28.9f, [](UMechDemoSubsystem* D)
 			{
-				D->Key(EKeys::Gamepad_FaceButton_Left, false);
+				D->Key(EKeys::Gamepad_RightTrigger, false);
 				ASoulsMech* M = D->Mech();
 				const ASoulsKnight* Foe = Cast<ASoulsKnight>(D->DemoTarget.Get());
-				D->Check(TEXT("X fires the autocannons"), M->GetShellsFired() >= 8, FString::Printf(TEXT("%d shells, heat %.0f%%"), M->GetShellsFired(), M->GetHeatFraction() * 100.f));
+				D->Check(TEXT("RT fires the autocannons (and not the missiles)"), M->GetShellsFired() >= 8 && M->GetMissilesFired() == D->ProbeCount,
+					FString::Printf(TEXT("%d shells, %d missiles, heat %.0f%%"), M->GetShellsFired(), M->GetMissilesFired() - D->ProbeCount, M->GetHeatFraction() * 100.f));
 				D->Check(TEXT("shells hit the target"), M->GetHitsLanded() > 0 && (!Foe || Foe->GetHealth() < D->TargetHealth),
 					FString::Printf(TEXT("%d hits, target health %.0f -> %.0f"), M->GetHitsLanded(), D->TargetHealth, Foe ? Foe->GetHealth() : 0.f));
 			} },
-		// 7. Missiles (Y) at the next foe, or the same spot.
-		{ 20.6f, [NearestFoe, PlaceOnGround, AimAt](UMechDemoSubsystem* D)
+		// 9. LT fires a missile salvo (and not the cannons) at the next foe, or the same spot.
+		{ 29.4f, [NearestFoe, PlaceOnGround, AimAt](UMechDemoSubsystem* D)
 			{
 				ASoulsMech* M = D->Mech();
 				const FVector Ahead = M->GetActorLocation() + FRotator(0.f, M->GetActorRotation().Yaw + 25.f, 0.f).Vector() * 3200.f;
 				if (ASoulsEnemy* Foe = NearestFoe(D->GetWorld(), Ahead, nullptr))
 				{
 					PlaceOnGround(Foe, Ahead, 100.f);
+					Foe->HomeLocation = Foe->GetActorLocation();
 					D->DemoTarget = Foe;
 					D->TargetHealth = Foe->GetHealth();
 				}
 				AimAt(M, D->DemoTarget.IsValid() ? D->DemoTarget->GetActorLocation() : Ahead);
 			} },
-		{ 21.4f, [AimAt](UMechDemoSubsystem* D)
+		{ 30.2f, [AimAt](UMechDemoSubsystem* D)
 			{
 				if (D->DemoTarget.IsValid()) { AimAt(D->Mech(), D->DemoTarget->GetActorLocation()); }
 				D->ArmorBefore = static_cast<float>(D->Mech()->GetHitsLanded());
-				D->Key(EKeys::Gamepad_FaceButton_Top, true);
+				D->ProbeCount = D->Mech()->GetShellsFired();
+				D->Key(EKeys::Gamepad_LeftTrigger, true);
 			} },
-		{ 21.55f, [](UMechDemoSubsystem* D) { D->Key(EKeys::Gamepad_FaceButton_Top, false); } },
-		{ 21.9f, [Shot](UMechDemoSubsystem* D) { Shot(TEXT("9_missiles")); } },
-		{ 22.5f, [Shot](UMechDemoSubsystem* D) { Shot(TEXT("10_explosions")); } },
-		{ 25.f, [](UMechDemoSubsystem* D)
+		{ 30.35f, [](UMechDemoSubsystem* D) { D->Key(EKeys::Gamepad_LeftTrigger, false); } },
+		{ 30.7f, [Shot](UMechDemoSubsystem* D) { Shot(TEXT("10_missiles")); } },
+		{ 31.3f, [Shot](UMechDemoSubsystem* D) { Shot(TEXT("11_explosions")); } },
+		{ 33.8f, [](UMechDemoSubsystem* D)
 			{
 				ASoulsMech* M = D->Mech();
-				D->Check(TEXT("Y fires a missile salvo"), M->GetMissilesFired() >= 4, FString::Printf(TEXT("%d missiles"), M->GetMissilesFired()));
+				D->Check(TEXT("LT fires a missile salvo (and not the cannons)"), M->GetMissilesFired() >= 4 && M->GetShellsFired() == D->ProbeCount,
+					FString::Printf(TEXT("%d missiles, %d shells"), M->GetMissilesFired(), M->GetShellsFired() - D->ProbeCount));
 				D->Check(TEXT("missiles strike"), M->GetHitsLanded() > static_cast<int32>(D->ArmorBefore) || !Cast<ASoulsKnight>(D->DemoTarget.Get()),
 					FString::Printf(TEXT("hits %d -> %d"), static_cast<int32>(D->ArmorBefore), M->GetHitsLanded()));
+				M->SetTorsoTarget(0.f, 0.f);
 			} },
-		// 8. An enemy at its feet attacks it.
-		{ 25.5f, [NearestFoe, PlaceOnGround](UMechDemoSubsystem* D)
+		// 10. A (gamepad) is a full stop, even with the throttle still held; then the X key does the same.
+		{ 34.3f, [](UMechDemoSubsystem* D) { D->Key(EKeys::W, true); } },
+		{ 35.7f, [](UMechDemoSubsystem* D)
+			{
+				D->Probe = D->Mech()->GetForwardSpeed();
+				D->Key(EKeys::Gamepad_FaceButton_Bottom, true);
+			} },
+		{ 35.8f, [](UMechDemoSubsystem* D) { D->Key(EKeys::Gamepad_FaceButton_Bottom, false); } },
+		{ 38.6f, [Shot](UMechDemoSubsystem* D)
+			{
+				ASoulsMech* M = D->Mech();
+				const float Moving = M->GetVelocity().Size2D();
+				D->Check(TEXT("A brings the mech to a full stop with W still held"), D->Probe > 250.f && FMath::Abs(M->GetForwardSpeed()) < 15.f && Moving < 40.f && M->IsFullStopped(),
+					FString::Printf(TEXT("speed %.0f -> %.0f (moving %.0f cm/s), stopped=%d"), D->Probe, M->GetForwardSpeed(), Moving, M->IsFullStopped()));
+				Shot(TEXT("12_full_stop"));
+				D->Key(EKeys::W, false);
+			} },
+		{ 39.2f, [](UMechDemoSubsystem* D) { D->Key(EKeys::W, true); } },
+		{ 40.6f, [](UMechDemoSubsystem* D)
+			{
+				D->Probe = D->Mech()->GetForwardSpeed();
+				D->Key(EKeys::X, true);
+			} },
+		{ 40.7f, [](UMechDemoSubsystem* D) { D->Key(EKeys::X, false); } },
+		{ 42.4f, [](UMechDemoSubsystem* D)
+			{
+				ASoulsMech* M = D->Mech();
+				D->Check(TEXT("the X key is a full stop too (and W drives again after it)"), D->Probe > 250.f && FMath::Abs(M->GetForwardSpeed()) < 15.f,
+					FString::Printf(TEXT("speed %.0f -> %.0f"), D->Probe, M->GetForwardSpeed()));
+				D->Key(EKeys::W, false);
+			} },
+		// 11. An enemy at its feet attacks it (its post moved here, so its leash doesn't drag it home).
+		{ 44.0f, [NearestFoe, PlaceOnGround](UMechDemoSubsystem* D)
 			{
 				ASoulsMech* M = D->Mech();
 				D->ArmorBefore = M->GetArmor();
@@ -2516,6 +2696,7 @@ void UMechDemoSubsystem::Run()
 				if (ASoulsEnemy* Foe = NearestFoe(D->GetWorld(), At, nullptr))
 				{
 					PlaceOnGround(Foe, At, 100.f);
+					Foe->HomeLocation = Foe->GetActorLocation();
 					Foe->SetActorRotation(FRotator(0.f, (M->GetActorLocation() - At).Rotation().Yaw, 0.f));
 					if (ASoulsEnemyController* Brain = Cast<ASoulsEnemyController>(Foe->GetController()))
 					{
@@ -2529,8 +2710,8 @@ void UMechDemoSubsystem::Run()
 				}
 				M->SetTorsoTarget(-60.f, -10.f);
 			} },
-		{ 29.f, [Shot](UMechDemoSubsystem* D) { Shot(TEXT("11_under_attack")); } },
-		{ 33.f, [](UMechDemoSubsystem* D)
+		{ 47.5f, [Shot](UMechDemoSubsystem* D) { Shot(TEXT("13_under_attack")); } },
+		{ 52.0f, [](UMechDemoSubsystem* D)
 			{
 				ASoulsMech* M = D->Mech();
 				if (D->DemoTarget.IsValid())
@@ -2543,32 +2724,43 @@ void UMechDemoSubsystem::Run()
 					UE_LOG(LogUnrealSoulslike, Display, TEXT("MechDemo: an enemy attacks the mech SKIP (no enemies left alive)"));
 				}
 				M->SetTorsoTarget(0.f, 0.f);
-				M->SetDriveInput(0.f, 0.f);
 			} },
-		// 9. Climb out (D-pad up through the mapping) and get the knight's own controls back.
-		{ 33.5f, [](UMechDemoSubsystem* D) { D->Key(EKeys::Gamepad_DPad_Up, true); } },
-		{ 33.6f, [](UMechDemoSubsystem* D) { D->Key(EKeys::Gamepad_DPad_Up, false); } },
-		{ 34.6f, [Shot](UMechDemoSubsystem* D) { Shot(TEXT("12_climbing_out")); } },
-		{ 36.5f, [Shot](UMechDemoSubsystem* D)
+		// 12. Climb out (E through the mapping) and get the knight's own controls back.
+		{ 52.5f, [](UMechDemoSubsystem* D) { D->Key(EKeys::E, true); } },
+		{ 52.6f, [](UMechDemoSubsystem* D) { D->Key(EKeys::E, false); } },
+		{ 53.6f, [Shot](UMechDemoSubsystem* D) { Shot(TEXT("14_climbing_out")); } },
+		{ 55.5f, [Shot](UMechDemoSubsystem* D)
 			{
 				ASoulsMech* M = D->Mech();
 				ASoulsKnight* K = D->Knight();
 				APlayerController* PC = D->GetWorld()->GetFirstPlayerController();
 				const float Away = FVector::Dist2D(K->GetActorLocation(), M->GetActorLocation());
-				D->Check(TEXT("climbed out: the knight is back, visible, beside the mech"),
+				D->Check(TEXT("E climbs out: the knight is back, visible, beside the mech"),
 					PC && PC->GetPawn() == K && !K->IsHidden() && M->GetState() == EMechState::Parked && Away > 250.f && Away < 900.f,
 					FString::Printf(TEXT("pawn=%s hidden=%d state=%d %.0f cm away"), PC && PC->GetPawn() ? *PC->GetPawn()->GetName() : TEXT("none"), K->IsHidden(), (int32)M->GetState(), Away));
-				Shot(TEXT("13_disembarked"));
-				D->Key(EKeys::Gamepad_FaceButton_Bottom, true);
+				Shot(TEXT("15_disembarked"));
 			} },
-		{ 36.75f, [](UMechDemoSubsystem* D)
+		// A moment for the knight's controls to come back, then A must jump.
+		{ 56.25f, [](UMechDemoSubsystem* D) { D->Key(EKeys::Gamepad_FaceButton_Bottom, true); } },
+		{ 57.00f, [](UMechDemoSubsystem* D)
 			{
 				ASoulsKnight* K = D->Knight();
+				if (APlayerController* PC = D->GetWorld()->GetFirstPlayerController())
+				{
+					if (UEnhancedInputLocalPlayerSubsystem* Sub = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
+					{
+						UE_LOG(LogUnrealSoulslike, Display, TEXT("MechDemo: after climbing out: subsystem=%d, pawn=%s, movement mode=%d, input component=%d"),
+							Sub ? 1 : 0, PC->GetPawn() ? *PC->GetPawn()->GetName() : TEXT("none"),
+							static_cast<int32>(K->GetCharacterMovement()->MovementMode.GetValue()), K->InputComponent ? 1 : 0);
+					}
+				}
 				D->Check(TEXT("the knight's controls are back (A jumps)"), K->GetCharacterMovement()->IsFalling(), FString::Printf(TEXT("vz=%.0f"), K->GetVelocity().Z));
 				D->Key(EKeys::Gamepad_FaceButton_Bottom, false);
 			} },
-		{ 38.5f, [](UMechDemoSubsystem* D)
+		{ 57.5f, [](UMechDemoSubsystem* D)
 			{
+				ASoulsMech* M = D->Mech();
+				UE_LOG(LogUnrealSoulslike, Display, TEXT("MechDemo: steps taken: left foot %d, right foot %d"), M->GetFootSteps(0), M->GetFootSteps(1));
 				UE_LOG(LogUnrealSoulslike, Display, TEXT("MechDemo: %d passed, %d failed"), D->Passes, D->Fails);
 				UE_LOG(LogUnrealSoulslike, Display, TEXT("MECH_DEMO_DONE"));
 				FPlatformMisc::RequestExit(false, TEXT("MechDemo"));

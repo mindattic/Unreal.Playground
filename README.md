@@ -60,11 +60,12 @@ Warden in the stone circle and Morrigan of the Mire, a shade who melts into shad
 - **A walking mech.** A two-legged war machine stands parked in the dunes off the path. Walk up
   and press D-pad up / F to climb into its cockpit. The left stick / WASD drives the legs
   (throttle and turn, with weight and inertia); the right stick / mouse twists the torso up to
-  100 degrees off the legs and aims the gun arms. X / LMB / RT fires the twin autocannons, Y / RMB / LT a
-  missile salvo; both build heat, and an overheat locks them out. LB / C swings the legs round
-  under the torso and R3 / V swaps to the cockpit view. Every step is procedural and shakes the
-  ground. Enemies come for it and hack at its legs; at zero armour it's wrecked, you're thrown
-  clear, and it reboots after a while. Press D-pad up / F again to climb out.
+  100 degrees off the legs and aims the gun arms (push up to aim up). RT / LMB fires the twin
+  autocannons, LT / RMB a missile salvo; both build heat, and an overheat locks them out. X / F
+  walks the legs round to face where the torso points (the torso keeps its aim), A / X is a full
+  stop, R3 / V swaps to the cockpit view, and D-pad up / E climbs out. Every step is procedural and
+  shakes the ground. Enemies come for it and hack at its legs; at zero armour it's wrecked, you're
+  thrown clear, and it reboots after a while.
 - **Elden Ring trappings.**
   - Sites of Grace: rest to refill, which also brings the enemies back.
   - Runes, which you lose when you die.
@@ -114,12 +115,18 @@ Run these with `-RenderOffscreen` to check a build without anyone at the control
   camera, shoots each mid-spurt (`BloodDemo_1_Light` … `BloodDemo_3_Critical_Drops`) and the blood
   on the ground after (`BloodDemo_4_Decals_Side`, `BloodDemo_5_Decals_Top`), logs `BloodDemo:` lines
   ending in `BLOOD_DEMO_OK`, then quits.
-- `-MechDemo` boards the parked mech (or one it drops beside you), walks it, turns the legs, twists the
-  torso to its stop, fires the autocannons and a missile salvo at an enemy, lets an enemy hack at it,
-  then climbs out and checks the knight's controls are back. It shoots each beat (`Mech_1_parked` …
-  `Mech_13_disembarked`), logs `MechDemo:` PASS/FAIL lines ending in `MECH_DEMO_DONE`, then quits.
+- `-MechDemo` boards the parked mech (or one it drops beside you) and drives it through the real
+  input mappings: walks (both feet must step), turns, twists the torso to its stop, X and F bring the
+  legs round to the torso, the right stick and mouse pitch the aim, RT fires the autocannons and LT a
+  missile salvo at an enemy, A and the X key full-stop it with the throttle held, an enemy hacks at it,
+  then E climbs out and A jumps the knight again. It shoots each beat (`Mech_1_parked` …
+  `Mech_15_disembarked`), logs `MechDemo:` PASS/FAIL lines ending in `MECH_DEMO_DONE`, then quits.
 - `-BestiaryShots` shows each bestiary type one at a time in front of a fixed camera. It shoots each
   one idle, winding up, striking and in a heavy swing (`Bestiary_<Type>_1_Idle` … `_4_Heavy`), logs
   each type's numbers (`BestiaryShots:`) ending in `BESTIARY_SHOTS_OK`, then quits.
+- `-RangerRunShots` runs the player body straight ahead at a sprint under a camera that tracks
+  alongside. At each stride extreme it shoots from the side (`RangerRun_Side_1..4`), then close on the
+  feet (`RangerRun_Feet_1..4`). It logs `RangerRun:` lines with the stride and each foot's distance
+  from its shin, ending in `RANGER_RUN_OK` (or `RANGER_RUN_FAIL`), then quits.
 
 Screenshots land in `Saved/Screenshots`.

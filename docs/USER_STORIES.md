@@ -84,11 +84,19 @@ _Nothing recorded yet._
 | UNR-T61 | 2026-11-04 | feature | closed | Beach dressing: pebbles, shells, more dead fish along the shore | — |
 | UNR-T62 | 2026-11-04 | feature | closed | More boulders, ruins and bushes across the island | — |
 | UNR-T63 | 2026-11-04 | feature | closed | Ship graveyard round the landing harbour; one rowboat dragged up the beach where you came ashore | — |
-| UNR-T64 | 2026-11-04 | feature | open | High-quality free rigged characters instead of the Unreal mannequin | — |
+| UNR-T64 | 2026-11-04 | feature | closed | High-quality free rigged characters instead of the Unreal mannequin | — |
 | UNR-T65 | 2026-11-04 | fix | closed | Hit lands mid-swing as the blade crosses, not after the swing ends | — |
 | UNR-T66 | 2026-11-04 | fix | closed | After dying, roll is lost and attacks move to RT: the knight's input mapping is gone on respawn | — |
-| UNR-T67 | 2026-11-04 | feature | open | Every free high-quality rigged non-player model becomes an enemy type with its own AI | — |
+| UNR-T67 | 2026-11-04 | feature | closed | Every free high-quality rigged non-player model becomes an enemy type with its own AI | — |
 | UNR-T68 | 2026-11-04 | feature | open | Operable mech you can climb into: legs and an independently rotating torso | — |
 | UNR-T69 | 2026-11-04 | feature | open | Star fighter parked on the land with full dogfighting flight | — |
 | UNR-T70 | 2026-11-04 | feature | closed | Grappling gun: zip to a ledge and launch off it (Arkham-style grapple boost) | — |
-| UNR-T71 | 2026-11-04 | feature | open | Shadow melt: become a shadowy blob that crawls over land and up building walls | — |
+| UNR-T71 | 2026-11-04 | feature | closed | Shadow melt: become a shadowy blob that crawls over land and up building walls | — |
+| UNR-T72 | 2026-11-04 | fix | open | Ranger: feet detached from the body, run animation barely moves | — |
+| UNR-T73 | 2026-11-04 | fix | open | Mech: one leg dead, inverted pitch; X/F turns legs to the torso, LT/RT fire, A or X key stops | — |
+| UNR-T74 | 2026-11-04 | fix | open | Day starts at dawn; a full day takes 5 minutes | — |
+| UNR-T75 | 2026-11-04 | fix | open | Fire looks bad: torches and field fire need convincing flames | — |
+| UNR-T76 | 2026-11-04 | fix | open | Glide only after a grapple launch | — |
+| UNR-T77 | 2026-11-04 | feature | open | Wall running (Titanfall-style) plus long practice walls | — |
+| UNR-T78 | 2026-11-04 | fix | open | Night never pitch black: at most a dark, perfectly playable purple | — |
+| UNR-T79 | 2026-11-04 | feature | open | Weather: rain clouds that drift across the sky and bring rain; wind that blows leaves from the trees | — |

@@ -299,6 +299,7 @@ void ASoulsKnight::EndGrapple(bool bArrived)
 		const FVector Forward = GetActorForwardVector().GetSafeNormal2D();
 		LaunchCharacter(Forward * AbilityLaunchForward + FVector(0.f, 0.f, AbilityLaunchUp), true, true);
 		GrappleLaunchTime = GetWorld()->GetTimeSeconds();
+		bGrappleLaunched = true;
 		if (UAnimInstance* Anim = GetMesh()->GetAnimInstance(); Anim && RollMontage)
 		{
 			Anim->Montage_Play(RollMontage, 1.25f);
@@ -362,7 +363,7 @@ bool ASoulsKnight::FindLedge(FVector& OutHook, FVector& OutGround) const
 void ASoulsKnight::StartGlide()
 {
 	UCharacterMovementComponent* Movement = GetCharacterMovement();
-	if (bGliding || IsDead() || IsSwimming() || !Movement->IsFalling() || GrappleMode != EGrappleMode::None)
+	if (bGliding || !bGrappleLaunched || IsDead() || IsSwimming() || !Movement->IsFalling() || GrappleMode != EGrappleMode::None)
 	{
 		return;
 	}
@@ -404,6 +405,7 @@ void ASoulsKnight::TickGlide(float DeltaSeconds)
 	if (IsDead() || IsSwimming() || !Movement->IsFalling())
 	{
 		EndGlide();
+		bGrappleLaunched = false;
 		return;
 	}
 	// Bank round toward the stick.
@@ -420,7 +422,8 @@ void ASoulsKnight::TickGlide(float DeltaSeconds)
 	const FVector Flat = FMath::VInterpTo(FVector(Velocity.X, Velocity.Y, 0.f), Want, DeltaSeconds, 1.8f);
 	Velocity.X = Flat.X;
 	Velocity.Y = Flat.Y;
-	Velocity.Z = FMath::Max(Velocity.Z, -AbilityGlideSink);
+	// A glide never climbs: whatever the launch left it, it eases to a steady gentle sink.
+	Velocity.Z = FMath::FInterpTo(Velocity.Z, -AbilityGlideSink, DeltaSeconds, 2.5f);
 	Movement->Velocity = Velocity;
 }
 

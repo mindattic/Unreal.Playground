@@ -1,0 +1,4 @@
+# Quaternius Ultimate Spaceships Pack (CC0), baked by tools/convert_fighter.py
+newmtl Fighter
+Kd 1 1 1
+map_Kd Fighter_Texture.png

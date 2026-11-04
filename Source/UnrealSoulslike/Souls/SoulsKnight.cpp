@@ -9,6 +9,7 @@
 #include "SoulsFire.h"
 #include "SoulsTorch.h"
 #include "SoulsMech.h"
+#include "SoulsFighter.h"
 #include "Components/ShadowMergeComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
@@ -1972,7 +1973,7 @@ void ASoulsKnight::JumpPressed()
 		EndGlide();
 		return;
 	}
-	if (GetCharacterMovement()->IsFalling() && !IsSwimming() && !IsDead())
+	if (GetCharacterMovement()->IsFalling() && bGrappleLaunched && !IsSwimming() && !IsDead())
 	{
 		StartGlide();
 		return;
@@ -2189,6 +2190,10 @@ void ASoulsKnight::InteractPressed()
 	if (!IsDead() && !IsBusy() && ASoulsMech::TryBoard(this))
 	{
 		return; // UNR-T68: climb into a parked mech in reach
+	}
+	if (!IsDead() && !IsBusy() && ASoulsFighter::TryBoard(this))
+	{
+		return; // UNR-T69: climb into the parked star fighter in reach
 	}
 	Whistle();
 }
@@ -2791,6 +2796,19 @@ void ASoulsKnight::Tick(float DeltaSeconds)
 	}
 	TickStealthDemo();
 	TickGlide(DeltaSeconds);
+	// Handed back by a vehicle (or anything else) with movement switched off: a visible, free,
+	// living player knight always gets its feet back (UNR-T73).
+	if (IsPlayerControlled() && !IsDead() && !IsHidden() && !GetAttachParentActor()
+		&& GetCharacterMovement()->MovementMode == MOVE_None && !(ShadowMelt && ShadowMelt->IsMerged()))
+	{
+		GetCharacterMovement()->SetMovementMode(MOVE_Falling);
+	}
+	// Back on the ground (or in the water): the grapple launch is spent.
+	if (bGrappleLaunched && !bGliding && GetWorld()->GetTimeSeconds() - GrappleLaunchTime > 0.3f
+		&& (GetCharacterMovement()->IsMovingOnGround() || IsSwimming()))
+	{
+		bGrappleLaunched = false;
+	}
 	// Verification: how fast the blade tip moves through a swing (-LogCmds="LogUnrealSoulslike Verbose").
 	if (IsPlayerControlled() && IsAttacking() && UE_LOG_ACTIVE(LogUnrealSoulslike, Verbose))
 	{

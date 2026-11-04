@@ -61,16 +61,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "DayNight")
 	void SetTimeOfDay(float Hours, bool bFreeze);
 
-	// Hour the level starts at: late afternoon, the sun low in the west.
+	// Hour the level starts at: dawn.
 	UPROPERTY(EditAnywhere, Category = "DayNight|Clock", meta = (ClampMin = "0", ClampMax = "24"))
-	float StartHours = 16.5f;
+	float StartHours = 6.f;
 
 	UPROPERTY(EditAnywhere, Category = "DayNight|Clock", meta = (ClampMin = "0.1"))
-	float RealMinutesPerDay = 2.f;
+	float RealMinutesPerDay = 5.f;
 
 	// Seconds between sun moves. Every move invalidates the cached sun shadows, so it is stepped, not continuous.
 	UPROPERTY(EditAnywhere, Category = "DayNight|Clock", meta = (ClampMin = "0"))
-	float UpdateInterval = 0.15f;
+	float UpdateInterval = 0.25f;
 
 	// Compass yaw of sunrise; the sun sets opposite. 150 sets it at yaw 330, where the island's sun always sat.
 	UPROPERTY(EditAnywhere, Category = "DayNight|Sun")
@@ -91,7 +91,7 @@ public:
 	float SunNoonTemperature = 5700.f;
 
 	UPROPERTY(EditAnywhere, Category = "DayNight|Moon")
-	float MoonIntensity = 0.75f;
+	float MoonIntensity = 1.1f;
 
 	UPROPERTY(EditAnywhere, Category = "DayNight|Moon")
 	FLinearColor MoonColor = FLinearColor(0.72f, 0.6f, 1.f);
@@ -105,17 +105,17 @@ public:
 	float DaySkyIntensity = 1.15f;
 
 	UPROPERTY(EditAnywhere, Category = "DayNight|Sky")
-	float NightSkyIntensity = 2.8f;
+	float NightSkyIntensity = 4.5f;
 
 	UPROPERTY(EditAnywhere, Category = "DayNight|Sky")
 	FLinearColor NightSkyTint = FLinearColor(0.72f, 0.5f, 1.f);
 
 	// Exposure compensation (EV) added at full night on top of the post process volume's own.
 	UPROPERTY(EditAnywhere, Category = "DayNight|Sky")
-	float NightExposureBoost = 1.9f;
+	float NightExposureBoost = 2.6f;
 
 	UPROPERTY(EditAnywhere, Category = "DayNight|Fog")
-	FLinearColor NightFogInscattering = FLinearColor(0.03f, 0.016f, 0.045f);
+	FLinearColor NightFogInscattering = FLinearColor(0.05f, 0.028f, 0.075f);
 
 	UPROPERTY(EditAnywhere, Category = "DayNight|Fog")
 	FLinearColor DuskFogDirectional = FLinearColor(0.55f, 0.3f, 0.14f);
