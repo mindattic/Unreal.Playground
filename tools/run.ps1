@@ -13,7 +13,7 @@ $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $uproject = Join-Path $repo 'Unreal.Soulslike.uproject'
 $editor = Join-Path (Find-UnrealEngine) 'Engine\Binaries\Win64\UnrealEditor.exe'
-$map = '/Game/Variant_Combat/Lvl_Combat'
+$map = '/Game/Souls/Maps/Lvl_Isle'
 
 for ($i = 0; $i -lt $Players; $i++) {
   if ($Players -eq 1) { $target = $map }
