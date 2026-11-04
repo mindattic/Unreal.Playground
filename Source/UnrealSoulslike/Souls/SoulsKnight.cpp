@@ -274,23 +274,67 @@ void ASoulsKnight::RunVerificationDemo()
 		{ 43.2f, [](ASoulsKnight* K) { K->Shot(TEXT("24_ambush_crit")); } },
 		{ 45.0f, [Approach, NearestFoe](ASoulsKnight* K) { Approach(K, 500.f); if (ASoulsKnight* Foe = NearestFoe(K)) { Foe->AddFear(80.f); } } },
 		{ 46.5f, [](ASoulsKnight* K) { K->Shot(TEXT("25_terrified")); } },
-		// Something glinting off the path.
-		{ 48.0f, [](ASoulsKnight* K)
+		// Something glinting off the path: the nearest one to the start.
+		{ 48.0f, [Origin](ASoulsKnight* K)
 			{
+				ASoulsPickup* Best = nullptr;
 				for (TActorIterator<ASoulsPickup> It(K->GetWorld()); It; ++It)
 				{
-					const FVector Spot = It->GetActorLocation() - K->GetActorForwardVector() * 150.f;
-					K->SetActorLocation(FVector(Spot.X, Spot.Y, K->GetActorLocation().Z), false, nullptr, ETeleportType::TeleportPhysics);
-					K->FaceTowards(It->GetActorLocation());
+					if (!Best || FVector::Dist(It->GetActorLocation(), Origin) < FVector::Dist(Best->GetActorLocation(), Origin))
+					{
+						Best = *It;
+					}
+				}
+				if (Best)
+				{
+					const FVector Back = (Origin - Best->GetActorLocation()).GetSafeNormal2D();
+					K->SetActorLocation(Best->GetActorLocation() + Back * 140.f + FVector(0.f, 0.f, 70.f), false, nullptr, ETeleportType::TeleportPhysics);
+					K->FaceTowards(Best->GetActorLocation());
 					if (K->Controller)
 					{
 						K->Controller->SetControlRotation(FRotator(-20.f, K->GetActorRotation().Yaw, 0.f));
 					}
-					break;
 				}
 			} },
 		{ 48.6f, [](ASoulsKnight* K) { K->Shot(TEXT("26_pickup")); K->InteractPressed(); } },
 		{ 49.2f, [](ASoulsKnight* K) { K->Shot(TEXT("27_acquired")); } },
+		// Into the sea behind the start: it should swim, not walk the seabed.
+		{ 51.0f, [Origin, OriginFwd](ASoulsKnight* K)
+			{
+				// The nearest spot whose seabed lies well below the waterline (z = 0).
+				FVector Deep = Origin - OriginFwd * 3500.f;
+				bool bFound = false;
+				for (float Radius = 1500.f; Radius < 20000.f && !bFound; Radius += 1000.f)
+				{
+					for (int32 Step = 0; Step < 24 && !bFound; ++Step)
+					{
+						const FVector Probe = Origin + FRotator(0.f, Step * 15.f, 0.f).Vector() * Radius;
+						FHitResult Hit;
+						const bool bHit = K->GetWorld()->LineTraceSingleByChannel(Hit, FVector(Probe.X, Probe.Y, 3000.f), FVector(Probe.X, Probe.Y, -5000.f), ECC_Visibility);
+						UE_LOG(LogUnrealSoulslike, Verbose, TEXT("Swim probe r=%.0f step=%d hit=%d z=%.0f by %s"), Radius, Step, bHit ? 1 : 0, bHit ? Hit.ImpactPoint.Z : 0.f,
+							bHit && Hit.GetActor() ? *Hit.GetActor()->GetName() : TEXT("-"));
+						if (bHit && Hit.ImpactPoint.Z < -250.f)
+						{
+							Deep = FVector(Probe.X, Probe.Y, 0.f);
+							bFound = true;
+						}
+					}
+				}
+				UE_LOG(LogUnrealSoulslike, Log, TEXT("Swim check: deep water %s at %s"), bFound ? TEXT("found") : TEXT("NOT found"), *Deep.ToString());
+				K->SetActorLocation(FVector(Deep.X, Deep.Y, 120.f), false, nullptr, ETeleportType::TeleportPhysics);
+				K->SetActorRotation((Origin - Deep).GetSafeNormal2D().Rotation());
+				if (K->Controller)
+				{
+					K->Controller->SetControlRotation(FRotator(-15.f, K->GetActorRotation().Yaw + 150.f, 0.f));
+				}
+			} },
+
+		{ 54.0f, [](ASoulsKnight* K)
+			{
+				UE_LOG(LogUnrealSoulslike, Log, TEXT("Swim check: swimming=%d mode=%d z=%.0f stamina=%.0f"), K->IsSwimming() ? 1 : 0,
+					static_cast<int32>(K->GetCharacterMovement()->MovementMode.GetValue()), K->GetActorLocation().Z, K->Stamina);
+				K->Shot(TEXT("28_swim"));
+			} },
 	};
 	for (const FStep& Step : Steps)
 	{

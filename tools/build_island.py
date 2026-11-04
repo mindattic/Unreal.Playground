@@ -1106,6 +1106,7 @@ def build_ocean(mat):
     a.set_actor_scale3d(unreal.Vector(40000.0, 40000.0, 1.0))
     smc = a.get_editor_property("static_mesh_component")
     smc.set_material(0, mat)
+    smc.set_collision_profile_name("NoCollision")  # swim through it (the enabled flag alone didn't persist)
     smc.set_collision_enabled(unreal.CollisionEnabled.NO_COLLISION)
     smc.set_editor_property("cast_shadow", False)
     return a
@@ -1156,6 +1157,7 @@ def build_water(world, tex, mask_tex):
     a.set_actor_scale3d(unreal.Vector(MARSH_RADIUS * 1.6 / 100.0, MARSH_RADIUS * 1.6 / 100.0, 1.0))
     smc = a.get_editor_property("static_mesh_component")
     smc.set_material(0, pool_mat)
+    smc.set_collision_profile_name("NoCollision")
     smc.set_collision_enabled(unreal.CollisionEnabled.NO_COLLISION)
     smc.set_editor_property("cast_shadow", False)
     # Low mist hanging over the fen.

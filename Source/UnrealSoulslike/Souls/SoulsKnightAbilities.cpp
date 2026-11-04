@@ -13,6 +13,7 @@
 #include "EngineUtils.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Controller.h"
+#include "GameFramework/PhysicsVolume.h"
 #include "TimerManager.h"
 
 namespace
@@ -534,6 +535,15 @@ void ASoulsKnight::TickSwimming(float DeltaSeconds)
 			Action = EKnightAction::None;
 			LockTarget = nullptr;
 			PlayRandomSound(FootstepSounds, 0.6f);
+		}
+		// Float at the surface, head and shoulders out (no diving).
+		UCharacterMovementComponent* Movement = GetCharacterMovement();
+		if (const APhysicsVolume* Water = Movement->GetPhysicsVolume())
+		{
+			const float Surface = Water->GetComponentsBoundingBox().Max.Z;
+			const float TargetZ = Surface - 45.f;
+			const float Lift = FMath::Clamp((TargetZ - GetActorLocation().Z) * 4.f, -150.f, 300.f);
+			Movement->Velocity.Z = FMath::FInterpTo(Movement->Velocity.Z, Lift, DeltaSeconds, 6.f);
 		}
 		const bool bMoving = GetVelocity().Size2D() > 60.f;
 		UAnimMontage* Want = bMoving ? SwimMontage.Get() : SwimIdleMontage.Get();
