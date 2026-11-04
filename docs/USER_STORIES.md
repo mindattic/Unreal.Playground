@@ -73,3 +73,4 @@ _Nothing recorded yet._
 | UNR-T50 | 2026-11-04 | feature | closed | Ludicrous gore: absurd blood sprays on every hit | — |
 | UNR-T51 | 2026-11-04 | feature | open | Natural torch flames from a free fire particle pack | — |
 | UNR-T52 | 2026-11-04 | feature | closed | Dodge roll cancels an attack less than 50% committed | — |
+| UNR-T53 | 2026-11-04 | fix | open | Day/night cycle 10x faster (2-minute day) | — |

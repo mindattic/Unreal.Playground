@@ -66,11 +66,11 @@ public:
 	float StartHours = 16.5f;
 
 	UPROPERTY(EditAnywhere, Category = "DayNight|Clock", meta = (ClampMin = "0.1"))
-	float RealMinutesPerDay = 20.f;
+	float RealMinutesPerDay = 2.f;
 
 	// Seconds between sun moves. Every move invalidates the cached sun shadows, so it is stepped, not continuous.
 	UPROPERTY(EditAnywhere, Category = "DayNight|Clock", meta = (ClampMin = "0"))
-	float UpdateInterval = 1.f;
+	float UpdateInterval = 0.15f;
 
 	// Compass yaw of sunrise; the sun sets opposite. 150 sets it at yaw 330, where the island's sun always sat.
 	UPROPERTY(EditAnywhere, Category = "DayNight|Sun")
