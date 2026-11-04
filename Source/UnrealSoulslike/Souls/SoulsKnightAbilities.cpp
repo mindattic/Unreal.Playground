@@ -86,7 +86,7 @@ AActor* ASoulsKnight::FindGrappleTarget() const
 	}
 	for (TActorIterator<ASoulsKnight> It(GetWorld()); It; ++It)
 	{
-		if (*It != this && It->Team != Team && !It->IsDead())
+		if (*It != this && It->Team != Team && It->CanBeLockedOn())
 		{
 			Consider(*It, It->GetActorLocation() + FVector(0.f, 0.f, 40.f), GrappleFoeRange);
 		}
@@ -139,7 +139,7 @@ void ASoulsKnight::LaunchGrapple()
 {
 	AActor* Target = GrappleTarget.Get();
 	ASoulsKnight* Foe = Cast<ASoulsKnight>(Target);
-	if (!Target || (Foe && Foe->IsDead()))
+	if (!Target || (Foe && !Foe->CanBeLockedOn()))
 	{
 		EndGrapple(false);
 		return;
@@ -179,7 +179,7 @@ void ASoulsKnight::TickGrapple(float DeltaSeconds)
 	}
 	AActor* Target = GrappleTarget.Get();
 	ASoulsKnight* Foe = Cast<ASoulsKnight>(Target);
-	if (!Target || (Foe && Foe->IsDead()))
+	if (!Target || (Foe && !Foe->CanBeLockedOn()))   // dead, or melted into shadow
 	{
 		EndGrapple(false);
 		return;

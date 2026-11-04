@@ -32,6 +32,7 @@ enum class EKnightAction : uint8
 	Pounce,        // leaping onto a foe
 	Shocked,       // ambushed: frozen in surprise, open to a critical
 	Impaled,       // caught on a braced blade
+	Submerged,     // melted into shadow (ASoulsShadowBoss): untouchable until it rises
 };
 
 UENUM(BlueprintType)
@@ -303,6 +304,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Knight")
 	float GetStanceFraction() const { return MaxStance > 0.f ? StanceDamage / MaxStance : 0.f; }
 
+	// False while this knight can't be targeted (dead, or a boss melted into shadow).
+	virtual bool CanBeLockedOn() const { return !IsDead(); }
+
 	bool IsBusy() const { return Action != EKnightAction::None; }
 	bool IsAttacking() const { return Action == EKnightAction::LightAttack || Action == EKnightAction::HeavyAttack; }
 	bool IsOpenToCritical() const { return Action == EKnightAction::Parried || Action == EKnightAction::Shocked; }
@@ -379,6 +383,9 @@ protected:
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 	virtual void NotifyControllerChanged() override;
 	virtual bool CanJumpInternal_Implementation() const override;
+
+	// The Shade drives the shared kit (actions, sweeps, lock-on, stamina) from SoulsShadowBoss.cpp.
+	friend class ASoulsShadowBoss;
 
 private:
 	// Verification run (-KnightDemo): performs every move and screenshots it.

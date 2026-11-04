@@ -1266,7 +1266,7 @@ ASoulsKnight* ASoulsKnight::FindLockTarget() const
 	for (TActorIterator<ASoulsKnight> It(GetWorld()); It; ++It)
 	{
 		ASoulsKnight* Other = *It;
-		if (Other == this || Other->Team == Team || Other->IsDead())
+		if (Other == this || Other->Team == Team || !Other->CanBeLockedOn())
 		{
 			continue;
 		}
@@ -1312,7 +1312,7 @@ void ASoulsKnight::ToggleLockOn()
 void ASoulsKnight::UpdateLockOn(float DeltaSeconds)
 {
 	ASoulsKnight* Target = LockTarget.Get();
-	if (Target && (Target->IsDead() || GetDistanceTo(Target) > KLockBreakRange))
+	if (Target && (!Target->CanBeLockedOn() || GetDistanceTo(Target) > KLockBreakRange))
 	{
 		// The target fell: hop to the next one in view, if any.
 		LockTarget = Target->IsDead() ? FindLockTarget() : nullptr;

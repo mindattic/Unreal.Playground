@@ -1,5 +1,6 @@
 #include "SoulsGameMode.h"
 #include "SoulsEnemy.h"
+#include "SoulsShadowBoss.h"
 #include "SoulsHUD.h"
 #include "SoulsKnight.h"
 #include "SiteOfGrace.h"
@@ -26,6 +27,7 @@ ASoulsGameMode::ASoulsGameMode()
 	HUDClass = ASoulsHUD::StaticClass();
 	EnemyClass = ASoulsEnemy::StaticClass();
 	BossClass = ASoulsBoss::StaticClass();
+	ShadowBossClass = ASoulsShadowBoss::StaticClass();
 	GraceClass = ASiteOfGrace::StaticClass();
 }
 
@@ -91,12 +93,11 @@ void ASoulsGameMode::GatherSpawns()
 		}
 		else if (It->ActorHasTag(TEXT("Boss")))
 		{
-			FSoulsSpawn& Spawn = Spawns.AddDefaulted_GetRef();
-			Spawn.Class = BossClass;
-			Spawn.Transform = Point;
-			Spawn.bBoss = true;
-			BossPoint = Point.GetLocation();
-			bHasBossPoint = true;
+			AddBossSpawn(BossClass, Point, BossArenaRadius, BossMusic, 1.f);
+		}
+		else if (It->ActorHasTag(TEXT("ShadowBoss")))
+		{
+			AddBossSpawn(ShadowBossClass, Point, ShadowBossArenaRadius, ShadowBossMusic ? ShadowBossMusic.Get() : BossMusic.Get(), ShadowBossMusic ? 1.f : 0.84f);
 		}
 		else if (It->ActorHasTag(TEXT("Grace")))
 		{
@@ -124,10 +125,6 @@ void ASoulsGameMode::GatherSpawns()
 			Spawn.Transform = FTransform((-Fwd).Rotation(), Location);
 			Spawn.bBoss = bBoss;
 		};
-		Add(FVector(900.f, -250.f, 0.f), false);
-		Add(FVector(1150.f, 300.f, 0.f), false);
-		Add(FVector(1250.f, -700.f, 0.f), false);
-		Spawns.Last().bLeaper = true;
 		// Something to find, off to the side.
 		if (ASoulsPickup* Seed = GetWorld()->SpawnActorDeferred<ASoulsPickup>(ASoulsPickup::StaticClass(), FTransform(Origin + Right * 400.f - Fwd * 200.f - FVector(0.f, 0.f, 60.f))))
 		{
@@ -139,12 +136,22 @@ void ASoulsGameMode::GatherSpawns()
 		HookParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 		GetWorld()->SpawnActor<AGrapplePoint>(AGrapplePoint::StaticClass(), Origin - Fwd * 300.f + Right * 900.f + FVector(0.f, 0.f, 450.f),
 			(-Right).Rotation(), HookParams);
-		if (!FParse::Param(FCommandLine::Get(), TEXT("NoBoss")))
+		if (FParse::Param(FCommandLine::Get(), TEXT("ShadowBossTest")))
 		{
-			Add(FVector(1700.f, 0.f, 0.f), true);
-			BossPoint = Origin + Fwd * 1700.f;
-			bHasBossPoint = true;
-			BossArenaRadius = 1000.f;
+			// The Shade alone, 12 m ahead of the start, facing the player.
+			AddBossSpawn(ShadowBossClass, FTransform((-Fwd).Rotation(), Origin + Fwd * 1200.f), 1900.f,
+				ShadowBossMusic ? ShadowBossMusic.Get() : BossMusic.Get(), ShadowBossMusic ? 1.f : 0.84f);
+		}
+		else
+		{
+			Add(FVector(900.f, -250.f, 0.f), false);
+			Add(FVector(1150.f, 300.f, 0.f), false);
+			Add(FVector(1250.f, -700.f, 0.f), false);
+			Spawns.Last().bLeaper = true;
+			if (!FParse::Param(FCommandLine::Get(), TEXT("NoBoss")))
+			{
+				AddBossSpawn(BossClass, FTransform((-Fwd).Rotation(), Origin + Fwd * 1700.f + FVector(0.f, 0.f, 60.f)), 1000.f, BossMusic, 1.f);
+			}
 		}
 		GracePoints.Add(FTransform(Start.GetRotation(), Origin + Fwd * 250.f + Right * 250.f - FVector(0.f, 0.f, 90.f)));
 	}
@@ -157,6 +164,19 @@ void ASoulsGameMode::GatherSpawns()
 	}
 }
 
+FSoulsSpawn& ASoulsGameMode::AddBossSpawn(TSubclassOf<ASoulsEnemy> Class, const FTransform& Point, float ArenaRadius, USoundBase* Music, float MusicPitch)
+{
+	FSoulsSpawn& Spawn = Spawns.AddDefaulted_GetRef();
+	Spawn.Class = Class;
+	Spawn.Transform = Point;
+	Spawn.bBoss = true;
+	Spawn.ArenaCenter = Point.GetLocation();
+	Spawn.ArenaRadius = ArenaRadius;
+	Spawn.Music = Music;
+	Spawn.MusicPitch = MusicPitch;
+	return Spawn;
+}
+
 ASoulsEnemy* ASoulsGameMode::SpawnFrom(FSoulsSpawn& Spawn)
 {
 	if (!Spawn.Class)
@@ -165,7 +185,8 @@ ASoulsEnemy* ASoulsGameMode::SpawnFrom(FSoulsSpawn& Spawn)
 	}
 	FActorSpawnParameters Params;
 	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-	const float HalfHeight = 90.f * (Spawn.bBoss ? 1.45f : 1.f);
+	// Clear the ground at the class's own scale (the Warden 1.45x, the Shade 1.34x tall).
+	const float HalfHeight = 90.f * Spawn.Class->GetDefaultObject<ASoulsEnemy>()->GetActorScale3D().Z;
 	const FVector Location = Spawn.Transform.GetLocation() + FVector(0.f, 0.f, HalfHeight + 5.f);
 	ASoulsEnemy* Enemy = GetWorld()->SpawnActor<ASoulsEnemy>(Spawn.Class, Location, FRotator(0.f, Spawn.Transform.Rotator().Yaw, 0.f), Params);
 	Spawn.Actor = Enemy;
@@ -182,7 +203,7 @@ void ASoulsGameMode::RespawnEnemies(bool bIncludeBoss)
 	// Every foe returns to its post at full health; a felled boss stays felled.
 	for (FSoulsSpawn& Spawn : Spawns)
 	{
-		if (Spawn.bBoss && (bBossDefeated || !bIncludeBoss))
+		if (Spawn.bBoss && (Spawn.bDefeated || !bIncludeBoss))
 		{
 			continue;
 		}
@@ -201,18 +222,11 @@ ASoulsKnight* ASoulsGameMode::GetPlayerKnight() const
 
 ASoulsEnemy* ASoulsGameMode::GetActiveBoss() const
 {
-	if (!bBossFightActive)
+	if (!bBossFightActive || !Spawns.IsValidIndex(ActiveBossSpawn))
 	{
 		return nullptr;
 	}
-	for (const FSoulsSpawn& Spawn : Spawns)
-	{
-		if (Spawn.bBoss && Spawn.Actor.IsValid())
-		{
-			return Spawn.Actor.Get();
-		}
-	}
-	return nullptr;
+	return Spawns[ActiveBossSpawn].Actor.Get();
 }
 
 void ASoulsGameMode::ShowToast(const FText& Text)
@@ -297,8 +311,17 @@ void ASoulsGameMode::KnightDied(ASoulsKnight* Knight)
 	const ASoulsEnemy* Enemy = Cast<ASoulsEnemy>(Knight);
 	if (Enemy && Enemy->bIsBoss)
 	{
-		bBossDefeated = true;
-		EndBossFight(true);
+		for (FSoulsSpawn& Spawn : Spawns)
+		{
+			if (Spawn.bBoss && Spawn.Actor.Get() == Enemy)
+			{
+				Spawn.bDefeated = true;
+			}
+		}
+		if (GetActiveBoss() == Enemy)
+		{
+			EndBossFight(true);
+		}
 		ShowBanner(NSLOCTEXT("Souls", "GreatEnemyFelled", "GREAT ENEMY FELLED"), FLinearColor(0.95f, 0.78f, 0.38f), 6.f);
 		if (FelledSound)
 		{
@@ -336,12 +359,14 @@ void ASoulsGameMode::RestAtGrace(ASiteOfGrace* Grace, ASoulsKnight* Knight)
 	RespawnEnemies(true);
 }
 
-void ASoulsGameMode::StartBossFight()
+void ASoulsGameMode::StartBossFight(int32 SpawnIndex)
 {
 	bBossFightActive = true;
-	if (BossMusic)
+	ActiveBossSpawn = SpawnIndex;
+	const FSoulsSpawn& Spawn = Spawns[SpawnIndex];
+	if (Spawn.Music)
 	{
-		MusicComponent = UGameplayStatics::SpawnSound2D(this, BossMusic, 0.65f, 1.f, 0.f, nullptr, true, false);
+		MusicComponent = UGameplayStatics::SpawnSound2D(this, Spawn.Music, 0.65f, Spawn.MusicPitch, 0.f, nullptr, true, false);
 	}
 	if (AmbientComponent)
 	{
@@ -356,6 +381,7 @@ void ASoulsGameMode::StartBossFight()
 void ASoulsGameMode::EndBossFight(bool bWon)
 {
 	bBossFightActive = false;
+	ActiveBossSpawn = INDEX_NONE;
 	if (MusicComponent)
 	{
 		MusicComponent->FadeOut(bWon ? 4.f : 1.5f, 0.f);
@@ -370,20 +396,23 @@ void ASoulsGameMode::EndBossFight(bool bWon)
 void ASoulsGameMode::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
-	if (bBossFightActive || bBossDefeated || !bHasBossPoint)
+	if (bBossFightActive)
 	{
 		return;
 	}
 	const ASoulsKnight* Player = GetPlayerKnight();
-	if (Player && !Player->IsDead() && FVector::Dist2D(Player->GetActorLocation(), BossPoint) < BossArenaRadius)
+	if (!Player || Player->IsDead())
 	{
-		for (FSoulsSpawn& Spawn : Spawns)
+		return;
+	}
+	for (int32 i = 0; i < Spawns.Num(); ++i)
+	{
+		const FSoulsSpawn& Spawn = Spawns[i];
+		if (Spawn.bBoss && !Spawn.bDefeated && Spawn.Actor.IsValid() && !Spawn.Actor->IsDead()
+			&& FVector::Dist2D(Player->GetActorLocation(), Spawn.ArenaCenter) < Spawn.ArenaRadius)
 		{
-			if (Spawn.bBoss && Spawn.Actor.IsValid() && !Spawn.Actor->IsDead())
-			{
-				StartBossFight();
-				break;
-			}
+			StartBossFight(i);
+			break;
 		}
 	}
 }

@@ -26,6 +26,15 @@ struct FSoulsSpawn
 
 	bool bBoss = false;
 	bool bLeaper = false;
+
+	// Bosses only: walking within ArenaRadius of ArenaCenter starts the fight; felled bosses stay felled.
+	FVector ArenaCenter = FVector::ZeroVector;
+	float ArenaRadius = 0.f;
+	float MusicPitch = 1.f;
+	bool bDefeated = false;
+
+	UPROPERTY()
+	TObjectPtr<USoundBase> Music;
 };
 
 // Runs the island: spawns enemies, the boss and Sites of Grace at the level's tagged TargetPoints
@@ -45,6 +54,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "Souls")
 	TSubclassOf<ASoulsEnemy> BossClass;
 
+	// The Shade of the Fen, spawned at a TargetPoint tagged ShadowBoss (or by -ShadowBossTest).
+	UPROPERTY(EditDefaultsOnly, Category = "Souls")
+	TSubclassOf<ASoulsEnemy> ShadowBossClass;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Souls")
 	TSubclassOf<ASiteOfGrace> GraceClass;
 
@@ -60,6 +73,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "Souls|Sound")
 	TObjectPtr<USoundBase> BossMusic;
 
+	// The Shade's fight music; empty plays BossMusic pitched down into something darker.
+	UPROPERTY(EditDefaultsOnly, Category = "Souls|Sound")
+	TObjectPtr<USoundBase> ShadowBossMusic;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Souls|Sound")
 	TObjectPtr<USoundBase> AmbientLoop;
 
@@ -69,6 +86,10 @@ public:
 	// Radius around the Boss point that starts the fight.
 	UPROPERTY(EditDefaultsOnly, Category = "Souls")
 	float BossArenaRadius = 2600.f;
+
+	// Radius around the ShadowBoss point that starts the Shade's fight.
+	UPROPERTY(EditDefaultsOnly, Category = "Souls")
+	float ShadowBossArenaRadius = 2200.f;
 
 	int32 Runes = 0;
 	int32 GoldenSeeds = 0;
@@ -93,6 +114,7 @@ public:
 	void KnightDied(ASoulsKnight* Knight);
 	void RestAtGrace(ASiteOfGrace* Grace, ASoulsKnight* Knight);
 	void GraceDiscovered(ASiteOfGrace* Grace);
+	// Whichever boss the player is fighting right now (the HUD's boss bar), or null.
 	ASoulsEnemy* GetActiveBoss() const;
 
 	// Mobs take turns: one grunt commits to an attack at a time (the boss ignores this).
@@ -108,7 +130,8 @@ private:
 	void GatherSpawns();
 	void RespawnEnemies(bool bIncludeBoss);
 	ASoulsEnemy* SpawnFrom(FSoulsSpawn& Spawn);
-	void StartBossFight();
+	FSoulsSpawn& AddBossSpawn(TSubclassOf<ASoulsEnemy> Class, const FTransform& Point, float ArenaRadius, USoundBase* Music, float MusicPitch);
+	void StartBossFight(int32 SpawnIndex);
 	void EndBossFight(bool bWon);
 	void RunVerificationTour();
 
@@ -121,10 +144,8 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UAudioComponent> AmbientComponent;
 
-	FVector BossPoint = FVector::ZeroVector;
-	bool bHasBossPoint = false;
 	bool bBossFightActive = false;
-	bool bBossDefeated = false;
+	int32 ActiveBossSpawn = INDEX_NONE;
 	FTimerHandle ResetTimer;
 	TWeakObjectPtr<ASoulsEnemy> TokenHolder;
 	float TokenTime = -100.f;

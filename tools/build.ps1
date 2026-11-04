@@ -55,6 +55,8 @@ function Invoke-EditorScript([string]$Script, [string]$LogFile, [string]$OkMarke
 }
 
 Invoke-EditorScript (Join-Path $PSScriptRoot 'build_souls_character.py') (Join-Path $repo 'Saved\souls_character.log') 'SOULS_CHARACTER_OK'
+# The Shade of the Fen (second boss): needs the knight's montages, weapons, audio and game mode above.
+Invoke-EditorScript (Join-Path $PSScriptRoot 'build_shadow_boss.py') (Join-Path $repo 'Saved\shadow_boss.log') 'SHADOW_BOSS_OK'
 
 if ($LegacyContent) {
   $script = Join-Path $PSScriptRoot 'build_content.py'
