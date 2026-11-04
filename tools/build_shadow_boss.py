@@ -27,8 +27,10 @@ MANNY_MESH = "/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple"
 MANNY_SLOTS = ("/Game/Characters/Mannequins/Materials/Manny/MI_Manny_01_New",
                "/Game/Characters/Mannequins/Materials/Manny/MI_Manny_02_New")
 # Same fit as the knights (tools/build_souls_character.py).
-SWORD_TRANSFORM = {"location": (0.0, 0.0, 41.0), "rotation": (0.0, 0.0, 0.0), "scale": 55.0}
-SHIELD_TRANSFORM = {"location": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": 1.25}
+SWORD_TRANSFORM = {"location": (-8.0, 3.0, 41.0), "rotation": (0.0, 0.0, 0.0), "scale": 55.0}
+# Rotations are (roll, pitch, yaw), unreal.Rotator's positional order. Pitched over so the kite's point hangs
+# down and its face looks out (at 0 it sat upside down).
+SHIELD_TRANSFORM = {"location": (0.0, 0.0, 0.0), "rotation": (0.0, 180.0, 0.0), "scale": 1.25}
 
 
 def log(msg):

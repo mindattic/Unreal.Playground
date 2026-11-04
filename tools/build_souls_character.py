@@ -314,9 +314,12 @@ def duplicate_blueprint(source, dest_name, parent_class=None):
     return bp
 
 
-# Fitted to SKM_Manny hand_r by eye: blade along the hand's +Z (forward of the fist), grip (mesh z=-0.75) in the fist.
-SWORD_TRANSFORM = {"location": (0.0, 0.0, 41.0), "rotation": (0.0, 0.0, 0.0), "scale": 55.0}
-SHIELD_TRANSFORM = {"location": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": 1.25}
+# Fitted to SKM_Manny hand_r by eye: blade along the hand's +Z, grip (mesh z=-0.75) slid 8 cm toward the
+# fingers (-X) and 3 cm into the palm (+Y), so the baked fist (tools/bake_grip.py) closes round it.
+SWORD_TRANSFORM = {"location": (-8.0, 3.0, 41.0), "rotation": (0.0, 0.0, 0.0), "scale": 55.0}
+# Rotations are (roll, pitch, yaw), unreal.Rotator's positional order. Pitched over so the kite's point hangs
+# down and its face looks out (at 0 it sat upside down).
+SHIELD_TRANSFORM = {"location": (0.0, 0.0, 0.0), "rotation": (0.0, 180.0, 0.0), "scale": 1.25}
 
 
 def place(component, mesh, spec):
@@ -661,6 +664,12 @@ def main():
     log("source clips: ual1=%d ual2=%d" % (len(anims1), len(anims2)))
     retarget(UAL1_CLIPS, anims1, ual1_mesh, manny, rtg1)
     retarget(UAL2_CLIPS, anims2, ual2_mesh, manny, rtg2)
+    # The library animates open hands: close them round the sword hilt and the shield grip.
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("bake_grip", os.path.join(PROJECT, "tools", "bake_grip.py"))
+    bake_grip = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bake_grip)
+    bake_grip.bake_all(log)
 
     montages = build_montages()
     weapons = build_weapons()
