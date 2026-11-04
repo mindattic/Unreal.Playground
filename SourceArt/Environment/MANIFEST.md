@@ -85,3 +85,16 @@ offsets, which the build compensates for from each mesh's bounds.
 | `shrub_02`, `fern_02` | bushes and ferns under the trees (alpha maps fetched separately; the glTFs reference JPGs without alpha) |
 | `dandelion_01` | wildflowers across the grassland |
 | `Generated/SM_Marram.obj`, `SM_Reeds.obj`, `SM_Heather.obj` | landscape grass types for the dunes, the marsh and the highland |
+### Wildlife (UNR-T36/T37)
+
+`Critters/Source/` holds the downloaded originals (see `CREDITS.md`). `tools/convert_critters.py` (run with
+Blender 4.4+: `blender -b --factory-startup --disable-autoexec --python tools/convert_critters.py [-- --preview]`)
+poses each rig at rest, bakes the skinned mesh and writes a static OBJ facing **+X**, Z up, in centimetres with its
+bottom-centre at the origin. `tools/build_island.py` imports them to `/Game/Island/Models/Critters/<Name>` (no
+collision, no Nanite), gives each `.mtl` slot an `M_Critter` instance, and places `ASoulsWildlife` actors.
+
+| File | Size (cm, X x Y x Z) | Tris | Use |
+|---|---|---|---|
+| `Critters/SM_Crab.obj` (+ `crab.png` palette texture) | 12 x 17.3 x 6.2 | 832 | beach crabs: scuttle sideways, flee the player |
+| `Critters/SM_Frog.obj` | 13 x 14.2 x 6 | 4920 | frogs on the marsh pool banks; leap into the water when approached (recoloured to a common frog) |
+| `Critters/SM_Fish.obj` | 32 x 4.6 x 10.7 | 544 | fish swimming in the marsh pools; dead fish on their side along the tideline |

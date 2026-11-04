@@ -23,3 +23,13 @@ everything, and keeps only the maps the build uses). All CC0 1.0, no attribution
 | `Generated/` (water normal map, noise texture, grass clump meshes) | made in-repo by `tools/generate_island_art.py` | this repository | same as the repo |
 
 License text: https://creativecommons.org/publicdomain/zero/1.0/
+## Wildlife (tools/convert_critters.py + tools/build_island.py, UNR-T36/T37)
+
+Downloaded 2026-11-04 without a login. Originals are kept under `Critters/Source/`; `Critters/SM_*.obj`
+are baked from them by `tools/convert_critters.py` (Blender 4.4+). All CC0 1.0, no attribution required; given anyway.
+
+| Asset | Author | Source | License |
+|---|---|---|---|
+| `Critters/Source/crab/` (`crab.blend`, `crab.png`; low poly crab, rigged, idle + walk) -> `SM_Crab.obj` | methodical pixel | https://opengameart.org/content/crab-low-poly-animated-3d-model (`crab_0.zip`) | CC0 1.0 |
+| `Critters/Source/frog.glb` ("Frog", animated) -> `SM_Frog.obj` | Quaternius | https://poly.pizza/m/9Z2V8fpazF | CC0 1.0 |
+| `Critters/Source/fish.glb` ("Fish", animated) -> `SM_Fish.obj` (pond fish and the dead fish on the beach) | Quaternius | https://poly.pizza/m/XWl86YFtpF | CC0 1.0 |
