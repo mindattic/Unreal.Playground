@@ -5,7 +5,7 @@
 #include "GrapplePoint.h"
 #include "SoulsPickup.h"
 #include "SoulsSparks.h"
-#include "SoulsGlider.h"
+#include "SoulsGore.h"
 #include "SoulsFire.h"
 #include "SoulsTorch.h"
 #include "Animation/AnimInstance.h"
@@ -87,7 +87,6 @@ ASoulsKnight::ASoulsKnight()
 	GrappleLine->SetUsingAbsoluteLocation(true);
 	GrappleLine->SetUsingAbsoluteRotation(true);
 	GrappleLine->SetUsingAbsoluteScale(true);
-	Glider = CreateDefaultSubobject<USoulsGlider>(TEXT("Glider"));
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> LineMesh(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
 	if (LineMesh.Succeeded())
 	{
@@ -533,11 +532,21 @@ void ASoulsKnight::RunInputTest()
 	const TSharedRef<TPair<float, FVector>> Probe = MakeShared<TPair<float, FVector>>(0.f, FVector::ZeroVector);
 	const TArray<FStep> Steps = {
 		{ 1.0f, [Side](ASoulsKnight* K) { Side(K); } },
-		{ 1.5f, [Tap, B](ASoulsKnight* K) { Tap(K, B, 0.1f); } },
-		{ 1.62f, [Check](ASoulsKnight* K) { Check(TEXT("B standing still backsteps"), K->Action == EKnightAction::Roll, FString::Printf(TEXT("action=%d"), (int32)K->Action)); K->Shot(TEXT("Input_1_backstep")); } },
+		{ 1.5f, [Tap, B, Probe](ASoulsKnight* K) { Probe->Key = K->GetActorRotation().Yaw; Tap(K, B, 0.1f); } },
+		{ 1.62f, [Check](ASoulsKnight* K) { Check(TEXT("B standing still rolls"), K->Action == EKnightAction::Roll, FString::Printf(TEXT("action=%d"), (int32)K->Action)); K->Shot(TEXT("Input_1_roll")); } },
+		{ 2.3f, [Check, Probe](ASoulsKnight* K)
+			{
+				const float Turned = FMath::Abs(FRotator::NormalizeAxis(K->GetActorRotation().Yaw - Probe->Key));
+				Check(TEXT("a roll with no stick keeps the facing"), Turned < 5.f, FString::Printf(TEXT("turned %.1f deg"), Turned));
+			} },
 		{ 2.4f, [](ASoulsKnight* K) { K->InputTestKey(EKeys::W, true); } },
 		{ 3.0f, [Tap, B](ASoulsKnight* K) { Tap(K, B, 0.1f); } },
 		{ 3.12f, [Check](ASoulsKnight* K) { Check(TEXT("B on the move rolls"), K->Action == EKnightAction::Roll, FString::Printf(TEXT("action=%d"), (int32)K->Action)); K->Shot(TEXT("Input_2_roll")); } },
+		{ 3.3f, [Check](ASoulsKnight* K)
+			{
+				const float Off = FMath::Abs(FRotator::NormalizeAxis(K->GetActorRotation().Yaw - K->GetVelocity().Rotation().Yaw));
+				Check(TEXT("a roll with the stick faces the stick"), Off < 10.f, FString::Printf(TEXT("off %.1f deg"), Off));
+			} },
 		{ 3.9f, [Tap](ASoulsKnight* K) { Tap(K, EKeys::Gamepad_LeftThumbstick, 0.08f); } },
 		{ 4.9f, [Check](ASoulsKnight* K) { Check(TEXT("tap L3 sprints"), K->bSprinting && K->GetVelocity().Size2D() > 650.f, FString::Printf(TEXT("sprinting=%d speed=%.0f"), K->bSprinting, K->GetVelocity().Size2D())); K->Shot(TEXT("Input_3_sprint")); } },
 		{ 5.0f, [](ASoulsKnight* K) { K->InputTestKey(EKeys::W, false); } },
@@ -587,6 +596,8 @@ void ASoulsKnight::RunInputTest()
 			} },
 		{ 14.1f, [Check](ASoulsKnight* K) { Check(TEXT("X is the one normal attack"), K->Action == EKnightAction::HeavyAttack, FString::Printf(TEXT("action=%d"), (int32)K->Action)); } },
 		{ 14.6f, [](ASoulsKnight* K) { K->Shot(TEXT("Input_7_attack")); } },
+		{ 15.0f, [](ASoulsKnight* K) { K->Shot(TEXT("Input_7b_blood")); } },
+		{ 15.8f, [](ASoulsKnight* K) { K->Shot(TEXT("Input_7c_splats")); } },
 		{ 16.0f, [Check, Probe](ASoulsKnight* K)
 			{
 				const ASoulsKnight* Foe = K->DemoVictim.Get();
@@ -608,7 +619,14 @@ void ASoulsKnight::RunInputTest()
 		{ 21.7f, [Check](ASoulsKnight* K) { Check(TEXT("Shift runs"), K->bSprinting, FString::Printf(TEXT("speed=%.0f"), K->GetVelocity().Size2D())); K->InputTestKey(EKeys::W, false); } },
 		{ 22.4f, [Tap](ASoulsKnight* K) { Tap(K, EKeys::LeftMouseButton, 0.08f); } },
 		{ 22.55f, [Check](ASoulsKnight* K) { Check(TEXT("LMB attacks"), K->Action == EKnightAction::HeavyAttack, FString::Printf(TEXT("action=%d"), (int32)K->Action)); } },
-		{ 24.0f, [](ASoulsKnight* K) { K->Shot(TEXT("Input_8_done")); } },
+		{ 24.6f, [Tap](ASoulsKnight* K) { Tap(K, EKeys::Gamepad_FaceButton_Left, 0.08f); } },
+		{ 24.8f, [Tap, B](ASoulsKnight* K) { Tap(K, B, 0.08f); } },
+		{ 24.95f, [Check](ASoulsKnight* K)
+			{
+				Check(TEXT("B early in a swing rolls out of it"), K->Action == EKnightAction::Roll && K->GetWorldTimerManager().GetTimerRemaining(K->HitTimer) <= 0.f,
+					FString::Printf(TEXT("action=%d hitTimer=%.2f"), (int32)K->Action, K->GetWorldTimerManager().GetTimerRemaining(K->HitTimer)));
+			} },
+		{ 26.0f, [](ASoulsKnight* K) { K->Shot(TEXT("Input_8_done")); } },
 	};
 	for (const FStep& Step : Steps)
 	{
@@ -1455,7 +1473,8 @@ void ASoulsKnight::DodgePressed()
 	const FVector Stick = GetCharacterMovement()->GetCurrentAcceleration().GetSafeNormal2D();
 	bSprintToggled = false;
 	// No stick: a backstep away from what you face.
-	DodgeToward(!Stick.IsNearlyZero() ? Stick : -AttackDirection());
+	// No stick: roll straight on along the way you face, and still face it after.
+	DodgeToward(!Stick.IsNearlyZero() ? Stick : GetActorForwardVector());
 }
 
 void ASoulsKnight::DodgeReleased()
@@ -1496,12 +1515,24 @@ void ASoulsKnight::DodgeToward(const FVector& Direction)
 	{
 		return;
 	}
-	// The recovery frames of a swing can be rolled out of; the swing itself can't.
-	const bool bCancelable = Action == EKnightAction::None
+	// A swing less than half done (the blade not yet down) can be rolled out of, and so can its
+	// recovery; the moment of the strike itself can't.
+	const bool bEarlySwing = IsAttacking() && ActionElapsed < ActionDuration * 0.5f;
+	const bool bCancelable = Action == EKnightAction::None || bEarlySwing
 		|| (IsAttacking() && ActionElapsed > ActionDuration * 0.65f);
 	if (!bCancelable || !SpendStamina(RollCost))
 	{
 		return;
+	}
+	if (bEarlySwing)
+	{
+		// Called off: the blow never lands.
+		GetWorldTimerManager().ClearTimer(HitTimer);
+		GetWorldTimerManager().ClearTimer(WhooshTimer);
+		GetWorldTimerManager().ClearTimer(WindupTimer);
+		GetWorldTimerManager().ClearTimer(StrikeTimer);
+		LungeRemaining = 0.f;
+		LungeDelay = 0.f;
 	}
 	SetBlocking(false);
 	RollDirection = Direction.GetSafeNormal2D().IsNearlyZero() ? GetActorForwardVector() : Direction.GetSafeNormal2D();
@@ -1854,6 +1885,7 @@ ASoulsKnight::EMeleeResult ASoulsKnight::ReceiveMelee(ASoulsKnight* Attacker, fl
 		bKilledByAmbush = Damage >= CurrentHP;
 		PlayRandomSound(HitSounds, 1.f);
 		ReceivedDamage(Damage, ImpactPoint, -ToAttacker);
+		ASoulsGore::Spray(GetWorld(), ImpactPoint, -ToAttacker, 150, 1.6f);
 		LoseHealth(Damage, Attacker);
 		if (!IsDead() && bUnaware)
 		{
@@ -1909,6 +1941,8 @@ ASoulsKnight::EMeleeResult ASoulsKnight::ReceiveMelee(ASoulsKnight* Attacker, fl
 		PlayRandomSound(HurtSounds, 0.8f);
 	}
 	ReceivedDamage(Damage, ImpactPoint, -ToAttacker);
+	// Ludicrous gore: a fountain per hit, more for a heavy blow.
+	ASoulsGore::Spray(GetWorld(), ImpactPoint, -ToAttacker, bHeavy ? 140 : 90, bHeavy ? 1.6f : 1.2f);
 	LoseHealth(Damage, Attacker);
 	if (!IsDead())
 	{
@@ -1948,6 +1982,8 @@ void ASoulsKnight::LoseHealth(float Amount, AActor* Source)
 	{
 		UE_LOG(LogUnrealSoulslike, Log, TEXT("%s felled by %s (%.0f damage)"), *GetName(), Source ? *Source->GetName() : TEXT("the world"), Amount);
 		CurrentHP = 0.f;
+		// Felled: one last gush in every direction.
+		ASoulsGore::Spray(GetWorld(), GetActorLocation() + FVector(0.f, 0.f, 40.f), FVector::UpVector, 260, 2.f, 1.f);
 		HandleDeath();
 	}
 }
@@ -2053,6 +2089,7 @@ void ASoulsKnight::LandCritical()
 	PlayRandomSound(HitSounds, 1.f);
 	const FVector Impact = Victim->GetActorLocation() + FVector(0.f, 0.f, 50.f);
 	Victim->ReceivedDamage(CriticalDamage, Impact, GetActorForwardVector());
+	ASoulsGore::Spray(GetWorld(), Impact, GetActorForwardVector() + FVector(0.f, 0.f, 0.4f), 220, 1.9f, 0.9f);
 	Victim->LoseHealth(CriticalDamage, this);
 	if (!Victim->IsDead() && Victim->StaggerMontage)
 	{
