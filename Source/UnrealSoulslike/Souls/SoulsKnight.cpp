@@ -51,8 +51,6 @@ namespace
 	const FName KShieldSocket(TEXT("hand_l"));
 	constexpr float KBlockWalkSpeed = 230.f;
 	constexpr float KSprintSpeed = 760.f;
-	constexpr float KBladeLead = 0.14f;      // the blade is live this long before the strike moment...
-	constexpr float KBladeTail = 0.1f;       // ...and this long after it
 	constexpr float KBladeNearMiss = 45.f;   // a blade passing this close to a body still strikes it
 	constexpr float KPlayerSlashSpeed = 1.4f;   // the X slash, vs 0.9 for an enemy heavy
 	constexpr float KBackSlashAt = 0.55f;       // a queued back-slash starts this far into the slash
@@ -814,7 +812,9 @@ void ASoulsKnight::TickClashDemo()
 	}
 	// Raise the shield just as the blade comes down.
 	const float Left = GetWorldTimerManager().GetTimerRemaining(Foe->HitTimer);
-	if (Foe->IsAttacking() && Left > 0.f && Left < 0.2f && !bBlocking)
+	// The foe's blade goes live mid-swing: raise the shield just before it does.
+	const float ToBlade = Foe->BladeLiveFrom - GetWorld()->GetTimeSeconds();
+	if (Foe->IsAttacking() && Left > 0.f && ToBlade < 0.1f && ToBlade > -0.05f && !bBlocking)
 	{
 		UE_LOG(LogUnrealSoulslike, Verbose, TEXT("Clash demo: guard up at %.2f s before the strike"), Left);
 		BlockPressed();
@@ -901,7 +901,18 @@ void ASoulsKnight::RunChainShots()
 			}
 		}
 	}, 8.f, false);
-	GetWorldTimerManager().SetTimer(First, [WeakThis]() { if (WeakThis.IsValid()) { WeakThis->AttackPressed(); } }, 8.5f, false);
+	GetWorldTimerManager().SetTimer(First, [WeakThis]()
+	{
+		if (WeakThis.IsValid())
+		{
+			// Slow motion for -ChainMeasure, so the blade can be sampled finely through the swing.
+			if (FParse::Param(FCommandLine::Get(), TEXT("ChainMeasure")))
+			{
+				GEngine->Exec(WeakThis->GetWorld(), TEXT("slomo 0.2"));
+			}
+			WeakThis->AttackPressed();
+		}
+	}, 8.5f, false);
 	GetWorldTimerManager().SetTimer(Second, [WeakThis]() { if (WeakThis.IsValid()) { WeakThis->AttackPressed(); } }, 8.75f, false);
 	for (int32 Index = 0; Index < 24; ++Index)
 	{
@@ -1189,6 +1200,8 @@ void ASoulsKnight::Interrupt()
 	GetWorldTimerManager().ClearTimer(WindupTimer);
 	GetWorldTimerManager().ClearTimer(StrikeTimer);
 	GetWorldTimerManager().ClearTimer(RecoilTimer);
+	GetWorldTimerManager().ClearTimer(BladeTimer);
+	BladeLiveUntil = -1.f;
 	LungeRemaining = 0.f;
 	SetBlocking(false);
 	if (UAnimInstance* Anim = GetMesh()->GetAnimInstance())
@@ -1248,6 +1261,9 @@ void ASoulsKnight::StartSwing(int32 Index)
 		StartLunge(110.f, HitTime * 0.45f, HitTime * 0.5f);
 	}
 	GetWorldTimerManager().SetTimer(HitTimer, this, &ASoulsKnight::SwingHit, HitTime, false);
+	// The blade cuts through the middle of the swing (UNR-T65): from about a fifth of the way in for
+	// the player (the downstroke after an enemy's slow raise) to just past the strike moment.
+	OpenBlade(IsPlayerControlled() ? Duration * 0.2f : HitTime * 0.62f, HitTime + 0.06f);
 	const TWeakObjectPtr<ASoulsKnight> WeakThis(this);
 	GetWorldTimerManager().SetTimer(WhooshTimer, [WeakThis]()
 	{
@@ -1321,6 +1337,7 @@ void ASoulsKnight::StartHeavy()
 		StartLunge(140.f, HitTime * 0.5f, HitTime * 0.45f);
 	}
 	GetWorldTimerManager().SetTimer(HitTimer, this, &ASoulsKnight::SwingHit, HitTime, false);
+	OpenBlade(IsPlayerControlled() ? Duration * 0.2f : HitTime * 0.62f, HitTime + 0.06f);
 	const TWeakObjectPtr<ASoulsKnight> WeakThis(this);
 	GetWorldTimerManager().SetTimer(WhooshTimer, [WeakThis]()
 	{
@@ -1506,29 +1523,34 @@ void ASoulsKnight::SwingHit()
 	{
 		return; // swinging a torch (UNR-T40)
 	}
-	// The blade has been live since just before this moment and stays live a beat after; then any foe
-	// it brushed past (within a hand's breadth) is struck at the blade's nearest point.
+	// The strike moment itself: the blade window (OpenBlade) does the cutting, mid-swing.
+}
+
+void ASoulsKnight::OpenBlade(float From, float Until)
+{
+	const float Now = GetWorld()->GetTimeSeconds();
+	BladeLiveFrom = Now + FMath::Max(From, 0.f);
+	BladeLiveUntil = Now + FMath::Max(Until, From + 0.05f);
+	bBladeTracked = false;
+	GetWorldTimerManager().SetTimer(BladeTimer, this, &ASoulsKnight::CloseBlade, BladeLiveUntil - Now, false);
+}
+
+void ASoulsKnight::CloseBlade()
+{
+	// Last look at the blade, then anything it brushed past within a hand's breadth is struck at the
+	// blade's nearest point - still inside the swing, before it finishes.
 	SweepBlade();
-	BladeLiveUntil = GetWorld()->GetTimeSeconds() + KBladeTail;
-	const TWeakObjectPtr<ASoulsKnight> WeakThis(this);
-	const bool bHeavy = bHeavySwing;
-	GetWorldTimerManager().SetTimer(WhooshTimer, [WeakThis, bHeavy]()
+	if (bHeavySwing)
 	{
-		if (ASoulsKnight* K = WeakThis.Get())
-		{
-			K->SweepBlade();
-			if (bHeavy)
-			{
-				K->MeleeSweep(K->HeavyDamage, 34.f, 32.f, true);
-			}
-			else
-			{
-				K->MeleeSweep(K->LightDamage, 14.f, 12.f, false);
-			}
-			K->BladeNear.Reset();
-			K->bBladeTracked = false;
-		}
-	}, KBladeTail, false);
+		MeleeSweep(HeavyDamage, 34.f, 32.f, true);
+	}
+	else
+	{
+		MeleeSweep(LightDamage, 14.f, 12.f, false);
+	}
+	BladeNear.Reset();
+	bBladeTracked = false;
+	BladeLiveUntil = -1.f;
 }
 
 bool ASoulsKnight::GetBladeSegment(FVector& OutBase, FVector& OutTip) const
@@ -1739,6 +1761,8 @@ void ASoulsKnight::DodgeToward(const FVector& Direction)
 		GetWorldTimerManager().ClearTimer(WhooshTimer);
 		GetWorldTimerManager().ClearTimer(WindupTimer);
 		GetWorldTimerManager().ClearTimer(StrikeTimer);
+		GetWorldTimerManager().ClearTimer(BladeTimer);
+		BladeLiveUntil = -1.f;
 		LungeRemaining = 0.f;
 		LungeDelay = 0.f;
 	}
@@ -2525,9 +2549,7 @@ void ASoulsKnight::Tick(float DeltaSeconds)
 	}
 	// The blade is live just before and after the strike moment: sweep it against bodies.
 	{
-		const float Left = GetWorldTimerManager().GetTimerRemaining(HitTimer);
-		const bool bLive = IsAttacking() && !ASoulsTorch::GetWielded(this)
-			&& ((Left > 0.f && Left <= KBladeLead) || Now < BladeLiveUntil);
+		const bool bLive = IsAttacking() && !ASoulsTorch::GetWielded(this) && Now >= BladeLiveFrom && Now <= BladeLiveUntil;
 		if (bLive)
 		{
 			SweepBlade();

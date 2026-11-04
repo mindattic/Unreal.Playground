@@ -86,5 +86,9 @@ _Nothing recorded yet._
 | UNR-T63 | 2026-11-04 | feature | open | Ship graveyard round the landing harbour; one rowboat dragged up the beach where you came ashore | — |
 | UNR-T64 | 2026-11-04 | feature | open | High-quality free rigged characters instead of the Unreal mannequin | — |
 | UNR-T65 | 2026-11-04 | fix | open | Hit lands mid-swing as the blade crosses, not after the swing ends | — |
-| UNR-T66 | 2026-11-04 | fix | open | After dying, roll is lost and attacks move to RT: the knight's input mapping is gone on respawn | — |
+| UNR-T66 | 2026-11-04 | fix | closed | After dying, roll is lost and attacks move to RT: the knight's input mapping is gone on respawn | — |
 | UNR-T67 | 2026-11-04 | feature | open | Every free high-quality rigged non-player model becomes an enemy type with its own AI | — |
+| UNR-T68 | 2026-11-04 | feature | open | Operable mech you can climb into: legs and an independently rotating torso | — |
+| UNR-T69 | 2026-11-04 | feature | open | Star fighter parked on the land with full dogfighting flight | — |
+| UNR-T70 | 2026-11-04 | feature | open | Grappling gun: zip to a ledge and launch off it (Arkham-style grapple boost) | — |
+| UNR-T71 | 2026-11-04 | feature | open | Shadow melt: become a shadowy blob that crawls over land and up building walls | — |

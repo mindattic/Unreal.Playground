@@ -517,6 +517,9 @@ private:
 	// The blade (UNR-T57): swept frame to frame against bodies while the strike is live.
 	bool GetBladeSegment(FVector& OutBase, FVector& OutTip) const;
 	void SweepBlade();
+	// Opens the blade for the middle of a swing; the near-miss pass runs as it closes.
+	void OpenBlade(float From, float Until);
+	void CloseBlade();
 	void ResolveStrike(ASoulsKnight* Victim, const FVector& Impact, float Damage, float PoiseDamage, float StanceHit, bool bHeavy);
 	bool TryCritical();
 	void LandCritical();
@@ -588,7 +591,9 @@ private:
 	bool bBladeTracked = false;
 	FVector BladePrevBase = FVector::ZeroVector;
 	FVector BladePrevTip = FVector::ZeroVector;
+	float BladeLiveFrom = -1.f;
 	float BladeLiveUntil = -1.f;
+	FTimerHandle BladeTimer;
 	// Closest the blade came to each foe this swing (gap to its body, and the blade point).
 	TMap<TWeakObjectPtr<AActor>, TPair<float, FVector>> BladeNear;
 	float LastWhistleTime = -10.f;
