@@ -1,71 +1,250 @@
 #include "SoulsHUD.h"
+#include "SoulsEnemy.h"
+#include "SoulsGameMode.h"
 #include "SoulsKnight.h"
+#include "SiteOfGrace.h"
 #include "Engine/Canvas.h"
 #include "Engine/Engine.h"
 #include "Engine/Font.h"
+#include "Engine/World.h"
+#include "EngineUtils.h"
+#include "Fonts/CompositeFont.h"
+#include "Misc/Paths.h"
 
-void ASoulsHUD::Bar(float X, float Y, float Width, float Height, float Fraction, const FLinearColor& Fill)
+namespace
 {
-	DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.6f), X - 2.f, Y - 2.f, Width + 4.f, Height + 4.f);
-	DrawRect(FLinearColor(0.08f, 0.08f, 0.08f, 0.8f), X, Y, Width, Height);
-	DrawRect(Fill, X, Y, Width * FMath::Clamp(Fraction, 0.f, 1.f), Height);
+	const FLinearColor Gold(0.78f, 0.66f, 0.42f);
+	const FLinearColor Parchment(0.86f, 0.82f, 0.72f);
+	const FLinearColor HealthRed(0.58f, 0.06f, 0.05f);
+	const FLinearColor StaminaGreen(0.2f, 0.5f, 0.22f);
+	const FLinearColor TrailYellow(0.85f, 0.7f, 0.3f);
 }
 
-void ASoulsHUD::CentredText(const FString& Text, float Y, const FLinearColor& Color, float Scale)
+void ASoulsHUD::BeginPlay()
 {
-	UFont* Font = GEngine->GetLargeFont();
-	float Width = 0.f, Height = 0.f;
-	GetTextSize(Text, Width, Height, Font, Scale);
-	DrawText(Text, Color, (Canvas->ClipX - Width) * 0.5f, Y, Font, Scale);
+	Super::BeginPlay();
+	// A serif title face (Cinzel, OFL) built at runtime from the staged .ttf; the engine font otherwise.
+	const FString FontFile = FPaths::ProjectContentDir() / TEXT("Souls/Fonts/Cinzel.ttf");
+	if (FPaths::FileExists(FontFile))
+	{
+		TitleFont = NewObject<UFont>(this, TEXT("F_Title"));
+		TitleFont->FontCacheType = EFontCacheType::Runtime;
+		TitleFont->LegacyFontSize = 64;
+		TitleFont->GetMutableInternalCompositeFont().DefaultTypeface.Fonts.Add(
+			FTypefaceEntry(TEXT("Regular"), FontFile, EFontHinting::Default, EFontLoadingPolicy::LazyLoad));
+	}
+}
+
+float ASoulsHUD::Ui() const
+{
+	return Canvas ? Canvas->ClipY / 1080.f : 1.f;
+}
+
+void ASoulsHUD::Bar(float X, float Y, float Width, float Height, float Fraction, float Trail, const FLinearColor& Fill)
+{
+	DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.55f), X - 3.f, Y - 3.f, Width + 6.f, Height + 6.f);
+	DrawRect(FLinearColor(Gold.R, Gold.G, Gold.B, 0.55f), X - 1.f, Y - 1.f, Width + 2.f, 1.f);
+	DrawRect(FLinearColor(Gold.R, Gold.G, Gold.B, 0.35f), X - 1.f, Y + Height, Width + 2.f, 1.f);
+	DrawRect(FLinearColor(0.05f, 0.05f, 0.05f, 0.85f), X, Y, Width, Height);
+	if (Trail > Fraction)
+	{
+		DrawRect(TrailYellow, X + Width * Fraction, Y, Width * (Trail - Fraction), Height);
+	}
+	DrawRect(Fill, X, Y, Width * FMath::Clamp(Fraction, 0.f, 1.f), Height);
+	DrawRect(FLinearColor(1.f, 1.f, 1.f, 0.08f), X, Y, Width * FMath::Clamp(Fraction, 0.f, 1.f), Height * 0.4f);
+}
+
+void ASoulsHUD::Text(const FString& String, float X, float Y, const FLinearColor& Color, float Scale, bool bCentred, UFont* Font)
+{
+	UFont* Use = Font ? Font : GEngine->GetLargeFont();
+	float W = 0.f, H = 0.f;
+	GetTextSize(String, W, H, Use, Scale);
+	const float DrawX = bCentred ? X - W * 0.5f : X;
+	DrawText(String, FLinearColor(0.f, 0.f, 0.f, Color.A * 0.6f), DrawX + 2.f, Y + 2.f, Use, Scale);
+	DrawText(String, Color, DrawX, Y, Use, Scale);
 }
 
 void ASoulsHUD::DrawHUD()
 {
 	Super::DrawHUD();
-	const ASoulsKnight* Knight = Cast<ASoulsKnight>(GetOwningPawn());
-	if (!Canvas || !Knight)
+	if (!Canvas)
 	{
 		return;
 	}
-
-	const float X = 48.f, Y = 40.f;
-	Bar(X, Y, 360.f, 12.f, Knight->GetHealthFraction(), FLinearColor(0.6f, 0.05f, 0.04f));
-	Bar(X, Y + 22.f, 300.f, 8.f, Knight->GetStaminaFraction(), FLinearColor(0.16f, 0.5f, 0.2f));
-	for (int32 i = 0; i < Knight->MaxFlasks; ++i)
-	{
-		const bool bFull = i < Knight->Flasks;
-		DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.6f), X + i * 24.f - 2.f, Y + 42.f, 18.f, 26.f);
-		DrawRect(bFull ? FLinearColor(0.95f, 0.55f, 0.15f) : FLinearColor(0.18f, 0.18f, 0.18f), X + i * 24.f, Y + 44.f, 14.f, 22.f);
-	}
-
 	const float Now = GetWorld()->GetTimeSeconds();
-	if (Knight->GetHealthFraction() <= 0.f)
+	const float Delta = FMath::Clamp(Now - LastDrawTime, 0.f, 0.1f);
+	LastDrawTime = Now;
+	const float S = Ui();
+
+	ASoulsKnight* Knight = Cast<ASoulsKnight>(GetOwningPawn());
+	const ASoulsGameMode* GameMode = GetWorld()->GetAuthGameMode<ASoulsGameMode>();
+
+	if (Knight && !Knight->IsDead())
 	{
-		if (DeathTime < 0.f)
+		// Vitals, top-left. Bars lengthen with the pool, as in the games.
+		const float X = 60.f * S, Y = 50.f * S;
+		const float Health = Knight->GetHealthFraction();
+		PlayerTrail = Health > PlayerTrail ? Health : FMath::FInterpTo(PlayerTrail, Health, Delta, (Now - Knight->GetLastDamagedTime()) > 0.7f ? 3.f : 0.f);
+		StaminaShown = FMath::FInterpTo(StaminaShown, Knight->GetStaminaFraction(), Delta, 18.f);
+		Bar(X, Y, Knight->MaxHealth * 4.2f * S, 13.f * S, Health, PlayerTrail, HealthRed);
+		Bar(X, Y + 26.f * S, Knight->MaxStamina * 3.4f * S, 9.f * S, StaminaShown, StaminaShown, StaminaGreen);
+
+		// Flask, bottom-left.
+		const float FX = 70.f * S, FY = Canvas->ClipY - 150.f * S;
+		DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.45f), FX - 8.f * S, FY - 8.f * S, 76.f * S, 96.f * S);
+		DrawRect(FLinearColor(Gold.R, Gold.G, Gold.B, 0.4f), FX - 8.f * S, FY - 8.f * S, 76.f * S, 1.f);
+		const FLinearColor FlaskColor = Knight->Flasks > 0 ? FLinearColor(0.95f, 0.55f, 0.12f) : FLinearColor(0.2f, 0.2f, 0.2f);
+		DrawRect(FLinearColor(0.75f, 0.72f, 0.65f, 0.9f), FX + 24.f * S, FY + 2.f * S, 12.f * S, 12.f * S);
+		DrawRect(FlaskColor, FX + 14.f * S, FY + 14.f * S, 32.f * S, 46.f * S);
+		DrawRect(FLinearColor(1.f, 1.f, 1.f, 0.18f), FX + 17.f * S, FY + 18.f * S, 6.f * S, 36.f * S);
+		Text(FString::FromInt(Knight->Flasks), FX + 52.f * S, FY + 52.f * S, Parchment, 1.0f * S, false);
+
+		// Interaction prompt.
+		if (const ASiteOfGrace* Grace = Knight->GetNearbyGrace())
 		{
-			DeathTime = Now;
+			const FString Prompt = TEXT("Rest at Site of Grace      [ E ]  /  D-pad Up");
+			DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.55f), Canvas->ClipX * 0.5f - 320.f * S, Canvas->ClipY * 0.74f - 10.f * S, 640.f * S, 50.f * S);
+			Text(Prompt, Canvas->ClipX * 0.5f, Canvas->ClipY * 0.74f, Parchment, 1.1f * S, true);
 		}
-		const float Alpha = FMath::Clamp((Now - DeathTime) / 1.2f, 0.f, 1.f);
-		DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.55f * Alpha), 0.f, Canvas->ClipY * 0.42f, Canvas->ClipX, Canvas->ClipY * 0.16f);
-		CentredText(TEXT("YOU DIED"), Canvas->ClipY * 0.45f, FLinearColor(0.6f, 0.04f, 0.03f, Alpha), 3.f);
-	}
-	else
-	{
-		DeathTime = -1.f;
+
+		DrawLockOn(Knight);
+
+		// Thin health bars over hurt (or targeted) enemies, as in the games.
+		for (TActorIterator<ASoulsEnemy> It(GetWorld()); It; ++It)
+		{
+			const ASoulsEnemy* Enemy = *It;
+			if (Enemy->bIsBoss || Enemy->IsDead() || FVector::Dist(Enemy->GetActorLocation(), Knight->GetActorLocation()) > 3000.f)
+			{
+				continue;
+			}
+			const bool bTargeted = Knight->GetLockTarget() == Enemy;
+			if (!bTargeted && (Enemy->GetHealthFraction() >= 1.f || Now - Enemy->GetLastDamagedTime() > 10.f))
+			{
+				continue;
+			}
+			const FVector Screen = Project(Enemy->GetActorLocation() + FVector(0.f, 0.f, 125.f * Enemy->GetActorScale3D().Z), false);
+			if (Screen.Z <= 0.f)
+			{
+				continue;
+			}
+			const float W = 110.f * S, H = 5.f * S;
+			DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.6f), Screen.X - W * 0.5f - 1.f, Screen.Y - 1.f, W + 2.f, H + 2.f);
+			DrawRect(HealthRed, Screen.X - W * 0.5f, Screen.Y, W * Enemy->GetHealthFraction(), H);
+		}
+
+		if (Now < HintUntil)
+		{
+			const float Alpha = FMath::Clamp((HintUntil - Now) / 3.f, 0.f, 1.f) * 0.9f;
+			static const TCHAR* Lines[] = {
+				TEXT("Light  X / LMB     Heavy  Y / RT / F     Parry  LT / C"),
+				TEXT("Roll  tap B / Shift     Sprint  hold B / Shift     Jump  A / Space"),
+				TEXT("Guard  LB / RMB     Flask  RB / R     Lock on  R3 / MMB / Q"),
+			};
+			float LineY = Canvas->ClipY - 140.f * S;
+			for (const TCHAR* Line : Lines)
+			{
+				Text(Line, Canvas->ClipX - 60.f * S - 760.f * S, LineY, FLinearColor(Parchment.R, Parchment.G, Parchment.B, Alpha), 0.8f * S, false);
+				LineY += 30.f * S;
+			}
+		}
 	}
 
-	if (Now < 20.f)
+	if (GameMode)
 	{
-		static const TCHAR* Lines[] = {
-			TEXT("Light attack  X / LMB      Heavy attack  Y / F"),
-			TEXT("Dodge roll  B / Shift      Jump  A / Space"),
-			TEXT("Block (hold)  LB / RMB     Heal  RB / R"),
-		};
-		float LineY = Canvas->ClipY - 110.f;
-		for (const TCHAR* Line : Lines)
+		// Runes, bottom-right.
+		const FString Runes = FString::Printf(TEXT("%d"), GameMode->Runes);
+		const float RX = Canvas->ClipX - 70.f * S, RY = Canvas->ClipY - 70.f * S;
+		DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.45f), RX - 230.f * S, RY - 8.f * S, 240.f * S, 46.f * S);
+		DrawRect(FLinearColor(Gold.R, Gold.G, Gold.B, 0.5f), RX - 230.f * S, RY - 8.f * S, 240.f * S, 1.f);
+		float W = 0.f, H = 0.f;
+		GetTextSize(Runes, W, H, GEngine->GetLargeFont(), 1.1f * S);
+		Text(Runes, RX - W, RY, Parchment, 1.1f * S, false);
+		DrawRect(Gold, RX - 220.f * S, RY + 8.f * S, 14.f * S, 14.f * S);
+		if (Now - GameMode->LastRunesTime < 2.5f && GameMode->LastRunesGained > 0)
 		{
-			DrawText(Line, FLinearColor(0.85f, 0.82f, 0.72f, FMath::Clamp((20.f - Now) / 3.f, 0.f, 1.f)), 48.f, LineY, GEngine->GetSmallFont(), 1.3f);
-			LineY += 24.f;
+			Text(FString::Printf(TEXT("+%d"), GameMode->LastRunesGained), RX, RY - 40.f * S,
+				FLinearColor(Gold.R, Gold.G, Gold.B, FMath::Clamp(2.5f - (Now - GameMode->LastRunesTime), 0.f, 1.f)), 1.f * S, false);
 		}
+		DrawBoss(Delta);
+		DrawBanner(Now);
 	}
+}
+
+void ASoulsHUD::DrawLockOn(const ASoulsKnight* Knight)
+{
+	const ASoulsKnight* Target = Knight->GetLockTarget();
+	if (!Target)
+	{
+		return;
+	}
+	const FVector Chest = Target->GetActorLocation() + FVector(0.f, 0.f, 25.f * Target->GetActorScale3D().Z);
+	const FVector Screen = Project(Chest, false);
+	if (Screen.Z <= 0.f)
+	{
+		return;
+	}
+	const float S = Ui();
+	const float R = 7.f * S;
+	DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.5f), Screen.X - R - 2.f, Screen.Y - R - 2.f, 2.f * R + 4.f, 2.f * R + 4.f);
+	DrawRect(FLinearColor(1.f, 0.97f, 0.9f, 0.95f), Screen.X - R, Screen.Y - R, 2.f * R, 2.f * R);
+	DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.6f), Screen.X - R * 0.4f, Screen.Y - R * 0.4f, R * 0.8f, R * 0.8f);
+	// Stance, as a thin bar under the mark once it's been dented.
+	const float Stance = Target->GetStanceFraction();
+	if (Stance > 0.02f)
+	{
+		DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.6f), Screen.X - 30.f * S, Screen.Y + 16.f * S, 60.f * S, 4.f * S);
+		DrawRect(TrailYellow, Screen.X - 30.f * S, Screen.Y + 16.f * S, 60.f * S * Stance, 4.f * S);
+	}
+}
+
+void ASoulsHUD::DrawBoss(float DeltaSeconds)
+{
+	const ASoulsGameMode* GameMode = GetWorld()->GetAuthGameMode<ASoulsGameMode>();
+	const ASoulsEnemy* Boss = GameMode ? GameMode->GetActiveBoss() : nullptr;
+	if (!Boss)
+	{
+		BossTrail = 1.f;
+		return;
+	}
+	const float S = Ui();
+	const float Width = Canvas->ClipX * 0.56f;
+	const float X = (Canvas->ClipX - Width) * 0.5f;
+	const float Y = Canvas->ClipY - 120.f * S;
+	const float Health = Boss->GetHealthFraction();
+	const float Since = GetWorld()->GetTimeSeconds() - Boss->GetLastDamagedTime();
+	BossTrail = Health > BossTrail ? Health : FMath::FInterpTo(BossTrail, Health, DeltaSeconds, Since > 0.8f ? 2.5f : 0.f);
+	Text(Boss->DisplayName.ToString(), X, Y - 34.f * S, Parchment, 1.0f * S, false, TitleFont);
+	Bar(X, Y, Width, 14.f * S, Health, BossTrail, HealthRed);
+}
+
+void ASoulsHUD::DrawBanner(float Now)
+{
+	const ASoulsGameMode* GameMode = GetWorld()->GetAuthGameMode<ASoulsGameMode>();
+	const float Age = Now - GameMode->BannerTime;
+	if (Age < 0.f || Age > GameMode->BannerDuration)
+	{
+		return;
+	}
+	const float FadeIn = FMath::Clamp(Age / 0.8f, 0.f, 1.f);
+	const float FadeOut = FMath::Clamp((GameMode->BannerDuration - Age) / 1.f, 0.f, 1.f);
+	const float Alpha = FMath::Min(FadeIn, FadeOut);
+	const float S = Ui();
+	const float CY = Canvas->ClipY * 0.5f;
+
+	// A soft dark band across the screen, denser in the middle.
+	const float BandH = 150.f * S;
+	for (int32 i = 0; i < 12; ++i)
+	{
+		const float T = i / 11.f;
+		const float RowAlpha = (1.f - FMath::Abs(T - 0.5f) * 2.f);
+		DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.62f * Alpha * RowAlpha), 0.f, CY - BandH * 0.5f + T * BandH, Canvas->ClipX, BandH / 12.f + 1.f);
+	}
+	// YOU DIED creeps larger the way it does in the games.
+	const float Grow = 1.f + 0.06f * FMath::Clamp(Age / GameMode->BannerDuration, 0.f, 1.f);
+	const FLinearColor Color(GameMode->BannerColor.R, GameMode->BannerColor.G, GameMode->BannerColor.B, Alpha);
+	UFont* Font = TitleFont ? TitleFont.Get() : GEngine->GetLargeFont();
+	const float Scale = (TitleFont ? 1.f : 3.2f) * S * Grow;
+	float W = 0.f, H = 0.f;
+	GetTextSize(GameMode->BannerText.ToString(), W, H, Font, Scale);
+	DrawText(GameMode->BannerText.ToString(), Color, Canvas->ClipX * 0.5f - W * 0.5f, CY - H * 0.5f, Font, Scale);
 }

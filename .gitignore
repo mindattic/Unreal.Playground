@@ -29,3 +29,6 @@ Content/__ExternalActors__/
 Content/__ExternalObjects__/
 Content/Characters/CharacterAssets.json
 Content/Environment/EnvironmentAssets.json
+
+# Runtime font staged by tools/build_souls_character.py from SourceArt/Fonts
+Content/Souls/Fonts/

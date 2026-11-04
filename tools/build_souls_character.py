@@ -23,7 +23,8 @@ UAL2_GLB = os.path.join(PROJECT, "SourceArt", "Animations", "UAL", "UAL2", "UAL2
 UAL1_CLIPS = {"Roll": "A_Roll", "Sword_Idle": "A_SwordIdle", "Hit_Chest": "A_HitChest", "Death01": "A_Death",
               "Sword_Attack": "A_SwordAttack"}
 UAL2_CLIPS = {"Sword_Regular_A": "A_SwordA", "Sword_Regular_B": "A_SwordB", "Sword_Regular_C": "A_SwordC",
-              "Sword_Block": "A_Block", "Consume": "A_Consume", "Idle_Shield_Break": "A_GuardBreak"}
+              "Sword_Block": "A_Block", "Consume": "A_Consume", "Idle_Shield_Break": "A_GuardBreak",
+              "Shield_OneShot": "A_Parry", "Hit_Knockback": "A_Knockback"}
 
 
 def log(msg):
@@ -194,9 +195,11 @@ def dump_blueprint_defaults():
 
 
 WEAPONS_SRC = os.path.join(PROJECT, "SourceArt", "Weapons")
-MONTAGES = {"A_SwordA": "AM_SwordA", "A_SwordB": "AM_SwordB", "A_SwordC": "AM_SwordC",
-            "A_SwordAttack": "AM_SwordHeavy", "A_Roll": "AM_Roll", "A_Block": "AM_Block",
-            "A_Consume": "AM_Heal", "A_HitChest": "AM_Hit"}
+# (animation, montage) pairs; one animation can back several montages.
+MONTAGES = [("A_SwordA", "AM_SwordA"), ("A_SwordB", "AM_SwordB"), ("A_SwordC", "AM_SwordC"),
+            ("A_SwordAttack", "AM_SwordHeavy"), ("A_SwordAttack", "AM_Critical"), ("A_Roll", "AM_Roll"),
+            ("A_Block", "AM_Block"), ("A_Consume", "AM_Heal"), ("A_HitChest", "AM_Hit"),
+            ("A_Parry", "AM_Parry"), ("A_Knockback", "AM_Stagger"), ("A_GuardBreak", "AM_GuardBreak")]
 
 
 def import_texture(path, dest, normal=False):
@@ -274,7 +277,7 @@ def build_montages():
     dest = SOULS + "/Montages"
     ensure_dir(dest)
     out = {}
-    for anim_name, montage_name in MONTAGES.items():
+    for anim_name, montage_name in MONTAGES:
         anim = eal.load_asset("%s/Anims/%s" % (SOULS, anim_name))
         if anim is None:
             warn("no anim " + anim_name)
@@ -314,13 +317,177 @@ def place(component, mesh, spec):
     component.set_editor_property("relative_scale3d", unreal.Vector(spec["scale"], spec["scale"], spec["scale"]))
 
 
-def build_blueprints(montages, weapons):
-    knight_class = unreal.load_class(None, "/Script/UnrealSoulslike.SoulsKnight")
-    bp = duplicate_blueprint("/Game/Variant_Combat/Blueprints/BP_CombatCharacter", "BP_SoulsKnight", knight_class)
+MEL = unreal.MaterialEditingLibrary
+AUDIO_SRC = os.path.join(PROJECT, "SourceArt", "Audio")
+FONT_SRC = os.path.join(PROJECT, "SourceArt", "Fonts", "Cinzel.ttf")
+
+
+def new_material(folder, name):
+    ensure_dir(folder)
+    path = "%s/%s" % (folder, name)
+    mat = eal.load_asset(path) if eal.does_asset_exist(path) else \
+        tools.create_asset(name, folder, unreal.Material, unreal.MaterialFactoryNew())
+    MEL.delete_all_material_expressions(mat)
+    return mat
+
+
+def const3(mat, rgb, x, y):
+    c = MEL.create_material_expression(mat, unreal.MaterialExpressionConstant3Vector, x, y)
+    c.set_editor_property("constant", unreal.LinearColor(rgb[0], rgb[1], rgb[2], 1.0))
+    return c
+
+
+def const1(mat, value, x, y):
+    c = MEL.create_material_expression(mat, unreal.MaterialExpressionConstant, x, y)
+    c.set_editor_property("r", value)
+    return c
+
+
+def finish(mat):
+    MEL.recompile_material(mat)
+    eal.save_loaded_asset(mat)
+    return mat
+
+
+def armour_material(name, base, metallic, roughness, ember=None):
+    """Forged-metal armour for the island's knights; ember adds a fresnel glow (boss phase two)."""
+    mat = new_material(SOULS + "/Materials", name)
+    # Grime: a large-scale noise darkens and roughens the metal so it doesn't read as chrome.
+    noise = MEL.create_material_expression(mat, unreal.MaterialExpressionNoise, -900, 200)
+    noise.set_editor_property("scale", 0.08)
+    noise.set_editor_property("levels", 3)
+    noise.set_editor_property("output_min", 0.0)
+    noise.set_editor_property("output_max", 1.0)
+    dark = const3(mat, [v * 0.45 for v in base], -900, -100)
+    bright = const3(mat, base, -900, 0)
+    lerp = MEL.create_material_expression(mat, unreal.MaterialExpressionLinearInterpolate, -600, 0)
+    MEL.connect_material_expressions(dark, "", lerp, "A")
+    MEL.connect_material_expressions(bright, "", lerp, "B")
+    MEL.connect_material_expressions(noise, "", lerp, "Alpha")
+    MEL.connect_material_property(lerp, "", unreal.MaterialProperty.MP_BASE_COLOR)
+    MEL.connect_material_property(const1(mat, metallic, -600, 200), "", unreal.MaterialProperty.MP_METALLIC)
+    rough = MEL.create_material_expression(mat, unreal.MaterialExpressionLinearInterpolate, -600, 300)
+    MEL.connect_material_expressions(const1(mat, roughness + 0.25, -900, 400), "", rough, "A")
+    MEL.connect_material_expressions(const1(mat, roughness, -900, 480), "", rough, "B")
+    MEL.connect_material_expressions(noise, "", rough, "Alpha")
+    MEL.connect_material_property(rough, "", unreal.MaterialProperty.MP_ROUGHNESS)
+    if ember:
+        fres = MEL.create_material_expression(mat, unreal.MaterialExpressionFresnel, -900, 600)
+        fres.set_editor_property("exponent", 3.0)
+        mul = MEL.create_material_expression(mat, unreal.MaterialExpressionMultiply, -600, 600)
+        MEL.connect_material_expressions(fres, "", mul, "A")
+        MEL.connect_material_expressions(const3(mat, ember, -900, 700), "", mul, "B")
+        MEL.connect_material_property(mul, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+    return finish(mat)
+
+
+def build_armour_materials():
+    out = {
+        "enemy": armour_material("M_HollowIron", (0.05, 0.047, 0.043), 0.85, 0.42),
+        "boss": armour_material("M_WardenGold", (0.62, 0.45, 0.2), 1.0, 0.3),
+        "boss2": armour_material("M_WardenEmber", (0.55, 0.36, 0.15), 1.0, 0.34, ember=(6.0, 1.4, 0.15)),
+    }
+    log("armour materials: %s" % sorted(out))
+    return out
+
+
+def build_fx_materials():
+    folder = SOULS + "/FX"
+    glow = new_material(folder, "M_GraceGlow")
+    glow.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_UNLIT)
+    MEL.connect_material_property(const3(glow, (12.0, 7.5, 2.4), -400, 0), "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+    finish(glow)
+
+    beam = new_material(folder, "M_GraceBeam")
+    beam.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_UNLIT)
+    beam.set_editor_property("blend_mode", unreal.BlendMode.BLEND_ADDITIVE)
+    beam.set_editor_property("two_sided", True)
+    # Brightest along the axis, fading out at the silhouette and toward the top.
+    fres = MEL.create_material_expression(beam, unreal.MaterialExpressionFresnel, -1000, 0)
+    fres.set_editor_property("exponent", 1.5)
+    inv = MEL.create_material_expression(beam, unreal.MaterialExpressionOneMinus, -800, 0)
+    MEL.connect_material_expressions(fres, "", inv, "")
+    uv = MEL.create_material_expression(beam, unreal.MaterialExpressionTextureCoordinate, -1000, 200)
+    mask = MEL.create_material_expression(beam, unreal.MaterialExpressionComponentMask, -800, 200)
+    mask.set_editor_property("r", False)
+    mask.set_editor_property("g", True)
+    MEL.connect_material_expressions(uv, "", mask, "")
+    power = MEL.create_material_expression(beam, unreal.MaterialExpressionPower, -600, 200)
+    MEL.connect_material_expressions(mask, "", power, "Base")
+    MEL.connect_material_expressions(const1(beam, 2.0, -800, 320), "", power, "Exp")
+    mul = MEL.create_material_expression(beam, unreal.MaterialExpressionMultiply, -400, 0)
+    MEL.connect_material_expressions(inv, "", mul, "A")
+    MEL.connect_material_expressions(power, "", mul, "B")
+    mul2 = MEL.create_material_expression(beam, unreal.MaterialExpressionMultiply, -200, 0)
+    MEL.connect_material_expressions(mul, "", mul2, "A")
+    MEL.connect_material_expressions(const3(beam, (1.6, 1.0, 0.35), -400, 200), "", mul2, "B")
+    MEL.connect_material_property(mul2, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+    finish(beam)
+    log("fx materials: M_GraceGlow, M_GraceBeam")
+
+
+def import_audio():
+    """SourceArt/Audio/*.wav -> /Game/Souls/Audio, grouped by role (name minus the _NN suffix)."""
+    dest = SOULS + "/Audio"
+    ensure_dir(dest)
+    sounds = {}
+    if not os.path.isdir(AUDIO_SRC):
+        warn("no SourceArt/Audio yet; the game runs silent")
+        return sounds
+    att_path = dest + "/ATT_World"
+    att = eal.load_asset(att_path) if eal.does_asset_exist(att_path) else \
+        tools.create_asset("ATT_World", dest, unreal.SoundAttenuation, unreal.SoundAttenuationFactory())
+    settings = att.get_editor_property("attenuation")
+    settings.set_editor_property("falloff_distance", 3200.0)
+    settings.set_editor_property("attenuation_shape_extents", unreal.Vector(350.0, 0.0, 0.0))
+    att.set_editor_property("attenuation", settings)
+    eal.save_loaded_asset(att)
+    for name in sorted(os.listdir(AUDIO_SRC)):
+        stem, ext = os.path.splitext(name)
+        if ext.lower() != ".wav":
+            continue
+        asset_path = "%s/%s" % (dest, stem)
+        if not eal.does_asset_exist(asset_path):
+            import_file_keep(os.path.join(AUDIO_SRC, name), dest)
+        wave = eal.load_asset(asset_path)
+        if wave is None:
+            warn("audio import failed: " + name)
+            continue
+        looping = stem.endswith("_loop")
+        wave.set_editor_property("looping", looping)
+        if not looping and not stem.startswith(("ui_", "grace_", "enemy_felled", "boss_roar", "music_")):
+            wave.set_editor_property("attenuation_settings", att)
+        eal.save_loaded_asset(wave)
+        role = stem
+        parts = stem.rsplit("_", 1)
+        if len(parts) == 2 and parts[1].isdigit():
+            role = parts[0]
+        sounds.setdefault(role, []).append(wave)
+    log("audio roles: %s" % ", ".join("%s(%d)" % (k, len(v)) for k, v in sorted(sounds.items())))
+    return sounds
+
+
+def stage_title_font():
+    """The HUD builds its serif font at runtime from Content/Souls/Fonts/Cinzel.ttf (importing a
+    .ttf needs Slate, which the commandlet doesn't run); DefaultGame.ini stages that folder."""
+    import shutil
+    dest_dir = os.path.join(PROJECT, "Content", "Souls", "Fonts")
+    os.makedirs(dest_dir, exist_ok=True)
+    shutil.copyfile(FONT_SRC, os.path.join(dest_dir, "Cinzel.ttf"))
+    log("title font staged")
+
+
+def first(sounds, role):
+    waves = sounds.get(role) or []
+    return waves[0] if waves else None
+
+
+def configure_knight(bp, montages, weapons, sounds, body_material=None):
     cdo = unreal.get_default_object(bp.generated_class())
     cdo.set_editor_property("SwordComboMontages", [montages[n] for n in ("AM_SwordA", "AM_SwordB", "AM_SwordC") if n in montages])
     for prop, name in (("HeavyAttackMontage", "AM_SwordHeavy"), ("RollMontage", "AM_Roll"), ("BlockMontage", "AM_Block"),
-                       ("HealMontage", "AM_Heal"), ("HitMontage", "AM_Hit")):
+                       ("HealMontage", "AM_Heal"), ("HitMontage", "AM_Hit"), ("ParryMontage", "AM_Parry"),
+                       ("StaggerMontage", "AM_Stagger"), ("GuardBreakMontage", "AM_GuardBreak"), ("CriticalMontage", "AM_Critical")):
         if name in montages:
             cdo.set_editor_property(prop, montages[name])
     cdo.get_editor_property("mesh").set_editor_property("skeletal_mesh_asset", eal.load_asset(MANNY_MESH))
@@ -328,14 +495,67 @@ def build_blueprints(montages, weapons):
         place(cdo.get_editor_property("Sword"), weapons["sword"], SWORD_TRANSFORM)
     if "shield" in weapons:
         place(cdo.get_editor_property("Shield"), weapons["shield"], SHIELD_TRANSFORM)
+    if body_material is not None:
+        cdo.set_editor_property("BodyMaterial", body_material)
+    for prop, role in (("SwingSounds", "sword_swing"), ("HitSounds", "sword_hit_flesh"), ("BlockSounds", "shield_block"),
+                       ("HurtSounds", "armor_hurt"), ("FootstepSounds", "footstep_grass")):
+        cdo.set_editor_property(prop, sounds.get(role, []))
+    for prop, role in (("ParrySound", "parry"), ("CriticalSound", "riposte"), ("RollSound", "roll"),
+                       ("DrinkSound", "flask_drink"), ("DeathSound", "death")):
+        wave = first(sounds, role)
+        if wave is not None:
+            cdo.set_editor_property(prop, wave)
     unreal.BlueprintEditorLibrary.compile_blueprint(bp)
     eal.save_loaded_asset(bp)
-    log("BP_SoulsKnight ready (parent %s)" % knight_class.get_name())
+    return cdo
 
-    gm = duplicate_blueprint("/Game/Variant_Combat/Blueprints/BP_CombatGameMode", "BP_SoulsGameMode")
+
+def build_blueprints(montages, weapons, armour, sounds):
+    script = lambda name: unreal.load_class(None, "/Script/UnrealSoulslike." + name)
+    template = "/Game/Variant_Combat/Blueprints/BP_CombatCharacter"
+
+    knight = duplicate_blueprint(template, "BP_SoulsKnight", script("SoulsKnight"))
+    configure_knight(knight, montages, weapons, sounds)
+    log("BP_SoulsKnight ready")
+
+    enemy = duplicate_blueprint(template, "BP_SoulsEnemy", script("SoulsEnemy"))
+    cdo = configure_knight(enemy, montages, weapons, sounds, armour.get("enemy"))
+    cdo.set_editor_property("ai_controller_class", script("SoulsEnemyController"))
+    cdo.set_editor_property("auto_possess_ai", unreal.AutoPossessAI.PLACED_IN_WORLD_OR_SPAWNED)
+    cdo.set_editor_property("tags", ["Enemy"])
+    unreal.BlueprintEditorLibrary.compile_blueprint(enemy)
+    eal.save_loaded_asset(enemy)
+    log("BP_SoulsEnemy ready")
+
+    boss = duplicate_blueprint(template, "BP_SoulsBoss", script("SoulsBoss"))
+    cdo = configure_knight(boss, montages, weapons, sounds, armour.get("boss"))
+    cdo.set_editor_property("PhaseTwoMaterial", armour.get("boss2"))
+    cdo.set_editor_property("ai_controller_class", script("SoulsEnemyController"))
+    cdo.set_editor_property("auto_possess_ai", unreal.AutoPossessAI.PLACED_IN_WORLD_OR_SPAWNED)
+    cdo.set_editor_property("tags", ["Enemy", "Boss"])
+    unreal.BlueprintEditorLibrary.compile_blueprint(boss)
+    eal.save_loaded_asset(boss)
+    log("BP_SoulsBoss ready")
+
+    pc = duplicate_blueprint("/Game/Variant_Combat/Blueprints/BP_CombatPlayerController", "BP_SoulsPlayerController")
+    pc_cdo = unreal.get_default_object(pc.generated_class())
+    pc_cdo.set_editor_property("CharacterClass", knight.generated_class())
+    unreal.BlueprintEditorLibrary.compile_blueprint(pc)
+    eal.save_loaded_asset(pc)
+    log("BP_SoulsPlayerController ready")
+
+    gm = duplicate_blueprint("/Game/Variant_Combat/Blueprints/BP_CombatGameMode", "BP_SoulsGameMode", script("SoulsGameMode"))
     gm_cdo = unreal.get_default_object(gm.generated_class())
-    gm_cdo.set_editor_property("default_pawn_class", bp.generated_class())
-    gm_cdo.set_editor_property("hud_class", unreal.load_class(None, "/Script/UnrealSoulslike.SoulsHUD"))
+    gm_cdo.set_editor_property("default_pawn_class", knight.generated_class())
+    gm_cdo.set_editor_property("player_controller_class", pc.generated_class())
+    gm_cdo.set_editor_property("hud_class", script("SoulsHUD"))
+    gm_cdo.set_editor_property("EnemyClass", enemy.generated_class())
+    gm_cdo.set_editor_property("BossClass", boss.generated_class())
+    for prop, role in (("GraceSound", "grace_rest"), ("FelledSound", "enemy_felled"), ("DiedSound", "death"),
+                       ("BossMusic", "music_boss_loop"), ("AmbientLoop", "ambient_wind_sea_loop"), ("BossRoar", "boss_roar")):
+        wave = first(sounds, role)
+        if wave is not None:
+            gm_cdo.set_editor_property(prop, wave)
     unreal.BlueprintEditorLibrary.compile_blueprint(gm)
     eal.save_loaded_asset(gm)
     log("BP_SoulsGameMode ready")
@@ -420,7 +640,11 @@ def main():
 
     montages = build_montages()
     weapons = build_weapons()
-    build_blueprints(montages, weapons)
+    build_fx_materials()
+    armour = build_armour_materials()
+    sounds = import_audio()
+    stage_title_font()
+    build_blueprints(montages, weapons, armour, sounds)
 
     eal.save_directory(SOULS, only_if_is_dirty=True, recursive=True)
     log("problems: %d" % len(problems))
