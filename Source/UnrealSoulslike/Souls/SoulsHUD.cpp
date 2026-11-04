@@ -18,7 +18,6 @@ namespace
 	const FLinearColor HudGold(0.78f, 0.66f, 0.42f);
 	const FLinearColor HudParchment(0.86f, 0.82f, 0.72f);
 	const FLinearColor HudHealthRed(0.58f, 0.06f, 0.05f);
-	const FLinearColor HudStaminaGreen(0.2f, 0.5f, 0.22f);
 	const FLinearColor HudTrailYellow(0.85f, 0.7f, 0.3f);
 }
 
@@ -87,9 +86,7 @@ void ASoulsHUD::DrawHUD()
 		const float X = 60.f * S, Y = 50.f * S;
 		const float Health = Knight->GetHealthFraction();
 		PlayerTrail = Health > PlayerTrail ? Health : FMath::FInterpTo(PlayerTrail, Health, Delta, (Now - Knight->GetLastDamagedTime()) > 0.7f ? 3.f : 0.f);
-		StaminaShown = FMath::FInterpTo(StaminaShown, Knight->GetStaminaFraction(), Delta, 18.f);
 		Bar(X, Y, Knight->MaxHealth * 4.2f * S, 13.f * S, Health, PlayerTrail, HudHealthRed);
-		Bar(X, Y + 26.f * S, Knight->MaxStamina * 3.4f * S, 9.f * S, StaminaShown, StaminaShown, HudStaminaGreen);
 
 		// Flask, bottom-left.
 		const float FX = 70.f * S, FY = Canvas->ClipY - 150.f * S;

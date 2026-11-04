@@ -21,7 +21,7 @@ Warden in the stone circle and Morrigan of the Mire, a shade who melts into shad
   CC0 animation:
   - a three-swing combo and a heavy attack; each swing steps in toward the foe ahead
   - a roll with i-frames, and a sprint
-  - a guard that breaks when stamina runs out
+  - no stamina: every move is always available
   - a timed parry, then a riposte, and backstabs
   - poise interrupts and stance breaks
   - hitstop and camera kick on hits
@@ -39,8 +39,8 @@ Warden in the stone circle and Morrigan of the Mire, a shade who melts into shad
   creep up behind an enemy that hasn't noticed you and backstab it. Walking (not jogging) works
   too if you stay out of its sight. Unaware enemies patrol around their posts. When two meet, they
   stop to talk, nodding or shaking their heads, then go their separate ways.
-- **Swimming and exploration.** You can swim the sea and the marsh pools, at a cost in stamina.
-  You only drown when exhausted. Golden Seeds (+1 flask), a Crimson Tear (stronger flasks) and
+- **Swimming and exploration.** You can swim the sea and the marsh pools as long as you like.
+  Golden Seeds (+1 flask), a Crimson Tear (stronger flasks) and
   rune purses wait on grapple ledges, in the marsh and on the islet.
 - **Elden Ring trappings.**
   - Sites of Grace: rest to refill, which also brings the enemies back.

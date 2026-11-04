@@ -991,13 +991,7 @@ void ASoulsKnight::SetupPlayerInputComponent(UInputComponent* PlayerInputCompone
 
 bool ASoulsKnight::SpendStamina(float Cost)
 {
-	if (Stamina <= 0.f)
-	{
-		return false;
-	}
-	// Souls rule: any stamina left lets the action through, even if it drains below zero.
-	Stamina -= Cost;
-	StaminaIdleTime = 0.f;
+	// No stamina (UNR-T59): every move is always available.
 	return true;
 }
 
@@ -1970,18 +1964,10 @@ ASoulsKnight::EMeleeResult ASoulsKnight::ReceiveMelee(ASoulsKnight* Attacker, fl
 	{
 		PlayRandomSound(BlockSounds, 0.9f);
 		ReceivedDamage(0.f, ImpactPoint, -ToAttacker);
-		Stamina -= InPoiseDamage * 1.4f;
-		StaminaIdleTime = 0.f;
 		LoseHealth(Damage * BlockDamageFraction, Attacker);
 		GuardImpact(ToAttacker, bHeavy);
 		++ClashBlocks;
 		UE_LOG(LogUnrealSoulslike, Log, TEXT("Clash: %s blocked %s (%s)"), *GetName(), *Attacker->GetName(), bHeavy ? TEXT("heavy") : TEXT("light"));
-		if (!IsDead() && Stamina <= 0.f)
-		{
-			// Guard broken: the shield is knocked aside and the knight reels, open to a riposte.
-			Interrupt();
-			PlayAction(EKnightAction::Parried, GuardBreakMontage ? GuardBreakMontage.Get() : HitMontage.Get(), 1.6f);
-		}
 		Hitstop(bHeavy ? 0.1f : 0.08f);
 		KickCamera(bHeavy ? 0.6f : 0.4f);
 		return EMeleeResult::Blocked;
@@ -2467,15 +2453,9 @@ void ASoulsKnight::Tick(float DeltaSeconds)
 		GrappleCandidate = (IsBusy() || IsSwimming()) ? nullptr : FindGrappleTarget();
 	}
 
-	if (!IsBusy() && !bSprinting)
-	{
-		StaminaIdleTime += DeltaSeconds;
-		if (StaminaIdleTime >= StaminaRegenDelay)
-		{
-			const float Rate = bBlocking ? StaminaRegenPerSecond * 0.35f : StaminaRegenPerSecond;
-			Stamina = FMath::Min(MaxStamina, Stamina + Rate * DeltaSeconds);
-		}
-	}
+	// No stamina (UNR-T59): whatever drained it this frame (swimming, the Shade's puddles), it's full.
+	Stamina = MaxStamina;
+	StaminaIdleTime = 0.f;
 
 	if (Now - LastDamagedTime > KPoiseRecoverDelay)
 	{

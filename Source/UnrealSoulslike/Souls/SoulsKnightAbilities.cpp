@@ -574,14 +574,6 @@ void ASoulsKnight::TickSwimming(float DeltaSeconds)
 			const FName Section = Want->GetSectionName(0);
 			Anim->Montage_SetNextSection(Section, Section, Want);
 		}
-		// Swimming tires you; out of stamina far from shore, the sea takes you.
-		Stamina -= (bMoving ? SwimStaminaPerSecond : SwimStaminaPerSecond * 0.25f) * DeltaSeconds;
-		StaminaIdleTime = 0.f;
-		if (Stamina <= 0.f)
-		{
-			Stamina = 0.f;
-			LoseHealth(DrownDamagePerSecond * DeltaSeconds, nullptr);
-		}
 	}
 	else if (bWasSwimming && Anim)
 	{
