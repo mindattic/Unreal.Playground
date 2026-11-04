@@ -563,6 +563,9 @@ def build_terrain_material(tex, mask_tex, biome_tex, grass_types):
     base = blend("color", grass_c, trail_c, sand_c, rock_color, wet)
     # Gentle large-scale brightness variation breaks up any remaining repetition.
     base = g.mul(base, g.lerp(0.82, 1.1, macro))
+    base, fire_glow = fire_char(g, base, wp, strength=0.9, glow=0.8)  # scorched ground after a field fire
+    if fire_glow is not None:
+        g.out(fire_glow, E.MaterialProperty.MP_EMISSIVE_COLOR)
     normal = blend("normal", grass["normal"], trail["normal"], sand["normal"], rock["normal"])
     rough = blend("rough", g.maxx(grass["rough"], 0.82), g.maxx((trail["arm"], "G"), 0.65), (sand["arm"], "G"), (rock["arm"], "G"),
                   g.mul((sand["arm"], "G"), 0.45))
@@ -679,17 +682,21 @@ def build_grass_material(name="M_GrassBlades"):
     patch = (g.tex(GRASS_NOISE[0], g.div(wp_xy, (9000.0, 9000.0)), "masks"), "B")
     tip_c = g.lerp(tip_c, dry_c, g.mul(g.smooth(0.56, 0.74, patch), 0.6))
     color = g.lerp(root_c, tip_c, g.op(E.MaterialExpressionPower, {"Base": tip, "Exp": 0.7}))
-    g.out(color, E.MaterialProperty.MP_BASE_COLOR)
-    g.out(g.lerp(0.75, 0.5, tip), E.MaterialProperty.MP_ROUGHNESS)
-    g.out(0.25, E.MaterialProperty.MP_SPECULAR)
-    g.out(g.mul(color, 0.6), E.MaterialProperty.MP_SUBSURFACE_COLOR)
-    g.out(g.lerp(0.35, 1.0, tip), E.MaterialProperty.MP_AMBIENT_OCCLUSION)
     # Wind: gusts travel across the island, blades sway by tip^2.
     t = g.time()
     phase = g.add(g.mul(t, 1.7), g.add(g.div(g.mask(wp, r=True), 420.0), g.div(g.mask(wp, g=True), 650.0)))
     gust = g.add(g.mul(g.sine(phase), 0.5), g.mul(g.sine(g.add(g.mul(phase, 2.3), g.mul(rnd, 6.0))), 0.25))
     sway = g.mul(g.mul(g.mul(tip, tip), g.add(gust, 0.6)), sway_cm)
-    g.out(g.append(g.append(sway, g.mul(sway, 0.35)), 0.0), E.MaterialProperty.MP_WORLD_POSITION_OFFSET)
+    wpo = g.append(g.append(sway, g.mul(sway, 0.35)), 0.0)
+    color, fire_glow, wpo = fire_grass(g, color, wp, tip, wpo)
+    g.out(color, E.MaterialProperty.MP_BASE_COLOR)
+    if fire_glow is not None:
+        g.out(fire_glow, E.MaterialProperty.MP_EMISSIVE_COLOR)
+    g.out(g.lerp(0.75, 0.5, tip), E.MaterialProperty.MP_ROUGHNESS)
+    g.out(0.25, E.MaterialProperty.MP_SPECULAR)
+    g.out(g.mul(color, 0.6), E.MaterialProperty.MP_SUBSURFACE_COLOR)
+    g.out(g.lerp(0.35, 1.0, tip), E.MaterialProperty.MP_AMBIENT_OCCLUSION)
+    g.out(wpo, E.MaterialProperty.MP_WORLD_POSITION_OFFSET)
     finish_material(mat)
     return mat
 
@@ -730,7 +737,10 @@ def build_prop_master(tex):
     moss_w = g.smooth(0.45, 0.8, g.add(vnz, g.mul(g.sub(noise, 0.5), 0.7)))
     moss_w = g.mul(moss_w, sparam("Moss", 0.6))
     color = g.lerp(color, g.mul(moss_tex, (0.75, 0.82, 0.62)), moss_w)
+    color, fire_glow = fire_char(g, color, wp, strength=0.85, glow=0.6)  # soot on trunks and stones
     g.out(color, E.MaterialProperty.MP_BASE_COLOR)
+    if fire_glow is not None:
+        g.out(fire_glow, E.MaterialProperty.MP_EMISSIVE_COLOR)
     g.out(g.lerp((nrm, "RGB"), (0.0, 0.0, 1.0), g.mul(moss_w, 0.6)), E.MaterialProperty.MP_NORMAL)
     g.out(g.lerp(rough, 0.9, moss_w), E.MaterialProperty.MP_ROUGHNESS)
     g.out(ao, E.MaterialProperty.MP_AMBIENT_OCCLUSION)
@@ -796,13 +806,16 @@ def build_foliage_master(tex):
     alpha = tparam("Alpha", tex["seaside_rock"]["arm"], "masks")
     tint = g.new(E.MaterialExpressionVectorParameter, parameter_name="Tint", default_value=unreal.LinearColor(1, 1, 1, 1))
     color = g.mul((base, "RGB"), (tint, "RGB"))
+    wp = g.world()
+    color, fire_glow = fire_char(g, color, wp)
     g.out(color, E.MaterialProperty.MP_BASE_COLOR)
+    if fire_glow is not None:
+        g.out(fire_glow, E.MaterialProperty.MP_EMISSIVE_COLOR)
     g.out((nrm, "RGB"), E.MaterialProperty.MP_NORMAL)
     g.out(g.maxx((arm, "G"), 0.55), E.MaterialProperty.MP_ROUGHNESS)
     g.out(g.mul(color, 0.5), E.MaterialProperty.MP_SUBSURFACE_COLOR)
-    g.out((alpha, "R"), E.MaterialProperty.MP_OPACITY_MASK)
+    g.out(fire_dissolve(g, (alpha, "R"), uv, wp), E.MaterialProperty.MP_OPACITY_MASK)
     # Light wind sway growing with height above the plant's pivot.
-    wp = g.world()
     above = g.sat(g.div(g.sub(g.mask(wp, b=True), g.mask(g.new(E.MaterialExpressionObjectPositionWS), b=True)), 600.0))
     phase = g.add(g.mul(g.time(), 1.3), g.div(g.add(g.mask(wp, r=True), g.mask(wp, g=True)), 380.0))
     sway = g.mul(g.mul(g.sine(phase), above), 6.0)
@@ -999,7 +1012,7 @@ def build_sky():
     sun = spawn(unreal.DirectionalLight, (0, 0, 5000), unreal.Rotator(roll=0, pitch=-19.0, yaw=150.0), "Sun", folder)
     lc = sun.get_editor_property("light_component")
     lc.set_mobility(unreal.ComponentMobility.MOVABLE)
-    setp(lc, "intensity", 10.0)
+    setp(lc, "intensity", 4.0)  # the low sun as built; at runtime IslandDayNight drives it (UNR-T39)
     setp(lc, "use_temperature", True)
     setp(lc, "temperature", 5700.0)
     setp(lc, "atmosphere_sun_light", True)
@@ -1091,11 +1104,52 @@ def build_sky():
     ov("scene_fringe_intensity", 0.25)
     ov("lumen_scene_lighting_quality", 1.0)
     ppv.set_editor_property("settings", s)
+    place_day_night()
     return sun
 
 
 EXPOSURE_BIAS = 0.0  # manual exposure compensation (EV)
 CLOUDS = {}  # MI_IslandClouds overrides for m_SimpleVolumetricCloud; empty = engine default clouds (a denser test lost them)
+
+
+# ----------------------------------------------------------------------------------------------
+# Day/night cycle (UNR-T39): the IslandDayNight actor turns the sun, moon and stars at runtime
+# ----------------------------------------------------------------------------------------------
+
+STAR_DISTANCE = 8000000.0  # cm; must match AIslandDayNight::StarDistance
+
+
+def build_star_material():
+    """Unlit pin-prick stars: IslandDayNight drives Brightness; each star gets its own brightness and tint, and
+    they fade out over the lowest few degrees above the horizon."""
+    mat, g = new_material("M_IslandStars", ROOT + "/Materials")
+    setp(mat, "shading_model", E.MaterialShadingModel.MSM_UNLIT)
+    setp(mat, "used_with_instanced_static_meshes", True)
+    bright = g.new(E.MaterialExpressionScalarParameter, parameter_name="Brightness", default_value=0.0)
+    rnd = g.new(E.MaterialExpressionPerInstanceRandom)
+    tint = g.lerp((0.72, 0.8, 1.0), (1.0, 0.9, 0.78), rnd)
+    lum = g.mul(g.lerp(0.12, 1.0, g.mul(rnd, rnd)), bright)
+    horizon = g.sat(g.div(g.mask(g.world(), b=True), STAR_DISTANCE * 0.12))
+    g.out(g.mul(g.mul(tint, lum), horizon), E.MaterialProperty.MP_EMISSIVE_COLOR)
+    finish_material(mat)
+    return mat
+
+
+def place_day_night():
+    cls = getattr(unreal, "IslandDayNight", None)
+    if cls is None:
+        warn("IslandDayNight class missing (compile the C++ module first); no day/night cycle placed")
+        return None
+    dn = spawn(cls, (0, 0, 0), None, "DayNight", "Sky")
+    star_mesh = unreal.load_asset("/Engine/BasicShapes/Sphere")
+    if star_mesh is None:
+        warn("day/night: /Engine/BasicShapes/Sphere not found, no stars")
+    else:
+        setp(dn, "star_mesh", star_mesh)
+        setp(dn, "star_material", build_star_material())
+    setp(dn, "star_distance", STAR_DISTANCE)
+    log("day/night cycle placed (stars: %s)" % (star_mesh is not None))
+    return dn
 
 
 def build_ocean(mat):
@@ -1210,6 +1264,85 @@ def clear_of(x, y, keep_out):
     return True
 
 
+def place_mesh_at(mesh, cx, cy, cz, yaw=0.0, pitch=0.0, roll=0.0, scale=(1.0, 1.0, 1.0), folder="Dressing"):
+    """Put the mesh's bounds centre, after scale and rotation, at (cx, cy, cz)."""
+    b = mesh.get_bounding_box()
+    rot = unreal.Rotator(roll=roll, pitch=pitch, yaw=yaw)
+    centre = rot.quaternion().rotate_vector(unreal.Vector((b.min.x + b.max.x) * 0.5 * scale[0], (b.min.y + b.max.y) * 0.5 * scale[1],
+                                                          (b.min.z + b.max.z) * 0.5 * scale[2]))
+    a = spawn_mesh(mesh, unreal.Vector(cx - centre.x, cy - centre.y, cz - centre.z), rot)
+    a.set_actor_scale3d(unreal.Vector(*scale))
+    a.set_folder_path(folder)
+    return a
+
+
+def cliff_surface(dx, dy, z, r_start=30000.0):
+    """Distance along the bearing (dx, dy) at which the ground first rises to height z, coming in from the sea."""
+    r = r_start
+    while r > 4000.0 and height(dx * r, dy * r) < z:
+        r -= 200.0
+    lo, hi = r, r + 200.0
+    for _ in range(6):
+        mid = (lo + hi) * 0.5
+        if height(dx * mid, dy * mid) >= z:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) * 0.5
+
+
+def clad_cliff_column(rng, meshes, dx, dy):
+    """Stack boulders up the cliff face on one bearing, from below the waterline to the clifftop. Each rock turns
+    its broad side out to sea along the face's own outward normal and leans back with the slope, so the face
+    reads as a wall of stacked stone rather than a scatter. Returns how many were placed."""
+    r_foot = cliff_surface(dx, dy, 0.0)
+    top = max(height(dx * (r_foot - 1300.0), dy * (r_foot - 1300.0)), height(dx * (r_foot - 1800.0), dy * (r_foot - 1800.0)))
+    if top < 600.0:
+        return 0  # the cliff coast fades out here: leave it to the shore rocks
+    placed = 0
+    zc = -380.0
+    r_prev = 30000.0
+    first = True
+    while placed < 9:
+        mesh = meshes[rng.randrange(len(meshes))]
+        b = mesh.get_bounding_box()
+        bx, by, bz = b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z
+        broad_y = by >= bx  # present the broad horizontal side to the sea
+        w, t = (by, bx) if broad_y else (bx, by)
+        s = rng.uniform(780.0, 1050.0) / max(w, 1.0)
+        vz = rng.uniform(1.0, 1.35)
+        h = bz * s * vz
+        if first:
+            zc += h * 0.5
+            first = False
+        if zc - h * 0.5 > top - 150.0:
+            break
+        if zc + h * 0.5 > top + 90.0:
+            zc = top + 90.0 - h * 0.5  # crown the edge without walling off the clifftop
+        r = cliff_surface(dx, dy, zc, min(r_prev + 400.0, 30000.0))
+        r_prev = r
+        sx, sy = dx * r, dy * r
+        n = LIB.get_island_normal(sx, sy)
+        hn = math.hypot(n.x, n.y)
+        ox, oy = (n.x / hn * 0.7 + dx * 0.3, n.y / hn * 0.7 + dy * 0.3) if hn > 0.2 else (dx, dy)
+        on = math.hypot(ox, oy) or 1.0
+        ox, oy = ox / on, oy / on
+        out_yaw = math.degrees(math.atan2(oy, ox))
+        lean = math.degrees(math.asin(max(0.0, min(0.6, n.z)))) if hn > 0.2 else 15.0
+        depth = t * s
+        # Embedded in the face, its front standing about a third of its depth proud of the rock.
+        cx, cy = sx - ox * depth * 0.15, sy - oy * depth * 0.15
+        yaw = out_yaw if broad_y else out_yaw + 90.0  # mesh +X, or mesh -Y, faces out
+        scale = (s, s, s * vz)
+        place_mesh_at(mesh, cx, cy, zc, yaw=yaw + rng.uniform(-6, 6),
+                      pitch=(lean if broad_y else 0.0) + rng.uniform(-4, 4),
+                      # (+pitch tips the X face up; +roll tips the -Y face up, which faces out when broad along X)
+                      roll=(0.0 if broad_y else lean) + rng.uniform(-4, 4), scale=scale, folder="Dressing/Cliffs")
+        placed += 1
+        zc += h * 0.5 + h * 0.3  # next rock overlaps this one's top fifth
+    return placed
+
+
 def dress(models, route, pads, start):
     rng = random.Random(1717)
     keep_out = [(HILL[0], HILL[1], ARENA_RADIUS + 300.0), (start[0], start[1], 1800.0)] + [(x, y, r + 300.0) for x, y, r in pads]
@@ -1221,8 +1354,8 @@ def dress(models, route, pads, start):
     outcrop = models["boulder_01"] + models["rock_moss_set_01"]
     count = {"boulders": 0, "outcrops": 0, "coast": 0, "cliff": 0, "drift": 0}
 
-    # Boulder clusters across the interior.
-    for _ in range(75):
+    # Boulder clusters across the interior (UNR-T38: strewn thicker).
+    for _ in range(130):
         cx, cy = rng.uniform(-19000, 19000), rng.uniform(-16000, 16000)
         if height(cx, cy) < 350.0:
             continue
@@ -1248,7 +1381,21 @@ def dress(models, route, pads, start):
                            sink=0.4, pitch=rng.uniform(-10, 10), folder="Dressing/Outcrops")
                 count["outcrops"] += 1
 
-    # Shoreline rocks (not on the start beach) and cliffs on the cliff coast.
+    # Lone boulders strewn over the open land, half sunk into the turf (UNR-T38).
+    count["strewn"] = 0
+    for _ in range(2400):
+        if count["strewn"] >= 240:
+            break
+        x, y = rng.uniform(-21000, 21000), rng.uniform(-17000, 17000)
+        if (height(x, y) < 150.0 or normal_z(x, y) < 0.8 or LIB.get_path_distance(x, y) < path_clear
+                or not clear_of(x, y, keep_out) or biome(x, y)[0] > 0.3):
+            continue
+        place_mesh(rocks[rng.randrange(len(rocks))], x, y, yaw=rng.uniform(0, 360), scale=rng.uniform(0.3, 1.3),
+                   sink=rng.uniform(0.25, 0.45), pitch=rng.uniform(-12, 12), roll=rng.uniform(-12, 12),
+                   folder="Dressing/Boulders")
+        count["strewn"] += 1
+
+    # Shoreline rocks (not on the start beach) and the cliff coast clad in boulders (UNR-T38).
     cdx, cdy = CLIFF_DIR
     for i in range(440):
         ang = 2 * math.pi * i / 440 + rng.uniform(-0.005, 0.005)
@@ -1261,23 +1408,9 @@ def dress(models, route, pads, start):
         if (x - start[0]) ** 2 + (y - start[1]) ** 2 < 6000.0 ** 2:
             continue
         if facing > 0.38:
-            # Clad the cliff face: big rock masses at the foot, smaller slabs higher up the face.
-            rr = r + 600.0
-            while rr > 4000.0 and height(dx * rr, dy * rr) < 700.0:
-                rr -= 100.0
-            fx, fy = dx * (rr + 250.0), dy * (rr + 250.0)
-            top = height(dx * (rr - 800.0), dy * (rr - 800.0))
-            if i % 2 == 0:
-                mesh = massive[rng.randrange(len(massive))]
-                s = rng.uniform(9.0, 13.0)
-                place_mesh(mesh, fx - dx * 150.0, fy - dy * 150.0, yaw=rng.uniform(0, 360), scale=(s, s, s * 1.3), sink=0.0,
-                           z=-1100.0, pitch=rng.uniform(-8, 8), folder="Dressing/Cliffs")
-                count["cliff"] += 1
-            if i % 3 == 0 and top > 900.0:
-                place_mesh(massive[rng.randrange(len(massive))], dx * (rr + 50.0), dy * (rr + 50.0), yaw=rng.uniform(0, 360),
-                           scale=rng.uniform(3.5, 5.5), sink=0.0, z=top - rng.uniform(500.0, 900.0), pitch=rng.uniform(-15, 15),
-                           roll=rng.uniform(-15, 15), folder="Dressing/Cliffs")
-                count["cliff"] += 1
+            # A column of boulders stacked up the face every third bearing (~7-8 m apart).
+            if i % 3 == 0:
+                count["cliff"] += clad_cliff_column(rng, massive, dx, dy)
         elif rng.random() < 0.3:
             for _ in range(rng.randint(1, 3)):
                 ox, oy = rng.gauss(0, 350), rng.gauss(0, 350)
@@ -1726,6 +1859,511 @@ def shot(name, x, y, z, tx, ty, tz, fov=75):
     return "%s %.0f %.0f %.0f %.2f %.2f %.0f" % (name, x, y, z, pitch, yaw, fov)
 
 
+# ----------------------------------------------------------------------------------------------
+# Tall grass to hide in (UNR-T43): TallGrassPatch actors, each its own instanced grass + hiding radius
+# ----------------------------------------------------------------------------------------------
+
+TALL_GRASS_SCATTER = 22            # patches over open ground, besides one by each enemy post
+TALL_GRASS_DENSITY = 1.3           # stems per square metre
+TALL_GRASS_HEIGHT = (125.0, 165.0)  # cm; tall enough to swallow a crouching knight
+TALL_GRASS_RADIUS = (380.0, 620.0)  # cm
+
+
+def tall_grass_mesh(by_name, x, y):
+    """Marram scaled up reads as long pale grass; reeds where it is wet."""
+    name = "SM_Reeds" if biome(x, y)[0] > 0.5 else "SM_Marram"
+    return by_name.get(name) or by_name.get("SM_Marram") or by_name.get("SM_GrassClump_B")
+
+
+def tall_grass_instances(rng, mesh, cx, cy, radius):
+    b = mesh.get_bounding_box()
+    mh = max(b.max.z - b.min.z, 1.0)
+    out = []
+    for _ in range(int(math.pi * (radius / 100.0) ** 2 * TALL_GRASS_DENSITY)):
+        r = radius * math.sqrt(rng.random())
+        a = rng.uniform(0.0, 2.0 * math.pi)
+        x, y = cx + math.cos(a) * r, cy + math.sin(a) * r
+        if height(x, y) < 60.0 or normal_z(x, y) < 0.7:
+            continue
+        sz = rng.uniform(*TALL_GRASS_HEIGHT) * (1.0 - 0.4 * (r / radius) ** 3) / mh  # shorter toward the rim
+        sxy = sz * rng.uniform(0.6, 0.85)
+        rot = unreal.Rotator(roll=rng.uniform(-6.0, 6.0), pitch=rng.uniform(-6.0, 6.0), yaw=rng.uniform(0.0, 360.0))
+        z = height(x, y) - b.min.z * sz - 0.04 * mh * sz
+        out.append(unreal.Transform(unreal.Vector(x, y, z), rot, unreal.Vector(sxy, sxy, sz)))
+    return out
+
+
+def build_tall_grass(world, models, route, pads):
+    cls = getattr(unreal, "TallGrassPatch", None)
+    if cls is None:
+        warn("TallGrassPatch class missing (compile the C++ module first); no tall grass")
+        return []
+    by_name = {m.get_name(): m for m in models["grass"]}
+    rng = random.Random(4321)
+    markers, enemies = [], []
+    for a in actors_sub.get_all_level_actors():
+        if isinstance(a, (unreal.PlayerStart, unreal.TargetPoint)):
+            p = a.get_actor_location()
+            markers.append((p.x, p.y))
+            if isinstance(a, unreal.TargetPoint) and any(str(n) in ("Enemy", "Leaper") for n in a.tags):
+                enemies.append((p.x, p.y))
+    keep = [(HILL[0], HILL[1], ARENA_RADIUS + 600.0)] + [(x, y, r + 300.0) for x, y, r in pads]
+    placed = []
+
+    def ok(x, y, r):
+        return (height(x, y) > 150.0 and normal_z(x, y) > 0.85 and LIB.get_path_distance(x, y) > r + 60.0
+                and clear_of(x, y, keep) and biome(x, y)[3] < 0.1
+                and all(math.hypot(x - mx, y - my) > r + 350.0 for mx, my in markers)
+                and all(math.hypot(x - px, y - py) > r + pr + 400.0 for px, py, pr in placed))
+
+    stems = [0]
+
+    def make(x, y, r, label):
+        mesh = tall_grass_mesh(by_name, x, y)
+        if mesh is None:
+            return False
+        inst = tall_grass_instances(rng, mesh, x, y, r)
+        if len(inst) < 8:
+            return False
+        a = spawn(cls, (x, y, height(x, y)), None, label, "Biomes/TallGrass")
+        setp(a, "radius", r)
+        setp(a, "grass_height", TALL_GRASS_HEIGHT[0])
+        a.set_grass(mesh, inst)
+        placed.append((x, y, r))
+        stems[0] += len(inst)
+        return True
+
+    # One patch a few metres from each enemy post, to creep up through.
+    near = []
+    for i, (ex, ey) in enumerate(enemies):
+        for _ in range(60):
+            r = rng.uniform(*TALL_GRASS_RADIUS)
+            ang = rng.uniform(0.0, 2.0 * math.pi)
+            d = r + rng.uniform(350.0, 900.0)
+            x, y = ex + math.cos(ang) * d, ey + math.sin(ang) * d
+            if ok(x, y, r) and make(x, y, r, "TallGrass_Post%02d" % (i + 1)):
+                near.append((x, y, r, ex, ey))
+                break
+    count = 0
+    for _ in range(TALL_GRASS_SCATTER * 60):
+        if count >= TALL_GRASS_SCATTER:
+            break
+        r = rng.uniform(*TALL_GRASS_RADIUS)
+        x, y = rng.uniform(-20000.0, 20000.0), rng.uniform(-18000.0, 18000.0)
+        if ok(x, y, r) and make(x, y, r, "TallGrass_%02d" % (count + 1)):
+            count += 1
+    log("tall grass: %d patches (%d by enemy posts of %d), %d stems" % (len(placed), len(near), len(enemies), stems[0]))
+
+    # A look at the first one from the far side of its enemy, added to the -IslandShots list.
+    path = os.path.join(PROJECT, "Saved", "island_shots.txt")
+    if near and os.path.exists(path):
+        x, y, r, ex, ey = near[0]
+        dx, dy = x - ex, y - ey
+        n = math.hypot(dx, dy) or 1.0
+        cx, cy = x + dx / n * (r + 700.0), y + dy / n * (r + 700.0)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(shot("tall_grass", cx, cy, height(cx, cy) + 230.0, x, y, height(x, y) + 70.0, fov=75) + "\n")
+    return placed
+
+
+# ----------------------------------------------------------------------------------------------
+# Wildlife (UNR-T36/T37): crabs and washed-up fish on the beach; frogs on the pool banks and fish
+# in the marsh pools. The live ones are ASoulsWildlife actors (Source/UnrealSoulslike/Souls).
+# ----------------------------------------------------------------------------------------------
+
+CRITTER_ART = os.path.join(ART, "Critters")
+CRITTER_NAMES = ("Crab", "Frog", "Fish")
+# Slot colour overrides (linear); other slots take their .mtl Kd. The source frog is a bright tree frog:
+# make it a Hebridean common frog (olive-brown, dark eyes).
+CRITTER_TINTS = {("Crab", "crab"): (0.82, 0.66, 0.56), ("Frog", "Green"): (0.16, 0.2, 0.08),
+                 ("Frog", "Yellow"): (0.34, 0.27, 0.13), ("Frog", "Red"): (0.09, 0.06, 0.03)}
+CRITTER_ROUGHNESS = {"Crab": 0.55, "Frog": 0.35, "Fish": 0.3}
+
+
+def import_critters():
+    """SourceArt/Environment/Critters/SM_<Name>.obj (baked by tools/convert_critters.py) -> /Game/Island/Models/Critters/<Name>."""
+    out = {}
+    for name in CRITTER_NAMES:
+        dest = "%s/Models/Critters/%s" % (ROOT, name)
+        if REIMPORT or not (eal.does_directory_exist(dest) and assets_of(dest, unreal.StaticMesh)):
+            if eal.does_directory_exist(dest):
+                eal.delete_directory(dest)
+            import_files([os.path.join(CRITTER_ART, "SM_%s.obj" % name)], dest)
+            for mesh in assets_of(dest, unreal.StaticMesh):
+                nanite_and_collision(mesh, nanite=False, complex_collision=False)
+                mesh.set_editor_property("body_setup", None)  # never blocks or catches traces
+                eal.save_loaded_asset(mesh)
+        meshes = assets_of(dest, unreal.StaticMesh)
+        if not meshes:
+            warn("critter %s: no static mesh imported" % name)
+            continue
+        out[name] = meshes[0]
+        b = meshes[0].get_bounding_box()
+        log("critter %s: %s size=(%.1f, %.1f, %.1f) slots=%s" % (name, meshes[0].get_name(), b.max.x - b.min.x, b.max.y - b.min.y,
+                                                                  b.max.z - b.min.z, [str(s.get_editor_property("material_slot_name"))
+                                                                                      for s in meshes[0].get_editor_property("static_materials")]))
+    return out
+
+
+def read_mtl(path):
+    mats, cur = {}, None
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            p = line.split()
+            if not p:
+                continue
+            if p[0] == "newmtl":
+                cur = p[1]
+                mats[cur] = {}
+            elif cur and p[0] == "Kd":
+                mats[cur]["kd"] = tuple(float(v) for v in p[1:4])
+            elif cur and p[0] == "map_Kd":
+                mats[cur]["map"] = p[-1]
+    return mats
+
+
+def critter_texture(name):
+    """The critter's colour texture: the one Interchange brought in with the OBJ, else import it ourselves."""
+    dest = "%s/Models/Critters/%s" % (ROOT, name)
+    tex = assets_of(dest, unreal.Texture2D)
+    if tex:
+        return tex[0]
+    png = os.path.join(CRITTER_ART, "%s.png" % name.lower())
+    if not os.path.exists(png):
+        return None
+    import_files([png], dest + "/Tex")
+    tex = assets_of(dest + "/Tex", unreal.Texture2D)
+    return tex[0] if tex else None
+
+
+def build_critter_materials(critters):
+    """M_Critter: tint x (optionally) a colour texture; one instance per mesh slot from the baked .mtl."""
+    textures = {n: critter_texture(n) for n in critters}
+    any_tex = next((t for t in textures.values() if t), None)
+    mat, g = new_material("M_Critter", ROOT + "/Materials")
+    tint = g.new(E.MaterialExpressionVectorParameter, parameter_name="Tint", default_value=unreal.LinearColor(1, 1, 1, 1))
+    color = (tint, "RGB")
+    if any_tex:
+        uv = g.new(E.MaterialExpressionTextureCoordinate)
+        base = g.new(E.MaterialExpressionTextureSampleParameter2D, parameter_name="Base", texture=any_tex,
+                     sampler_type=E.MaterialSamplerType.SAMPLERTYPE_COLOR, sampler_source=E.SamplerSourceMode.SSM_WRAP_WORLD_GROUP_SETTINGS)
+        g.link(uv, base, "UVs")
+        use_tex = g.new(E.MaterialExpressionScalarParameter, parameter_name="UseTexture", default_value=0.0)
+        color = g.lerp(color, g.mul((base, "RGB"), (tint, "RGB")), use_tex)
+    g.out(color, E.MaterialProperty.MP_BASE_COLOR)
+    g.out(g.new(E.MaterialExpressionScalarParameter, parameter_name="Roughness", default_value=0.6), E.MaterialProperty.MP_ROUGHNESS)
+    finish_material(mat)
+
+    folder = ROOT + "/Materials/Critters"
+    ensure_dir(folder)
+    for name, mesh in critters.items():
+        mtl = read_mtl(os.path.join(CRITTER_ART, "SM_%s.mtl" % name))
+        for i, slot in enumerate(mesh.get_editor_property("static_materials")):
+            slot_name = str(slot.get_editor_property("material_slot_name"))
+            key = next((k for k in mtl if k == slot_name), None) or \
+                next((k for k in mtl if slot_name.lower().startswith(k.lower()) or k.lower().startswith(slot_name.lower())), None) or \
+                (next(iter(mtl)) if len(mtl) == 1 else None)
+            entry = mtl.get(key, {}) if key else {}
+            if key is None:
+                warn("critter %s: slot %s not in the .mtl %s" % (name, slot_name, sorted(mtl)))
+            mi_name = "MI_Critter_%s_%s" % (name, key or i)
+            path = "%s/%s" % (folder, mi_name)
+            mi = eal.load_asset(path) if eal.does_asset_exist(path) else \
+                tools.create_asset(mi_name, folder, unreal.MaterialInstanceConstant, unreal.MaterialInstanceConstantFactoryNew())
+            mel.set_material_instance_parent(mi, mat)
+            tint_rgb = CRITTER_TINTS.get((name, key)) or entry.get("kd") or (1.0, 1.0, 1.0)
+            mel.set_material_instance_vector_parameter_value(mi, "Tint", unreal.LinearColor(tint_rgb[0], tint_rgb[1], tint_rgb[2], 1.0))
+            mel.set_material_instance_scalar_parameter_value(mi, "Roughness", CRITTER_ROUGHNESS.get(name, 0.6))
+            if any_tex and "map" in entry and textures.get(name):
+                mel.set_material_instance_texture_parameter_value(mi, "Base", textures[name])
+                mel.set_material_instance_scalar_parameter_value(mi, "UseTexture", 1.0)
+            eal.save_loaded_asset(mi)
+            mesh.set_material(i, mi)
+        eal.save_loaded_asset(mesh)
+        log("critter materials %s: %s" % (name, sorted(mtl)))
+
+
+def build_splash_material():
+    """Translucent white water for the frog's splash; ASoulsWildlife fades its Opacity. A ring brightest near the rim."""
+    mat, g = new_material("M_CritterSplash", ROOT + "/Materials")
+    setp(mat, "blend_mode", E.BlendMode.BLEND_TRANSLUCENT)
+    setp(mat, "shading_model", E.MaterialShadingModel.MSM_UNLIT)
+    opacity = g.new(E.MaterialExpressionScalarParameter, parameter_name="Opacity", default_value=0.0)
+    shape = 1.0
+    if hasattr(E, "MaterialExpressionObjectRadius") and hasattr(E, "MaterialExpressionObjectPositionWS"):
+        d = g.op(E.MaterialExpressionDistance, {"A": g.mask(g.world(), r=True, g=True),
+                                                "B": g.mask(g.new(E.MaterialExpressionObjectPositionWS), r=True, g=True)})
+        rel = g.div(d, g.maxx(g.new(E.MaterialExpressionObjectRadius), 1.0))
+        shape = g.add(0.25, g.sat(g.sub(1.0, g.mul(g.abs(g.sub(rel, 0.62)), 6.0))))
+    g.out((0.82, 0.88, 0.92), E.MaterialProperty.MP_EMISSIVE_COLOR)
+    g.out(g.sat(g.mul(opacity, shape)), E.MaterialProperty.MP_OPACITY)
+    finish_material(mat)
+    return mat
+
+
+def shore_point(ang, h):
+    """Coming in from the sea along bearing ang, the first point where the ground reaches height h."""
+    dx, dy = math.cos(ang), math.sin(ang)
+    r = 30000.0
+    while r > 4000.0 and height(dx * r, dy * r) < h:
+        r -= 50.0
+    return dx * r, dy * r
+
+
+def build_wildlife(models, route, start):
+    cls = getattr(unreal, "SoulsWildlife", None)
+    kinds = getattr(unreal, "SoulsWildlifeKind", None)
+    critters = import_critters()
+    if not critters:
+        return
+    build_critter_materials(critters)
+    rng = random.Random(3636)
+    count = {"crabs": 0, "dead_fish": 0, "frogs": 0, "fish": 0, "pools": 0}
+    shots = []
+
+    # Dead fish washed up along the tideline (static props, lying on their side): mostly on the start beach.
+    fish_mesh = critters.get("Fish")
+    base_ang = math.atan2(start[1], start[0])
+    if fish_mesh:
+        for k in range(14):
+            ang = base_ang + rng.uniform(-0.32, 0.32) if k < 10 else rng.uniform(0.0, 2.0 * math.pi)
+            if k >= 10 and math.cos(ang) * CLIFF_DIR[0] + math.sin(ang) * CLIFF_DIR[1] > 0.2:
+                continue  # no beach under the cliffs
+            x, y = shore_point(ang, rng.uniform(4.0, 20.0))
+            if normal_z(x, y) < 0.9 or math.hypot(x - start[0], y - start[1]) < 300.0:
+                continue
+            a = place_mesh(fish_mesh, x, y, yaw=rng.uniform(0, 360), roll=90.0 + rng.uniform(-8, 8), pitch=rng.uniform(-5, 5),
+                           scale=rng.uniform(0.7, 1.0), sink=0.3, folder="Wildlife/DeadFish", label="DeadFish_%02d" % (k + 1),
+                           collide=False)
+            a.get_editor_property("static_mesh_component").set_editor_property("cast_shadow", True)
+            count["dead_fish"] += 1
+
+    if cls is None or kinds is None:
+        warn("SoulsWildlife class missing (compile the C++ module first); no live crabs, frogs or fish")
+        log("wildlife: %s" % count)
+        return
+    splash = build_splash_material()
+
+    def critter(kind, mesh, x, y, z, yaw, label, folder, **props):
+        a = spawn(cls, (x, y, z), unreal.Rotator(yaw=yaw), label, "Wildlife/" + folder)
+        setp(a, "kind", kind)
+        setp(a, "mesh", mesh)
+        setp(a, "splash_material", splash)
+        for k, v in props.items():
+            setp(a, k, v)
+        return a
+
+    # Crabs: little groups on the start beach between the tideline and the dunes, a few on other sandy shores.
+    if critters.get("Crab"):
+        groups = []
+        for k in range(16):
+            if len(groups) >= 8:
+                break
+            ang = base_ang + rng.uniform(-0.35, 0.35) if k < 10 else rng.uniform(0.0, 2.0 * math.pi)
+            if math.cos(ang) * CLIFF_DIR[0] + math.sin(ang) * CLIFF_DIR[1] > 0.2:
+                continue
+            gx, gy = shore_point(ang, rng.uniform(15.0, 70.0))
+            if normal_z(gx, gy) < 0.9 or math.hypot(gx - start[0], gy - start[1]) < 500.0:
+                continue
+            groups.append((gx, gy))
+            for _ in range(rng.randint(2, 3)):
+                x, y = gx + rng.gauss(0, 160), gy + rng.gauss(0, 160)
+                h = height(x, y)
+                if h < 5.0 or normal_z(x, y) < 0.85:
+                    continue
+                count["crabs"] += 1
+                critter(kinds.CRAB, critters["Crab"], x, y, h, rng.uniform(0, 360), "Crab_%02d" % count["crabs"], "Crabs",
+                        body_length=rng.uniform(10.0, 14.0), roam_radius=350.0, scare_radius=550.0, speed=rng.uniform(220.0, 280.0))
+        if groups:
+            gx, gy = groups[0]
+            n = math.hypot(gx, gy) or 1.0
+            ix, iy = -gx / n, -gy / n  # inland
+            cx, cy = gx + ix * 450.0 - iy * 250.0, gy + iy * 450.0 + ix * 250.0  # a few metres up the beach, a little aside
+            shots.append(shot("wildlife_beach", cx, cy, height(cx, cy) + 160.0, gx, gy, height(gx, gy) + 5.0, fov=60))
+
+    mx, my = BIOMES["marsh"]
+    clx, cly = BIOMES["clearing"]
+
+    # Frogs on the pool banks, each with the patch of open water it leaps into.
+    if critters.get("Frog"):
+        frogs = []
+        for _ in range(6000):
+            if len(frogs) >= 16:
+                break
+            x, y = mx + rng.gauss(0, MARSH_RADIUS * 0.4), my + rng.gauss(0, MARSH_RADIUS * 0.4)
+            h = height(x, y)
+            if not (POOL_LEVEL + 3.0 < h < POOL_LEVEL + 35.0) or biome(x, y)[0] < 0.6 or normal_z(x, y) < 0.8:
+                continue
+            if LIB.get_path_distance(x, y) < 350.0 or math.hypot(x - clx, y - cly) < CLEARING_RADIUS + 400.0:
+                continue
+            if any(math.hypot(x - fx, y - fy) < 700.0 for fx, fy, _ in frogs):
+                continue
+            water = None
+            for d in (110.0, 170.0, 240.0):
+                for k in range(12):
+                    a = 2.0 * math.pi * k / 12
+                    wx, wy = x + math.cos(a) * d, y + math.sin(a) * d
+                    if height(wx, wy) < POOL_LEVEL - 25.0:
+                        water = (wx, wy)
+                        break
+                if water:
+                    break
+            if not water:
+                continue
+            frogs.append((x, y, water))
+            yaw = math.degrees(math.atan2(water[1] - y, water[0] - x)) + rng.uniform(-35, 35)
+            critter(kinds.FROG, critters["Frog"], x, y, h, yaw, "Frog_%02d" % len(frogs), "Frogs",
+                    water_target=unreal.Vector(water[0], water[1], POOL_LEVEL), water_level=POOL_LEVEL,
+                    scare_radius=450.0, body_length=rng.uniform(12.0, 15.0))
+        count["frogs"] = len(frogs)
+        if frogs:
+            x, y, (wx, wy) = frogs[0]
+            dx, dy = x - wx, y - wy
+            n = math.hypot(dx, dy) or 1.0
+            cx, cy = x + dx / n * 520.0, y + dy / n * 520.0  # behind the frog, looking over it at its pool
+            shots.append(shot("wildlife_pond", cx, cy, max(height(cx, cy), POOL_LEVEL) + 150.0, wx, wy, POOL_LEVEL, fov=55))
+
+    # Fish: find open, deep-enough water (every point of a disc well below the surface), largest discs first.
+    if critters.get("Fish"):
+        spots = []
+        step = 250.0
+        gy = my - MARSH_RADIUS
+        while gy <= my + MARSH_RADIUS:
+            gx = mx - MARSH_RADIUS
+            while gx <= mx + MARSH_RADIUS:
+                h0 = height(gx, gy)
+                if h0 < POOL_LEVEL - 50.0:
+                    best, floor = 0.0, h0
+                    for rr in (150.0, 220.0, 300.0, 400.0, 520.0, 650.0):
+                        ring = [height(gx + math.cos(a) * rr, gy + math.sin(a) * rr) for a in [2.0 * math.pi * k / 12 for k in range(12)]]
+                        if max(ring) > POOL_LEVEL - 20.0:
+                            break
+                        best, floor = rr, max(floor, max(ring))
+                    if best >= 150.0 and floor + 10.0 < POOL_LEVEL - 25.0:
+                        spots.append((best, gx, gy, floor))
+                gx += step
+            gy += step
+        spots.sort(key=lambda s_: -s_[0])
+        pools = []
+        for r_, x, y, floor in spots:
+            if len(pools) >= 9:
+                break
+            if any(math.hypot(x - px, y - py) < r_ + pr + 200.0 for pr, px, py, _ in pools):
+                continue
+            pools.append((r_, x, y, floor))
+        for r_, x, y, floor in pools:
+            floor_z = floor + 10.0
+            for _ in range(1 + (r_ >= 300.0) + (r_ >= 520.0)):
+                count["fish"] += 1
+                critter(kinds.FISH, critters["Fish"], x + rng.uniform(-50, 50), y + rng.uniform(-50, 50),
+                        (floor_z + POOL_LEVEL - 12.0) * 0.5, rng.uniform(0, 360), "PondFish_%02d" % count["fish"], "Fish",
+                        roam_radius=r_ * 0.8, water_level=POOL_LEVEL, floor_z=floor_z, speed=rng.uniform(55.0, 80.0),
+                        scare_radius=350.0, body_length=rng.uniform(22.0, 30.0))
+        count["pools"] = len(pools)
+        if pools:
+            r_, x, y, _ = pools[0]
+            shots.append(shot("wildlife_pool_fish", x - r_ - 250.0, y, POOL_LEVEL + 260.0, x, y, POOL_LEVEL - 40.0, fov=60))
+
+    log("wildlife: %s" % count)
+    # Add looks at them to the -IslandShots list.
+    path = os.path.join(PROJECT, "Saved", "island_shots.txt")
+    if shots and os.path.exists(path):
+        with open(path, "a", encoding="utf-8") as f:
+            f.write("\n".join(shots) + "\n")
+
+
+# ----------------------------------------------------------------------------------------------
+# Wall torches (UNR-T40): TargetPoints tagged "Torch" on the ruined keep's walls and the islet broch,
+# where ASoulsTorch (Source/UnrealSoulslike/Souls/SoulsTorch.cpp) mounts a burning torch in a bracket.
+# ----------------------------------------------------------------------------------------------
+
+TORCH_HEIGHT = 185.0      # bracket height above the ground in front of the wall
+TORCH_SPACING = 450.0     # minimum distance between two torches
+TORCH_MAX_KEEP = 6
+TORCH_MAX_BROCH = 2
+
+
+def torch_trace(world, start, end):
+    """Horizontal trace -> (impact point, impact normal, hit actor) or None."""
+    res = unreal.SystemLibrary.line_trace_single(world, start, end, unreal.TraceTypeQuery.TRACE_TYPE_QUERY1, True, [],
+                                                 unreal.DrawDebugTrace.NONE, True)
+    hit = res[1] if isinstance(res, tuple) else res
+    if hit is None:
+        return None
+    t = hit.to_tuple()
+    if not t[0]:
+        return None
+    return t[5], t[7], t[9]
+
+
+def torch_spots_on(world, actor, directions=16):
+    """Points on actor's outer wall faces at torch height, reachable from open ground in front."""
+    origin, extent = actor.get_actor_bounds(False)
+    reach = max(extent.x, extent.y) + 250.0
+    spots = []
+    for k in range(directions):
+        a = 2.0 * math.pi * k / directions
+        dx, dy = math.cos(a), math.sin(a)
+        sx, sy = origin.x + dx * reach, origin.y + dy * reach
+        z = height(sx, sy) + TORCH_HEIGHT
+        got = torch_trace(world, unreal.Vector(sx, sy, z), unreal.Vector(origin.x, origin.y, z))
+        if not got or got[2] != actor or abs(got[1].z) > 0.35:
+            continue
+        p, n = got[0], got[1]
+        nn = math.hypot(n.x, n.y) or 1.0
+        nx, ny = n.x / nn, n.y / nn
+        # Re-level at the ground right in front of this face, and check it is open, standable ground.
+        fx, fy = p.x + nx * 90.0, p.y + ny * 90.0
+        ground = trace_down(world, fx, fy, p.z + 400.0, height(fx, fy) - 200.0)
+        if not ground or ground[1].z < 0.75 or abs(ground[0].z - height(fx, fy)) > 60.0:
+            continue
+        z = ground[0].z + TORCH_HEIGHT
+        got = torch_trace(world, unreal.Vector(p.x + nx * 120.0, p.y + ny * 120.0, z), unreal.Vector(p.x - nx * 60.0, p.y - ny * 60.0, z))
+        if not got or got[2] != actor or abs(got[1].z) > 0.35:
+            continue
+        p = got[0]
+        spots.append((p.x + nx * 4.0, p.y + ny * 4.0, z, math.degrees(math.atan2(ny, nx))))
+    return spots
+
+
+def build_wall_torches(world, pads):
+    keep_x, keep_y, keep_r = pads[1]
+    keep, broch = [], []
+    for a in actors_sub.get_all_level_actors():
+        if not isinstance(a, unreal.StaticMeshActor):
+            continue
+        folder = str(a.get_folder_path())
+        o = a.get_actor_location()
+        if folder == "Ruins" and math.hypot(o.x - keep_x, o.y - keep_y) < keep_r * 1.6:
+            keep.append(a)
+        elif folder == "Islet" and "tower_round" in a.get_actor_label():
+            broch.append(a)
+    placed = []
+
+    def place(actors, limit, name):
+        count = 0
+        for a in sorted(actors, key=lambda x: x.get_actor_label()):
+            per_wall = 0
+            for x, y, z, yaw in torch_spots_on(world, a):
+                if count >= limit or per_wall >= 2:
+                    break
+                if any(math.hypot(x - px, y - py) < TORCH_SPACING for px, py in placed):
+                    continue
+                target_point(x, y, "Torch", "Torch_%02d_%s" % (len(placed) + 1, name), z=z, yaw=yaw)
+                placed.append((x, y))
+                count += 1
+                per_wall += 1
+        return count
+
+    n_keep = place(keep, TORCH_MAX_KEEP, "Keep")
+    n_broch = place(broch, TORCH_MAX_BROCH, "Broch")
+    if n_keep == 0:
+        warn("wall torches: no torch spot found on the keep's %d ruins" % len(keep))
+    if n_broch == 0:
+        warn("wall torches: no torch spot found on the islet broch")
+    log("wall torches: %d on the keep, %d on the broch" % (n_keep, n_broch))
+
+
 def new_map():
     les = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
     ensure_dir("/Game/Souls/Maps")
@@ -1756,6 +2394,143 @@ def new_map():
     return les, world
 
 
+# ----------------------------------------------------------------------------------------------
+# Field fire (UNR-T41): the burn-field texture the runtime fire (Source/.../Souls/SoulsFire.cpp)
+# writes, sampled by the grass, foliage, prop and terrain materials, plus the flame and smoke materials.
+# R = char (blackened), G = heat (ember glow), B = consumed (grass flattens away). Each helper is a
+# no-op when the texture can't be made (C++ not rebuilt yet), so the island still builds.
+# ----------------------------------------------------------------------------------------------
+
+FIRE_FX = "/Game/Souls/FX"
+FIRE_FIELD = FIRE_FX + "/T_FireField"
+FIRE_FIELD_HALF = 32768.0  # cm; must match SoulsFireTuning::Half
+FIRE_FIELD_RES = 512       # must match SoulsFireTuning::N
+CHARCOAL = (0.022, 0.019, 0.017)
+_fire_field = []
+
+
+def fire_field_texture():
+    if not _fire_field:
+        tex = None
+        try:
+            ensure_dir(FIRE_FX)
+            tex = unreal.SoulsFireLibrary.create_fire_field_texture(FIRE_FIELD, FIRE_FIELD_RES)
+            if tex is not None:
+                eal.save_loaded_asset(tex)
+                log("fire field %s (%d px over +-%.0f cm)" % (FIRE_FIELD, FIRE_FIELD_RES, FIRE_FIELD_HALF))
+        except Exception as exc:
+            warn("fire field texture: %s" % exc)
+        if tex is None:
+            warn("no fire field texture: vegetation won't char (rebuild the C++ module)")
+        _fire_field.append(tex)
+    return _fire_field[0]
+
+
+def fire_burn(g, wp):
+    """Burn-field sample at this world XY: {"char", "heat", "gone"} scalars, or None."""
+    tex = fire_field_texture()
+    if tex is None:
+        return None
+    uv = mask_uv(g, g.mask(wp, r=True, g=True), FIRE_FIELD_HALF)
+    s = g.tex(tex, uv, "linear", clamp=True)
+    return {"char": (s, "R"), "heat": (s, "G"), "gone": (s, "B")}
+
+
+def fire_char(g, color, wp, strength=1.0, glow=1.0):
+    """Blacken color by the field's char; return (color, ember emissive or None)."""
+    burn = fire_burn(g, wp)
+    if burn is None:
+        return color, None
+    amount = burn["char"] if strength == 1.0 else g.mul(burn["char"], strength)
+    color = g.lerp(color, CHARCOAL, amount)
+    heat = burn["heat"]
+    ember = g.mul(g.mul(g.mul(heat, heat), burn["char"]), (3.2 * glow, 0.75 * glow, 0.08 * glow))
+    return color, ember
+
+
+def fire_grass(g, color, wp, tip, wpo):
+    """Grass blades: char, glowing tips while hot, and (consumed) flattened into the ground; wind dies as it chars."""
+    burn = fire_burn(g, wp)
+    if burn is None:
+        return color, None, wpo
+    color = g.lerp(color, CHARCOAL, burn["char"])
+    ember = g.mul(g.mul(g.mul(burn["heat"], burn["heat"]), g.add(tip, 0.25)), (4.0, 0.9, 0.08))
+    sink = g.append(g.append(0.0, 0.0), g.mul(g.mul(tip, burn["gone"]), -140.0))
+    wpo = g.add(g.mul(wpo, g.one_minus(burn["char"])), sink)
+    return color, ember, wpo
+
+
+def fire_dissolve(g, opacity, uv, wp):
+    """Masked foliage: leaves break up and vanish (noise threshold) as the ground under them is consumed."""
+    burn = fire_burn(g, wp)
+    if burn is None or not GRASS_NOISE:
+        return opacity
+    n = (g.tex(GRASS_NOISE[0], g.mul(uv, (3.0, 3.0)), "masks"), "G")
+    n = g.add(g.mul(n, 0.9), 0.05)
+    keep = g.smooth(g.sub(burn["gone"], 0.05), g.add(burn["gone"], 0.05), n)
+    return g.mul(opacity, keep)
+
+
+def build_fire_materials():
+    """M_FireFlame (additive flickering cone the fire instances) and M_FireSmoke (lit translucent puff)."""
+    ensure_dir(FIRE_FX)
+    cone = eal.load_asset("/Engine/BasicShapes/Cone")
+    b = cone.get_bounding_box() if cone else None
+    zmin, zh = (b.min.z, max(b.max.z - b.min.z, 1.0)) if b else (-50.0, 100.0)
+
+    mat, g = new_material("M_FireFlame", FIRE_FX)
+    mat.set_editor_property("shading_model", E.MaterialShadingModel.MSM_UNLIT)
+    mat.set_editor_property("blend_mode", E.BlendMode.BLEND_ADDITIVE)
+    mat.set_editor_property("used_with_instanced_static_meshes", True)
+    if hasattr(E, "MaterialExpressionLocalPosition"):
+        lp = g.new(E.MaterialExpressionLocalPosition)
+        try:
+            lp.set_editor_property("included_offsets", E.PositionIncludedOffsets.EXCLUDE_OFFSETS)
+        except Exception:
+            pass
+        lz = g.mask(lp, b=True)
+        h = g.sat(g.div(g.sub(lz, zmin), zh))
+    else:
+        h = g.sat(g.one_minus(g.mask(g.new(E.MaterialExpressionTextureCoordinate), g=True)))
+    rnd = g.new(E.MaterialExpressionPerInstanceRandom)
+    t = g.time()
+    flick = g.add(0.72, g.mul(g.mul(g.sine(g.add(g.mul(t, 13.0), g.mul(rnd, 40.0))),
+                                    g.sine(g.add(g.mul(t, 7.3), g.mul(rnd, 11.0)))), 0.28))
+    col = g.lerp((9.0, 4.2, 1.0), (3.2, 0.55, 0.06), g.sat(g.mul(h, 1.3)))
+    fade = g.op(E.MaterialExpressionPower, {"Base": g.one_minus(h), "Exp": 0.9})
+    soft = g.one_minus(g.new(E.MaterialExpressionFresnel, exponent=2.0))
+    g.out(g.mul(g.mul(g.mul(col, fade), soft), flick), E.MaterialProperty.MP_EMISSIVE_COLOR)
+    # Tongues lick sideways, more toward the tip.
+    h2 = g.mul(h, h)
+    sx = g.mul(g.sine(g.add(g.add(g.mul(t, 6.0), g.mul(rnd, 30.0)), g.div(g.mask(g.world(), b=True), 45.0))), g.mul(h2, 14.0))
+    sy = g.mul(g.sine(g.add(g.mul(t, 5.1), g.mul(rnd, 17.0))), g.mul(h2, 10.0))
+    g.out(g.append(g.append(sx, sy), 0.0), E.MaterialProperty.MP_WORLD_POSITION_OFFSET)
+    finish_material(mat)
+
+    mat, g = new_material("M_FireSmoke", FIRE_FX)
+    mat.set_editor_property("blend_mode", E.BlendMode.BLEND_TRANSLUCENT)
+    mat.set_editor_property("used_with_instanced_static_meshes", True)
+    fade = g.new(E.MaterialExpressionPerInstanceCustomData, data_index=0, const_default_value=0.0)
+    soft = g.one_minus(g.new(E.MaterialExpressionFresnel, exponent=1.5))
+    opacity = g.mul(fade, soft)
+    if GRASS_NOISE:
+        pan = g.add(g.div(g.mask(g.world(), r=True, g=True), (380.0, 380.0)), g.mul(g.time(), (0.02, 0.05)))
+        opacity = g.mul(opacity, g.lerp(0.45, 1.0, (g.tex(GRASS_NOISE[0], pan, "masks"), "R")))
+    g.out((0.09, 0.085, 0.08), E.MaterialProperty.MP_BASE_COLOR)
+    g.out(1.0, E.MaterialProperty.MP_ROUGHNESS)
+    g.out(opacity, E.MaterialProperty.MP_OPACITY)
+    finish_material(mat)
+    log("fire materials: M_FireFlame (cone z %.0f..%.0f), M_FireSmoke" % (zmin, zmin + zh))
+
+
+def build_fire_assets():
+    try:
+        fire_field_texture()
+        build_fire_materials()
+    except Exception as exc:
+        warn("fire assets: %s" % exc)
+
+
 def build_everything(textures, models):
     route, pads = plan_layout()
     start = route.points[0]
@@ -1764,6 +2539,7 @@ def build_everything(textures, models):
     GRASS_NOISE.append(textures["generated"]["T_IslandNoise"])
     biome_tex = LIB.create_island_biome_texture(ROOT + "/Textures/Generated/T_IslandBiome", 1024)
     eal.save_loaded_asset(biome_tex)
+    build_fire_assets()
     grass_types = build_grass_types(models)
     terrain_mat = build_terrain_material(textures, mask_tex, biome_tex, grass_types)
     apply_prop_materials(models, build_prop_master(textures))
@@ -1788,7 +2564,10 @@ def build_everything(textures, models):
     broch = build_islet(models)
     build_markers(route, start)
     grapples = build_grapples_and_loot(world, route, pads, broch)
+    build_wall_torches(world, pads)
     write_shot_list(route, start, grapples)
+    build_tall_grass(world, models, route, pads)
+    build_wildlife(models, route, start)
 
     gm = unreal.load_class(None, GAME_MODE)
     if gm:
