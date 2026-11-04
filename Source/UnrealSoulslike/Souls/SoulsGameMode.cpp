@@ -4,6 +4,7 @@
 #include "SoulsKnight.h"
 #include "SiteOfGrace.h"
 #include "GrapplePoint.h"
+#include "SoulsPickup.h"
 #include "CombatEnemy.h"
 #include "CombatEnemySpawner.h"
 #include "CombatPlayerController.h"
@@ -70,6 +71,18 @@ void ASoulsGameMode::GatherSpawns()
 			// Every third island knight (or any marked Leaper) springs from range.
 			Spawn.bLeaper = It->ActorHasTag(TEXT("Leaper")) || (Spawns.Num() % 3 == 0);
 		}
+		else if (It->ActorHasTag(TEXT("Loot")))
+		{
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			ASoulsPickup* Pickup = GetWorld()->SpawnActorDeferred<ASoulsPickup>(ASoulsPickup::StaticClass(), FTransform(Point.GetLocation() + FVector(0.f, 0.f, 30.f)));
+			if (Pickup)
+			{
+				Pickup->Kind = It->ActorHasTag(TEXT("Seed")) ? ESoulsPickupKind::GoldenSeed
+					: It->ActorHasTag(TEXT("Tear")) ? ESoulsPickupKind::CrimsonTear : ESoulsPickupKind::RuneCache;
+				Pickup->FinishSpawning(FTransform(Point.GetLocation() + FVector(0.f, 0.f, 30.f)));
+			}
+		}
 		else if (It->ActorHasTag(TEXT("Grapple")))
 		{
 			FActorSpawnParameters Params;
@@ -115,6 +128,12 @@ void ASoulsGameMode::GatherSpawns()
 		Add(FVector(1150.f, 300.f, 0.f), false);
 		Add(FVector(1250.f, -700.f, 0.f), false);
 		Spawns.Last().bLeaper = true;
+		// Something to find, off to the side.
+		if (ASoulsPickup* Seed = GetWorld()->SpawnActorDeferred<ASoulsPickup>(ASoulsPickup::StaticClass(), FTransform(Origin + Right * 400.f - Fwd * 200.f - FVector(0.f, 0.f, 60.f))))
+		{
+			Seed->Kind = ESoulsPickupKind::GoldenSeed;
+			Seed->FinishSpawning(FTransform(Origin + Right * 400.f - Fwd * 200.f - FVector(0.f, 0.f, 60.f)));
+		}
 		// A hook point above the start, to try the grapple on.
 		FActorSpawnParameters HookParams;
 		HookParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
@@ -194,6 +213,12 @@ ASoulsEnemy* ASoulsGameMode::GetActiveBoss() const
 		}
 	}
 	return nullptr;
+}
+
+void ASoulsGameMode::ShowToast(const FText& Text)
+{
+	ToastText = Text;
+	ToastTime = GetWorld()->GetTimeSeconds();
 }
 
 bool ASoulsGameMode::RequestAttackToken(ASoulsEnemy* Enemy)

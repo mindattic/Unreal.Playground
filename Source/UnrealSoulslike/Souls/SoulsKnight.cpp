@@ -3,6 +3,7 @@
 #include "SoulsGameMode.h"
 #include "SiteOfGrace.h"
 #include "GrapplePoint.h"
+#include "SoulsPickup.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Camera/CameraComponent.h"
@@ -103,6 +104,15 @@ void ASoulsKnight::BeginPlay()
 	LifeBarColor = Team == 0 ? FLinearColor(0.6f, 0.05f, 0.04f) : FLinearColor(0.55f, 0.04f, 0.03f);
 	Super::BeginPlay();
 
+	// Keepsakes found on the island outlast death.
+	if (Team == 0)
+	{
+		if (const ASoulsGameMode* GameMode = GetWorld()->GetAuthGameMode<ASoulsGameMode>())
+		{
+			MaxFlasks += GameMode->GoldenSeeds;
+			FlaskHealing += 15.f * GameMode->CrimsonTears;
+		}
+	}
 	Stamina = MaxStamina;
 	Flasks = MaxFlasks;
 	Poise = MaxPoise;
@@ -264,6 +274,23 @@ void ASoulsKnight::RunVerificationDemo()
 		{ 43.2f, [](ASoulsKnight* K) { K->Shot(TEXT("24_ambush_crit")); } },
 		{ 45.0f, [Approach, NearestFoe](ASoulsKnight* K) { Approach(K, 500.f); if (ASoulsKnight* Foe = NearestFoe(K)) { Foe->AddFear(80.f); } } },
 		{ 46.5f, [](ASoulsKnight* K) { K->Shot(TEXT("25_terrified")); } },
+		// Something glinting off the path.
+		{ 48.0f, [](ASoulsKnight* K)
+			{
+				for (TActorIterator<ASoulsPickup> It(K->GetWorld()); It; ++It)
+				{
+					const FVector Spot = It->GetActorLocation() - K->GetActorForwardVector() * 150.f;
+					K->SetActorLocation(FVector(Spot.X, Spot.Y, K->GetActorLocation().Z), false, nullptr, ETeleportType::TeleportPhysics);
+					K->FaceTowards(It->GetActorLocation());
+					if (K->Controller)
+					{
+						K->Controller->SetControlRotation(FRotator(-20.f, K->GetActorRotation().Yaw, 0.f));
+					}
+					break;
+				}
+			} },
+		{ 48.6f, [](ASoulsKnight* K) { K->Shot(TEXT("26_pickup")); K->InteractPressed(); } },
+		{ 49.2f, [](ASoulsKnight* K) { K->Shot(TEXT("27_acquired")); } },
 	};
 	for (const FStep& Step : Steps)
 	{
@@ -786,8 +813,21 @@ void ASoulsKnight::SetNearbyGrace(ASiteOfGrace* Grace)
 	NearbyGrace = Grace;
 }
 
+void ASoulsKnight::SetNearbyPickup(ASoulsPickup* Pickup)
+{
+	NearbyPickup = Pickup;
+}
+
 void ASoulsKnight::InteractPressed()
 {
+	if (ASoulsPickup* Pickup = NearbyPickup.Get())
+	{
+		if (!IsDead() && !IsBusy())
+		{
+			Pickup->Collect(this);
+			return;
+		}
+	}
 	if (ASiteOfGrace* Grace = NearbyGrace.Get())
 	{
 		if (!IsDead() && !IsBusy())

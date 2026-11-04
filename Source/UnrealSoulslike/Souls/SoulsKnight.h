@@ -12,6 +12,7 @@ class UInputAction;
 class UInputMappingContext;
 class ASiteOfGrace;
 class AGrapplePoint;
+class ASoulsPickup;
 
 UENUM(BlueprintType)
 enum class EKnightAction : uint8
@@ -319,6 +320,8 @@ public:
 	ASoulsKnight* GetLockTarget() const { return LockTarget.Get(); }
 	ASiteOfGrace* GetNearbyGrace() const { return NearbyGrace.Get(); }
 	void SetNearbyGrace(ASiteOfGrace* Grace);
+	ASoulsPickup* GetNearbyPickup() const { return NearbyPickup.Get(); }
+	void SetNearbyPickup(ASoulsPickup* Pickup);
 
 	// Commands (player input and the enemy AI both drive the knight through these).
 	virtual void DoMove(float Right, float Forward) override;
@@ -455,6 +458,7 @@ private:
 	TWeakObjectPtr<ASoulsKnight> CriticalVictim;
 	TWeakObjectPtr<AActor> TrackTarget;
 	TWeakObjectPtr<ASiteOfGrace> NearbyGrace;
+	TWeakObjectPtr<ASoulsPickup> NearbyPickup;
 	TSet<TWeakObjectPtr<AActor>> HitThisSwing;
 
 	EKnightAction Action = EKnightAction::None;

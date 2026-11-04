@@ -4,6 +4,7 @@
 #include "SoulsKnight.h"
 #include "SiteOfGrace.h"
 #include "GrapplePoint.h"
+#include "SoulsPickup.h"
 #include "Engine/Canvas.h"
 #include "Engine/Engine.h"
 #include "Engine/Font.h"
@@ -101,9 +102,11 @@ void ASoulsHUD::DrawHUD()
 		Text(FString::FromInt(Knight->Flasks), FX + 52.f * S, FY + 52.f * S, HudParchment, 1.0f * S, false);
 
 		// Interaction prompt.
-		if (const ASiteOfGrace* Grace = Knight->GetNearbyGrace())
+		const ASoulsPickup* Pickup = Knight->GetNearbyPickup();
+		if (Pickup || Knight->GetNearbyGrace())
 		{
-			const FString Prompt = TEXT("Rest at Site of Grace      [ E ]  /  D-pad Up");
+			const FString Prompt = Pickup ? FString::Printf(TEXT("Pick up  %s      [ E ]  /  D-pad Up"), *Pickup->GetItemName().ToString())
+				: FString(TEXT("Rest at Site of Grace      [ E ]  /  D-pad Up"));
 			DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.55f), Canvas->ClipX * 0.5f - 320.f * S, Canvas->ClipY * 0.74f - 10.f * S, 640.f * S, 50.f * S);
 			Text(Prompt, Canvas->ClipX * 0.5f, Canvas->ClipY * 0.74f, HudParchment, 1.1f * S, true);
 		}
@@ -235,6 +238,14 @@ void ASoulsHUD::DrawHUD()
 		{
 			Text(FString::Printf(TEXT("+%d"), GameMode->LastRunesGained), RX, RY - 40.f * S,
 				FLinearColor(HudGold.R, HudGold.G, HudGold.B, FMath::Clamp(2.5f - (Now - GameMode->LastRunesTime), 0.f, 1.f)), 1.f * S, false);
+		}
+		// Item toast, centre-low.
+		const float ToastAge = Now - GameMode->ToastTime;
+		if (ToastAge >= 0.f && ToastAge < 3.f)
+		{
+			const float Alpha = FMath::Min(FMath::Clamp(ToastAge / 0.3f, 0.f, 1.f), FMath::Clamp((3.f - ToastAge) / 0.6f, 0.f, 1.f));
+			DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.55f * Alpha), Canvas->ClipX * 0.5f - 300.f * S, Canvas->ClipY * 0.66f - 8.f * S, 600.f * S, 52.f * S);
+			Text(GameMode->ToastText.ToString(), Canvas->ClipX * 0.5f, Canvas->ClipY * 0.66f, FLinearColor(0.95f, 0.85f, 0.6f, Alpha), 0.5f * S, true, TitleFont ? TitleFont.Get() : nullptr);
 		}
 		DrawBoss(Delta);
 		DrawBanner(Now);

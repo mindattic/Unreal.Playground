@@ -71,6 +71,15 @@ public:
 	float BossArenaRadius = 2600.f;
 
 	int32 Runes = 0;
+	int32 GoldenSeeds = 0;
+	int32 CrimsonTears = 0;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Souls|Sound")
+	TObjectPtr<USoundBase> PickupSound;
+
+	FText ToastText;
+	float ToastTime = -100.f;
+	void ShowToast(const FText& Text);
 	float LastAmbushKillTime = -100.f;
 	int32 LastRunesGained = 0;
 	float LastRunesTime = -100.f;

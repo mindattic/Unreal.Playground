@@ -430,7 +430,11 @@ def build_fx_materials():
     MEL.connect_material_property(const1(line, 0.9, -400, 150), "", unreal.MaterialProperty.MP_METALLIC)
     MEL.connect_material_property(const1(line, 0.45, -400, 250), "", unreal.MaterialProperty.MP_ROUGHNESS)
     finish(line)
-    log("fx materials: M_GraceGlow, M_GraceBeam, M_GrappleGlow, M_GrappleLine")
+    mote = new_material(folder, "M_PickupGlow")
+    mote.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_UNLIT)
+    MEL.connect_material_property(const3(mote, (9.0, 8.0, 6.0), -400, 0), "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+    finish(mote)
+    log("fx materials: M_GraceGlow, M_GraceBeam, M_GrappleGlow, M_GrappleLine, M_PickupGlow")
 
 
 def import_audio():
@@ -560,7 +564,8 @@ def build_blueprints(montages, weapons, armour, sounds):
     gm_cdo.set_editor_property("EnemyClass", enemy.generated_class())
     gm_cdo.set_editor_property("BossClass", boss.generated_class())
     for prop, role in (("GraceSound", "grace_rest"), ("FelledSound", "enemy_felled"), ("DiedSound", "death"),
-                       ("BossMusic", "music_boss_loop"), ("AmbientLoop", "ambient_wind_sea_loop"), ("BossRoar", "boss_roar")):
+                       ("BossMusic", "music_boss_loop"), ("AmbientLoop", "ambient_wind_sea_loop"), ("BossRoar", "boss_roar"),
+                       ("PickupSound", "ui_confirm")):
         wave = first(sounds, role)
         if wave is not None:
             gm_cdo.set_editor_property(prop, wave)
