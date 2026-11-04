@@ -47,4 +47,4 @@ _Nothing recorded yet._
 | UNR-T24 | 2026-11-04 | feature | closed | LB guard doubles as parry when timed: pressing guard right before a hit parries | — |
 | UNR-T25 | 2026-11-04 | fix | closed | Gamepad: A jumps (unbound today), B rolls on press, tap L3 starts sprinting | — |
 | UNR-T26 | 2026-11-04 | feature | closed | Enemies patrol; when two patrollers meet they stop, chat, then part ways | — |
-| UNR-T27 | 2026-11-04 | feature | open | Stealth stance: tap B standing still to crouch, hold B to dive prone and army-crawl, B again to stand; crouch/prone cut enemy sight and hearing so you can sneak up and backstab | — |
+| UNR-T27 | 2026-11-04 | feature | closed | Stealth stance: tap B standing still to crouch, hold B to dive prone and army-crawl, B again to stand; crouch/prone cut enemy sight and hearing so you can sneak up and backstab | — |
