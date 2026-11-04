@@ -307,8 +307,8 @@ def duplicate_blueprint(source, dest_name, parent_class=None):
     return bp
 
 
-# Fitted to SKM_Manny hand_r by eye: blade along the hand's -Z, grip (mesh z=-0.75) in the fist.
-SWORD_TRANSFORM = {"location": (0.0, 0.0, -41.0), "rotation": (180.0, 0.0, 0.0), "scale": 55.0}
+# Fitted to SKM_Manny hand_r by eye: blade along the hand's +Z (forward of the fist), grip (mesh z=-0.75) in the fist.
+SWORD_TRANSFORM = {"location": (0.0, 0.0, 41.0), "rotation": (0.0, 0.0, 0.0), "scale": 55.0}
 SHIELD_TRANSFORM = {"location": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": 1.25}
 
 
