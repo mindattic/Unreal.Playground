@@ -37,8 +37,10 @@ STAGE = os.environ.get("ISLAND_STAGE", "all")
 TEXTURE_SETS = ["sparse_grass", "coast_sand_01", "aerial_beach_01", "damp_beach_sand", "seaside_rock", "rocky_trail"]
 ACG_SETS = ["Grass004", "Grass003"]
 ACG_TEX = os.path.join(ART, "AmbientCG")
+GRASS_OBJS = ("SM_GrassClump_A.obj", "SM_GrassClump_B.obj", "SM_GrassClump_C.obj", "SM_Marram.obj", "SM_Reeds.obj", "SM_Heather.obj")
 MODELS = ["rock_moss_set_01", "rock_moss_set_02", "boulder_01", "rock_07", "rock_face_02", "mountainside",
-          "modular_fort_01", "dead_tree_trunk"]
+          "modular_fort_01", "dead_tree_trunk",
+          "island_tree_02", "shrub_02", "fern_02", "dandelion_01"]
 
 
 def log(msg):
@@ -179,8 +181,16 @@ def import_models():
                 eal.delete_directory(dest)
             import_files([gltf], dest)
             for mesh in assets_of(dest, unreal.StaticMesh):
-                foliage = mid in ("fern_02",)
+                foliage = mid in ("fern_02", "shrub_02", "dandelion_01")
                 nanite_and_collision(mesh, nanite=True, complex_collision=not foliage)
+        alpha_files = [os.path.join(PH_MOD, mid, "textures", f) for f in os.listdir(os.path.join(PH_MOD, mid, "textures"))
+                       if "alpha" in f.lower()]
+        if alpha_files and (REIMPORT or not eal.does_directory_exist(dest + "/Alpha")):
+            import_files(alpha_files, dest + "/Alpha")
+            for tex_ in assets_of(dest + "/Alpha", unreal.Texture2D):
+                tex_.set_editor_property("srgb", False)
+                tex_.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_MASKS)
+                eal.save_loaded_asset(tex_)
         meshes = assets_of(dest, unreal.StaticMesh)
         models[mid] = meshes
         for m in meshes:
@@ -189,8 +199,8 @@ def import_models():
                 mid, m.get_name(), b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z, b.min.x, b.min.y, b.min.z,
                 m.get_num_triangles(0) if hasattr(m, "get_num_triangles") else "?"))
     dest = "%s/Models/Grass" % ROOT
-    if REIMPORT or not assets_of(dest, unreal.StaticMesh) if eal.does_directory_exist(dest) else True:
-        import_files([os.path.join(GEN, f) for f in ("SM_GrassClump_A.obj", "SM_GrassClump_B.obj", "SM_GrassClump_C.obj")], dest)
+    if REIMPORT or len(assets_of(dest, unreal.StaticMesh)) < len(GRASS_OBJS) if eal.does_directory_exist(dest) else True:
+        import_files([os.path.join(GEN, f) for f in GRASS_OBJS], dest)
         for mesh in assets_of(dest, unreal.StaticMesh):
             nanite_and_collision(mesh, nanite=False, complex_collision=False)
             mesh.set_editor_property("body_setup", None)
@@ -213,10 +223,18 @@ RING_RADIUS = 2350.0
 BEACH_DIR = (-0.86, -0.51)
 CLIFF_DIR = (0.62, 0.78)
 LIB = unreal.IslandBuilderLibrary
+MARSH_RADIUS = 6200.0
+MARSH_LEVEL = 380.0   # marsh ground
+POOL_LEVEL = 330.0    # marsh pool water surface
+CLEARING_RADIUS = 2300.0  # the shadow boss arena (19-25 m), flat and open
+ISLET_DIR = (-0.05, -1.0)
 
 
 def v2(x, y):
     return unreal.Vector2D(x, y)
+
+
+BIOMES = {}  # filled by plan_layout: marsh / clearing / wood centres, islet
 
 
 def make_layout(path=(), pads=()):
@@ -234,6 +252,20 @@ def make_layout(path=(), pads=()):
     lay.set_editor_property("path", [v2(x, y) for x, y in path])
     lay.set_editor_property("path_width", 420.0)
     lay.set_editor_property("pads", [unreal.Vector(x, y, r) for x, y, r in pads])
+    if BIOMES:
+        lay.set_editor_property("marsh_center", v2(*BIOMES["marsh"]))
+        lay.set_editor_property("marsh_radius", MARSH_RADIUS)
+        lay.set_editor_property("marsh_level", MARSH_LEVEL)
+        lay.set_editor_property("pool_level", POOL_LEVEL)
+        lay.set_editor_property("clearing_center", v2(*BIOMES["clearing"]))
+        lay.set_editor_property("clearing_radius", CLEARING_RADIUS)
+        lay.set_editor_property("wood_center", v2(*BIOMES["wood"]))
+        lay.set_editor_property("wood_radius", 5800.0)
+        lay.set_editor_property("islets", [unreal.Vector(*BIOMES["islet"])])
+        lay.set_editor_property("islet_height", 650.0)
+    else:
+        lay.set_editor_property("marsh_radius", 1.0)
+        lay.set_editor_property("wood_radius", 1.0)
     lay.set_editor_property("components_per_side", 8)
     lay.set_editor_property("quad_size", 60.0)
     return lay
@@ -305,9 +337,28 @@ def plan_layout():
              (0.84, 1300.0), (0.93, 400.0), (1.0, 0.0)]
     pts = [(sx + dx * t + px * o, sy + dy * t + py * o) for t, o in stops]
     route = Route(pts)
+    # Biomes along the route: machair dunes (start) -> green woodland (west) -> ruined keep ->
+    # peat marsh (south-east, the causeway skirts it) -> heather highland -> the stone circle.
+    BIOMES["wood"] = route.offset(0.27, 5600.0)
+    BIOMES["marsh"] = route.offset(0.60, -6800.0)
+    mx, my = BIOMES["marsh"]
+    (_, _), (rdx, rdy) = route.at(0.60)
+    BIOMES["clearing"] = (mx + rdy * 2000.0, my - rdx * 2000.0)
+    # Offshore islet: swim ~35 m from the south coast.
+    ix, iy = ISLET_DIR
+    n = math.hypot(ix, iy)
+    ix, iy = ix / n, iy / n
+    r = 6000.0
+    while r < 30000.0 and height(ix * r, iy * r) > -100.0:
+        r += 100.0
+    rc = r + 5200.0
+    BIOMES["islet"] = (ix * rc, iy * rc, 2100.0)
+    cx, cy = BIOMES["clearing"]
     pads = [route.offset(0.25, 1500.0) + (1200.0,), route.offset(0.47, -1800.0) + (1700.0,),
-            route.offset(0.70, 1500.0) + (1100.0,)]
+            route.offset(0.70, 1500.0) + (1100.0,), (cx, cy, CLEARING_RADIUS),
+            (ix * rc, iy * rc, 900.0)]
     LIB.set_island_layout(make_layout(pts, pads))
+    log("biomes: %s" % {k: tuple(round(c) for c in v) for k, v in BIOMES.items()})
     log("route %.0f m through %d points; pads %s" % (route.length / 100.0, len(pts), [(round(p[0]), round(p[1]), p[2]) for p in pads]))
     return route, pads
 
@@ -417,7 +468,7 @@ def mask_uv(g, wp_xy, extent):
     return g.div(g.add(wp_xy, (extent, extent)), (2.0 * extent, 2.0 * extent))
 
 
-def build_terrain_material(tex, mask_tex, grass_type):
+def build_terrain_material(tex, mask_tex, biome_tex, grass_types):
     mat, g = new_material("M_IslandTerrain", ROOT + "/Materials")
     extent = LIB.get_landscape_extent()
     wp = g.world()
@@ -477,6 +528,13 @@ def build_terrain_material(tex, mask_tex, grass_type):
     lum = g.dot(grass_c, (0.3, 0.59, 0.11))
     grass_c = g.lerp(grass_c, lum, 0.1)
     grass_c = g.mul(grass_c, g.lerp((1.0, 1.0, 0.78), (0.88, 0.97, 0.8), mid))
+    # Biomes: lush woodland turf, purple-brown heather on the highland, dark peat and wet moss in the marsh.
+    biome = g.tex(biome_tex, mask_uv(g, wp_xy, extent), "linear", clamp=True)
+    marsh, wood, heather, pool = (biome, "R"), (biome, "G"), (biome, "B"), (biome, "A")
+    grass_c = g.lerp(grass_c, g.mul(grass_c, (0.86, 1.12, 0.78)), g.mul(wood, 0.8))
+    grass_c = g.lerp(grass_c, g.mul(heath, (0.72, 0.46, 0.56)), g.mul(heather, g.smooth(0.25, 0.6, g.add(mid, 0.2))))
+    peat = g.lerp(g.mul(olive, (0.5, 0.48, 0.32)), (0.05, 0.04, 0.03), g.smooth(0.0, 0.25, g.add(pool, g.mul(g.sub(mid, 0.5), 0.3))))
+    grass_c = g.lerp(grass_c, peat, marsh)
     # Anti-tiling for sand and trail: a second, larger sample mixed in by noise.
     pebbles = (g.tex(tex["coast_sand_01"]["color"], g.div(wp_xy, (430.0, 430.0)), "color"), "RGB")
     sand_c = g.lerp(sand["color"], pebbles, g.mul(g.smooth(0.55, 0.85, mid), 0.6))
@@ -490,7 +548,7 @@ def build_terrain_material(tex, mask_tex, grass_type):
     path_w = g.maxx((mask, "R"), g.mul((mask, "G"), g.smooth(0.3, 0.7, g.add(mid, 0.15))))
     path_a = g.smooth(0.42, 0.58, g.add(path_w, g.mul(g.sub(trail["disp"], 0.5), 0.6)))
     sand_line = g.add(240.0, g.mul(g.sub(macro, 0.5), 160.0))
-    sand_w = g.one_minus(g.smooth(g.sub(sand_line, 60.0), sand_line, wz))
+    sand_w = g.mul(g.one_minus(g.smooth(g.sub(sand_line, 60.0), sand_line, wz)), g.one_minus(marsh))
     sand_a = g.smooth(0.42, 0.58, g.add(sand_w, g.mul(g.sub(sand["disp"], 0.5), -0.5)))
     wet_a = g.one_minus(g.smooth(10.0, 70.0, wz))
     rock_w = g.maxx(g.smooth(0.84, 0.70, nz), g.mul((mask, "A"), g.smooth(0.97, 0.88, nz)))
@@ -512,20 +570,35 @@ def build_terrain_material(tex, mask_tex, grass_type):
 
     g.out(base, E.MaterialProperty.MP_BASE_COLOR)
     g.out(normal, E.MaterialProperty.MP_NORMAL)
+    rough = g.lerp(rough, 0.28, g.mul(marsh, g.smooth(0.0, 0.15, g.add(pool, g.mul(g.sub(mid, 0.6), 0.4)))))
     g.out(rough, E.MaterialProperty.MP_ROUGHNESS)
     g.out(ao, E.MaterialProperty.MP_AMBIENT_OCCLUSION)
     g.out(g.lerp(0.22, 0.4, g.maxx(sand_a, rock_a)), E.MaterialProperty.MP_SPECULAR)
 
-    # Procedural grass: where the turf shows, minus path / sand / rock, patchy by noise.
-    if grass_type is not None:
-        grass_w = g.mul(g.mul(g.one_minus(g.smooth(0.12, 0.42, path_w)), g.one_minus(sand_a)), g.one_minus(rock_a))
-        grass_w = g.mul(grass_w, g.smooth(0.15, 0.45, g.add(mid, g.mul(macro, 0.3))))
+    # Procedural grass per biome, each driven by its own weight.
+    if grass_types:
+        not_path = g.one_minus(g.smooth(0.12, 0.42, path_w))
+        land = g.mul(g.mul(not_path, g.one_minus(sand_a)), g.one_minus(rock_a))
+        patchy = g.smooth(0.15, 0.45, g.add(mid, g.mul(macro, 0.3)))
+        weights = {
+            "LGT_IslandTurf": g.mul(g.mul(g.mul(land, patchy), g.one_minus(marsh)), g.one_minus(g.mul(heather, 0.85))),
+            "LGT_Marram": g.mul(g.mul(g.mul(g.smooth(130.0, 210.0, wz), g.one_minus(g.smooth(380.0, 620.0, wz))),
+                                      g.mul(g.one_minus(marsh), g.one_minus(rock_a))),
+                                g.mul(not_path, g.smooth(0.35, 0.6, mid))),
+            "LGT_Reeds": g.mul(g.mul(marsh, g.one_minus(g.smooth(0.4, 0.75, pool))),
+                               g.mul(g.one_minus(path_a), g.smooth(0.3, 0.55, g.add(mid, g.mul(macro, 0.2))))),
+            "LGT_Heather": g.mul(g.mul(heather, land), g.smooth(0.2, 0.45, g.add(mid, 0.1))),
+        }
         go = g.new(E.MaterialExpressionLandscapeGrassOutput)
-        gi = unreal.GrassInput()
-        gi.set_editor_property("name", "Turf")
-        gi.set_editor_property("grass_type", grass_type)
-        go.set_editor_property("grass_types", [gi])
-        g.link(grass_w, go, "Turf")
+        inputs = []
+        for name, lgt in grass_types.items():
+            gi = unreal.GrassInput()
+            gi.set_editor_property("name", name)
+            gi.set_editor_property("grass_type", lgt)
+            inputs.append(gi)
+        go.set_editor_property("grass_types", inputs)
+        for name in grass_types:
+            g.link(weights[name], go, name)
     finish_material(mat)
     return mat
 
@@ -582,8 +655,18 @@ def build_ocean_material(tex, mask_tex):
 GRASS_NOISE = []
 
 
-def build_grass_material():
-    mat, g = new_material("M_GrassBlades", ROOT + "/Materials")
+GRASS_LOOKS = {
+    # name: (root, tip A, tip B, dry-patch tint, sway cm)
+    "M_GrassBlades": ((0.018, 0.030, 0.008), (0.11, 0.16, 0.035), (0.20, 0.21, 0.06), (0.17, 0.12, 0.07), 7.0),
+    "M_Marram": ((0.05, 0.06, 0.03), (0.30, 0.33, 0.22), (0.42, 0.40, 0.26), (0.45, 0.38, 0.22), 11.0),
+    "M_Reeds": ((0.03, 0.035, 0.015), (0.16, 0.17, 0.06), (0.26, 0.21, 0.09), (0.30, 0.22, 0.10), 9.0),
+    "M_Heather": ((0.03, 0.02, 0.015), (0.16, 0.07, 0.12), (0.12, 0.09, 0.05), (0.20, 0.08, 0.17), 2.5),
+}
+
+
+def build_grass_material(name="M_GrassBlades"):
+    root_c, tip_a, tip_b, dry_c, sway_cm = GRASS_LOOKS[name]
+    mat, g = new_material(name, ROOT + "/Materials")
     mat.set_editor_property("shading_model", E.MaterialShadingModel.MSM_TWO_SIDED_FOLIAGE)
     mat.set_editor_property("two_sided", True)
     mat.set_editor_property("used_with_instanced_static_meshes", True)
@@ -592,12 +675,9 @@ def build_grass_material():
     rnd = g.new(E.MaterialExpressionPerInstanceRandom)
     wp = g.world()
     wp_xy = g.mask(wp, r=True, g=True)
-    root_c = (0.018, 0.030, 0.008)
-    tip_a = (0.11, 0.16, 0.035)
-    tip_b = (0.20, 0.21, 0.06)
     tip_c = g.lerp(tip_a, tip_b, rnd)
     patch = (g.tex(GRASS_NOISE[0], g.div(wp_xy, (9000.0, 9000.0)), "masks"), "B")
-    tip_c = g.lerp(tip_c, (0.17, 0.12, 0.07), g.mul(g.smooth(0.56, 0.74, patch), 0.6))
+    tip_c = g.lerp(tip_c, dry_c, g.mul(g.smooth(0.56, 0.74, patch), 0.6))
     color = g.lerp(root_c, tip_c, g.op(E.MaterialExpressionPower, {"Base": tip, "Exp": 0.7}))
     g.out(color, E.MaterialProperty.MP_BASE_COLOR)
     g.out(g.lerp(0.75, 0.5, tip), E.MaterialProperty.MP_ROUGHNESS)
@@ -608,7 +688,7 @@ def build_grass_material():
     t = g.time()
     phase = g.add(g.mul(t, 1.7), g.add(g.div(g.mask(wp, r=True), 420.0), g.div(g.mask(wp, g=True), 650.0)))
     gust = g.add(g.mul(g.sine(phase), 0.5), g.mul(g.sine(g.add(g.mul(phase, 2.3), g.mul(rnd, 6.0))), 0.25))
-    sway = g.mul(g.mul(g.mul(tip, tip), g.add(gust, 0.6)), 7.0)
+    sway = g.mul(g.mul(g.mul(tip, tip), g.add(gust, 0.6)), sway_cm)
     g.out(g.append(g.append(sway, g.mul(sway, 0.35)), 0.0), E.MaterialProperty.MP_WORLD_POSITION_OFFSET)
     finish_material(mat)
     return mat
@@ -685,7 +765,90 @@ PROP_LOOKS = {
     "mountainside": ((0.78, 0.8, 0.82), 0.75, 1.0),
     "modular_fort_01": ((0.6, 0.62, 0.62), 0.75, 1.0),
     "dead_tree_trunk": ((0.85, 0.85, 0.85), 0.0, 1.0),
+    "island_tree_02": ((0.9, 0.9, 0.9), 0.25, 1.0),
 }
+
+# Foliage: model -> texture prefix of its leaf material (gets M_IslandFoliage, masked by the fetched alpha map).
+FOLIAGE = {"island_tree_02": "island_tree_02_leaves", "shrub_02": "shrub_02", "fern_02": "fern_02",
+           "dandelion_01": "dandelion_01"}
+
+
+def build_foliage_master(tex):
+    mat, g = new_material("M_IslandFoliage", ROOT + "/Materials")
+    mat.set_editor_property("blend_mode", E.BlendMode.BLEND_MASKED)
+    mat.set_editor_property("shading_model", E.MaterialShadingModel.MSM_TWO_SIDED_FOLIAGE)
+    mat.set_editor_property("two_sided", True)
+    mat.set_editor_property("used_with_nanite", True)
+    mat.set_editor_property("used_with_instanced_static_meshes", True)
+    uv = g.new(E.MaterialExpressionTextureCoordinate)
+
+    def tparam(name, default, kind):
+        st = {"color": E.MaterialSamplerType.SAMPLERTYPE_COLOR, "normal": E.MaterialSamplerType.SAMPLERTYPE_NORMAL,
+              "masks": E.MaterialSamplerType.SAMPLERTYPE_MASKS}[kind]
+        e = g.new(E.MaterialExpressionTextureSampleParameter2D, parameter_name=name, texture=default, sampler_type=st,
+                  sampler_source=E.SamplerSourceMode.SSM_WRAP_WORLD_GROUP_SETTINGS)
+        g.link(uv, e, "UVs")
+        return e
+
+    base = tparam("Base", tex["seaside_rock"]["color"], "color")
+    nrm = tparam("Normal", tex["seaside_rock"]["normal"], "normal")
+    arm = tparam("ARM", tex["seaside_rock"]["arm"], "masks")
+    alpha = tparam("Alpha", tex["seaside_rock"]["arm"], "masks")
+    tint = g.new(E.MaterialExpressionVectorParameter, parameter_name="Tint", default_value=unreal.LinearColor(1, 1, 1, 1))
+    color = g.mul((base, "RGB"), (tint, "RGB"))
+    g.out(color, E.MaterialProperty.MP_BASE_COLOR)
+    g.out((nrm, "RGB"), E.MaterialProperty.MP_NORMAL)
+    g.out(g.maxx((arm, "G"), 0.55), E.MaterialProperty.MP_ROUGHNESS)
+    g.out(g.mul(color, 0.5), E.MaterialProperty.MP_SUBSURFACE_COLOR)
+    g.out((alpha, "R"), E.MaterialProperty.MP_OPACITY_MASK)
+    # Light wind sway growing with height above the plant's pivot.
+    wp = g.world()
+    above = g.sat(g.div(g.sub(g.mask(wp, b=True), g.mask(g.new(E.MaterialExpressionObjectPositionWS), b=True)), 600.0))
+    phase = g.add(g.mul(g.time(), 1.3), g.div(g.add(g.mask(wp, r=True), g.mask(wp, g=True)), 380.0))
+    sway = g.mul(g.mul(g.sine(phase), above), 6.0)
+    g.out(g.append(g.append(sway, g.mul(sway, 0.6)), 0.0), E.MaterialProperty.MP_WORLD_POSITION_OFFSET)
+    try:
+        mat.set_editor_property("max_world_position_offset_displacement", 20.0)
+    except Exception:
+        pass
+    finish_material(mat)
+    return mat
+
+
+def apply_foliage_materials(models, master):
+    for mid, prefix in FOLIAGE.items():
+        meshes = models.get(mid) or []
+        folder = "%s/Models/%s" % (ROOT, mid)
+        maps = {}
+        for t_ in assets_of(folder, unreal.Texture2D):
+            n = t_.get_name()
+            for key in ("diff", "nor_gl", "rough"):
+                # Interchange may merge the alpha into the diffuse ("<prefix>_diff-<prefix>_alpha").
+                if n == "%s_%s" % (prefix, key) or n.startswith("%s_%s-" % (prefix, key)):
+                    maps[key] = t_
+            if n.endswith("alpha_2k"):
+                maps["alpha"] = t_
+        if "alpha" not in maps or "diff" not in maps:
+            warn("foliage %s: missing maps %s" % (mid, sorted(maps)))
+            continue
+        name = "MI_%s_foliage" % mid
+        folder_mi = ROOT + "/Materials/Props"
+        path = "%s/%s" % (folder_mi, name)
+        mi = eal.load_asset(path) if eal.does_asset_exist(path) else \
+            tools.create_asset(name, folder_mi, unreal.MaterialInstanceConstant, unreal.MaterialInstanceConstantFactoryNew())
+        mel.set_material_instance_parent(mi, master)
+        for param, key in (("Base", "diff"), ("Normal", "nor_gl"), ("ARM", "rough"), ("Alpha", "alpha")):
+            if key in maps:
+                mel.set_material_instance_texture_parameter_value(mi, param, maps[key])
+        mel.set_material_instance_vector_parameter_value(mi, "Tint", unreal.LinearColor(0.85, 0.92, 0.8, 1.0))
+        eal.save_loaded_asset(mi)
+        for mesh in meshes:
+            for i, slot in enumerate(mesh.get_editor_property("static_materials")):
+                slot_name = str(slot.get_editor_property("material_slot_name"))
+                if slot_name.startswith(prefix) and (mid != "island_tree_02" or "leaves" in slot_name):
+                    mesh.set_material(i, mi)
+            eal.save_loaded_asset(mesh)
+        log("foliage material %s on %d meshes" % (name, len(meshes)))
 
 
 def apply_prop_materials(models, master):
@@ -714,17 +877,30 @@ def apply_prop_materials(models, master):
         log("prop materials %s: %s" % (mid, sorted(instances)))
 
 
-def build_grass_type(models, grass_mat):
-    path = ROOT + "/Foliage/LGT_IslandTurf"
+GRASS_TYPES = {
+    # grass type: (material, [(mesh, density, cull start, cull end, scale range, dynamic shadows)])
+    "LGT_IslandTurf": ("M_GrassBlades", [("SM_GrassClump_C", 520.0, 3200, 5200, (0.8, 1.3), False),
+                                         ("SM_GrassClump_A", 380.0, 3600, 6000, (0.8, 1.35), False),
+                                         ("SM_GrassClump_B", 110.0, 4500, 7500, (0.8, 1.4), True)]),
+    "LGT_Marram": ("M_Marram", [("SM_Marram", 160.0, 4000, 7000, (0.7, 1.3), True)]),
+    "LGT_Reeds": ("M_Reeds", [("SM_Reeds", 140.0, 4500, 8000, (0.7, 1.3), True)]),
+    "LGT_Heather": ("M_Heather", [("SM_Heather", 300.0, 3500, 6000, (0.8, 1.5), False)]),
+}
+
+
+def build_grass_types(models):
+    return {name: build_grass_type(models, build_grass_material(mat_name), name, varieties)
+            for name, (mat_name, varieties) in GRASS_TYPES.items()}
+
+
+def build_grass_type(models, grass_mat, type_name, variety_specs):
+    path = ROOT + "/Foliage/" + type_name
     ensure_dir(ROOT + "/Foliage")
     lgt = eal.load_asset(path) if eal.does_asset_exist(path) else \
-        tools.create_asset("LGT_IslandTurf", ROOT + "/Foliage", unreal.LandscapeGrassType, None)
+        tools.create_asset(type_name, ROOT + "/Foliage", unreal.LandscapeGrassType, None)
     by_name = {m.get_name(): m for m in models["grass"]}
     varieties = []
-    for name, density, cull_start, cull_end, scale, shadows in (
-            ("SM_GrassClump_C", 520.0, 3200, 5200, (0.8, 1.3), False),
-            ("SM_GrassClump_A", 380.0, 3600, 6000, (0.8, 1.35), False),
-            ("SM_GrassClump_B", 110.0, 4500, 7500, (0.8, 1.4), True)):
+    for name, density, cull_start, cull_end, scale, shadows in variety_specs:
         mesh = by_name.get(name)
         if mesh is None:
             warn("grass mesh %s missing" % name)
@@ -756,7 +932,7 @@ def build_grass_type(models, grass_mat):
         varieties.append(v)
     lgt.set_editor_property("grass_varieties", varieties)
     eal.save_loaded_asset(lgt)
-    log("grass type with %d varieties" % len(varieties))
+    log("grass type %s with %d varieties" % (type_name, len(varieties)))
     return lgt
 
 
@@ -936,29 +1112,89 @@ def build_ocean(mat):
 
 
 def build_sea_walls(start):
-    """Invisible walls on the ~1.3 m depth line so nobody wades off into the open sea."""
+    """Invisible walls in a ring well out at sea (beyond the islet), so the open sea is swimmable but bounded."""
     cube = eal.load_asset("/Engine/BasicShapes/Cube")
-    n = 140
-    count = 0
+    n = 96
+    radius = SEA_WALL_RADIUS
+    seg = 2 * math.pi * radius / n * 1.15
     for i in range(n):
         ang = 2 * math.pi * i / n
-        dx, dy = math.cos(ang), math.sin(ang)
-        r = 32000.0
-        while r > 3000.0 and height(dx * r, dy * r) < -130.0:
-            r -= 100.0
-        x, y = dx * (r + 150.0), dy * (r + 150.0)
-        seg = 2 * math.pi * (r + 150.0) / n * 1.6
-        a = spawn_mesh(cube, unreal.Vector(x, y, 500.0), unreal.Rotator(yaw=math.degrees(ang)))
-        a.set_actor_scale3d(unreal.Vector(1.0, seg / 100.0, 30.0))
+        a = spawn_mesh(cube, unreal.Vector(math.cos(ang) * radius, math.sin(ang) * radius, -1000.0), unreal.Rotator(yaw=math.degrees(ang)))
+        a.set_actor_scale3d(unreal.Vector(2.0, seg / 100.0, 40.0))
         a.set_folder_path("SeaWalls")
         a.set_actor_hidden_in_game(True)
         smc = a.get_editor_property("static_mesh_component")
         smc.set_collision_profile_name("InvisibleWall")
         smc.set_editor_property("cast_shadow", False)
         smc.set_visibility(False)
-        count += 1
-    log("sea walls: %d" % count)
+    log("sea walls: %d at r=%.0f m" % (n, radius / 100.0))
 
+
+SEA_WALL_RADIUS = 29000.0
+
+
+def build_water(world, tex, mask_tex):
+    """Swimmable water: one PhysicsVolume over the whole sea, one over the marsh pools, plus the pool surface."""
+    sea = LIB.create_water_volume(world, unreal.Vector(0.0, 0.0, -3000.0), unreal.Vector(SEA_WALL_RADIUS + 2000.0, SEA_WALL_RADIUS + 2000.0, 3000.0), "SeaWater")
+    mx, my = BIOMES["marsh"]
+    marsh = LIB.create_water_volume(world, unreal.Vector(mx, my, POOL_LEVEL - 250.0), unreal.Vector(MARSH_RADIUS * 0.8, MARSH_RADIUS * 0.8, 250.0), "MarshWater")
+    for v in (sea, marsh):
+        if v is None:
+            warn("water volume not created")
+        else:
+            v.set_folder_path("Water")
+    leaks = sum(1 for gx in range(-10, 11) for gy in range(-10, 11)
+                if height(mx + gx * MARSH_RADIUS * 0.08, my + gy * MARSH_RADIUS * 0.08) < POOL_LEVEL
+                and biome(mx + gx * MARSH_RADIUS * 0.08, my + gy * MARSH_RADIUS * 0.08)[0] < 0.5)
+    if leaks:
+        warn("marsh water box covers %d low non-marsh samples" % leaks)
+    pool_mat = build_pool_material(tex)
+    plane = eal.load_asset("/Engine/BasicShapes/Plane")
+    a = spawn_mesh(plane, unreal.Vector(mx, my, POOL_LEVEL), unreal.Rotator())
+    a.set_actor_label("MarshPools")
+    a.set_folder_path("Water")
+    a.set_actor_scale3d(unreal.Vector(MARSH_RADIUS * 1.6 / 100.0, MARSH_RADIUS * 1.6 / 100.0, 1.0))
+    smc = a.get_editor_property("static_mesh_component")
+    smc.set_material(0, pool_mat)
+    smc.set_collision_enabled(unreal.CollisionEnabled.NO_COLLISION)
+    smc.set_editor_property("cast_shadow", False)
+    # Low mist hanging over the fen.
+    try:
+        fog = spawn(unreal.LocalFogVolume, (mx, my, MARSH_LEVEL + 50.0), None, "MarshMist", "Water")
+        # LocalFogVolume is a 10 m-radius unit sphere scaled by the actor.
+        fog.set_actor_scale3d(unreal.Vector(MARSH_RADIUS * 0.8 / 1000.0, MARSH_RADIUS * 0.8 / 1000.0, 0.25))
+        fc = fog.get_component_by_class(unreal.LocalFogVolumeComponent)
+        setp(fc, "radial_fog_extinction", 0.08)
+        setp(fc, "height_fog_extinction", 0.18)
+        setp(fc, "height_fog_falloff", 350.0)
+        setp(fc, "fog_albedo", unreal.LinearColor(0.75, 0.8, 0.82, 1.0))
+    except Exception as exc:
+        warn("marsh mist: %s" % exc)
+    log("water: sea + marsh volumes, pool surface at %.0f" % POOL_LEVEL)
+
+
+def build_pool_material(tex):
+    mat, g = new_material("M_PeatPool", ROOT + "/Materials")
+    mat.set_editor_property("shading_model", E.MaterialShadingModel.MSM_SINGLE_LAYER_WATER)
+    wp_xy = g.mask(g.world(), r=True, g=True)
+    t = g.time()
+    nrm = tex["generated"]["T_WaterNormal"]
+    n1 = g.tex(nrm, g.add(g.div(wp_xy, (900.0, 900.0)), g.mul(t, (0.004, 0.002))), "normal")
+    n2 = g.tex(nrm, g.add(g.div(wp_xy, (310.0, 310.0)), g.mul(t, (-0.006, 0.004))), "normal")
+    xy = g.mul(g.add(g.mask((n1, "RGB"), r=True, g=True), g.mask((n2, "RGB"), r=True, g=True)), 0.12)
+    g.out(g.normalize(g.append(xy, 1.0)), E.MaterialProperty.MP_NORMAL)
+    g.out(0.0, E.MaterialProperty.MP_BASE_COLOR)
+    g.out(0.04, E.MaterialProperty.MP_ROUGHNESS)
+    wo = g.new(E.MaterialExpressionSingleLayerWaterMaterialOutput)
+    for names, value in ((("ScatteringCoefficients", "Scattering Coefficients"), (0.0006, 0.0004, 0.0002)),
+                         (("AbsorptionCoefficients", "Absorption Coefficients"), (0.03, 0.045, 0.07)),
+                         (("PhaseG", "Phase G"), 0.1),
+                         (("ColorScaleBehindWater", "Color Scale Behind Water"), 1.0)):
+        src = g.val(value)
+        if not any(mel.connect_material_expressions(src, "", wo, n) for n in names):
+            warn("pool: no SLW input %s" % (names,))
+    finish_material(mat)
+    return mat
 
 def pick(models, key, rng):
     meshes = models[key]
@@ -988,7 +1224,7 @@ def dress(models, route, pads, start):
             continue
         for _ in range(rng.randint(2, 6)):
             x, y = cx + rng.gauss(0, 500), cy + rng.gauss(0, 500)
-            if height(x, y) < 300.0 or LIB.get_path_distance(x, y) < path_clear or not clear_of(x, y, keep_out):
+            if height(x, y) < 300.0 or LIB.get_path_distance(x, y) < path_clear or not clear_of(x, y, keep_out) or biome(x, y)[0] > 0.3:
                 continue
             s = rng.uniform(0.5, 1.5)
             place_mesh(rocks[rng.randrange(len(rocks))], x, y, yaw=rng.uniform(0, 360), scale=s, sink=rng.uniform(0.2, 0.4),
@@ -1156,15 +1392,234 @@ def build_stone_circle(models, route):
     log("standing stones: %d" % stones)
 
 
-def target_point(x, y, tag, label, z_offset=10.0):
-    tp = spawn(unreal.TargetPoint, (x, y, height(x, y) + z_offset), None, label, "Gameplay")
-    tp.set_editor_property("tags", [unreal.Name(tag)])
+# ----------------------------------------------------------------------------------------------
+# Biomes (UNR-T17): woodland, marsh, islet; grapple ledges and loot
+# ----------------------------------------------------------------------------------------------
+
+def biome(x, y):
+    b = LIB.get_island_biome(x, y)
+    return b.x, b.y, b.z, b.w  # marsh, wood, heather, pool
+
+
+def inst_transform(mesh, x, y, yaw, s, sink=0.05, z=None, pitch=0.0, roll=0.0):
+    """Instance transform putting the mesh's (rotated, scaled) bottom-centre on the ground at (x, y)."""
+    b = mesh.get_bounding_box()
+    rot = unreal.Rotator(roll=roll, pitch=pitch, yaw=yaw)
+    q = rot.quaternion()
+    corners = [q.rotate_vector(unreal.Vector(px * s, py * s, pz * s))
+               for px in (b.min.x, b.max.x) for py in (b.min.y, b.max.y) for pz in (b.min.z, b.max.z)]
+    lo_z, hi_z = min(c.z for c in corners), max(c.z for c in corners)
+    centre = q.rotate_vector(unreal.Vector((b.min.x + b.max.x) * 0.5 * s, (b.min.y + b.max.y) * 0.5 * s, 0.0))
+    gz = height(x, y) if z is None else z
+    return unreal.Transform(unreal.Vector(x - centre.x, y - centre.y, gz - (lo_z + sink * (hi_z - lo_z))), rot,
+                            unreal.Vector(s, s, s))
+
+
+def scatter(world, rng, meshes, count, accept, scale, label, collision=False, cull=0.0, sink=0.05, tries=40):
+    """Rejection-sample count instances over the island where accept(x, y) holds; one HISM actor per mesh."""
+    per_mesh = {m.get_name(): [] for m in meshes}
+    placed = 0
+    for _ in range(count * tries):
+        if placed >= count:
+            break
+        x, y = rng.uniform(-24000, 24000), rng.uniform(-24000, 24000)
+        if not accept(x, y):
+            continue
+        m = meshes[rng.randrange(len(meshes))]
+        per_mesh[m.get_name()].append(inst_transform(m, x, y, rng.uniform(0, 360), rng.uniform(*scale), sink=sink,
+                                                     pitch=rng.uniform(-4, 4), roll=rng.uniform(-4, 4)))
+        placed += 1
+    for m in meshes:
+        if per_mesh[m.get_name()]:
+            LIB.create_instanced_meshes(world, m, per_mesh[m.get_name()], "%s_%s" % (label, m.get_name()), "Biomes/" + label,
+                                        collision, cull)
+    log("biome scatter %s: %d instances" % (label, placed))
+    return placed
+
+
+def dress_biomes(world, models, route, pads):
+    rng = random.Random(2468)
+    keep = [(HILL[0], HILL[1], ARENA_RADIUS + 400.0)] + [(x, y, r + 200.0) for x, y, r in pads]
+
+    def land(x, y, min_h=300.0, path=600.0):
+        return (height(x, y) > min_h and normal_z(x, y) > 0.8 and LIB.get_path_distance(x, y) > path and clear_of(x, y, keep))
+
+    # Woodland: wind-bent island trees with bushes, ferns and wildflowers beneath.
+    scatter(world, rng, models["island_tree_02"], 26, lambda x, y: biome(x, y)[1] > 0.55 and land(x, y, path=900.0),
+            (1.4, 2.1), "Trees", collision=True, sink=0.02)
+    scatter(world, rng, models["shrub_02"], 70, lambda x, y: biome(x, y)[1] > 0.3 and land(x, y), (0.8, 1.4), "Shrubs",
+            cull=9000.0)
+    scatter(world, rng, models["fern_02"], 420, lambda x, y: biome(x, y)[1] > 0.4 and land(x, y, path=350.0), (1.0, 1.8),
+            "Ferns", cull=6000.0, sink=0.02)
+    scatter(world, rng, models["dandelion_01"], 500,
+            lambda x, y: (biome(x, y)[1] > 0.2 or rng.random() < 0.25) and biome(x, y)[0] < 0.2 and land(x, y, path=250.0),
+            (0.9, 1.3), "Flowers", cull=4500.0, sink=0.0)
+    # Marsh: drowned snags and logs among the reeds.
+    logs = models["dead_tree_trunk"]
+    for i in range(14):
+        for _ in range(60):
+            x, y = BIOMES["marsh"][0] + rng.gauss(0, MARSH_RADIUS * 0.45), BIOMES["marsh"][1] + rng.gauss(0, MARSH_RADIUS * 0.45)
+            if biome(x, y)[0] > 0.7 and LIB.get_path_distance(x, y) > 500 and clear_of(x, y, keep):
+                break
+        else:
+            continue
+        upright = i % 2 == 0
+        place_mesh(logs[0], x, y, yaw=rng.uniform(0, 360), pitch=rng.uniform(62, 80) if upright else rng.uniform(-5, 5),
+                   scale=rng.uniform(0.8, 1.3), sink=0.15 if upright else 0.35, folder="Biomes/Marsh")
+
+
+def build_islet(models):
+    """The offshore islet: rocky shore, a ruined broch (grapple to its wall top) and a Grace."""
+    rng = random.Random(777)
+    ix, iy, ir = BIOMES["islet"]
+    rocks = models["rock_moss_set_01"] + models["rock_moss_set_02"] + models["boulder_01"]
+    for k in range(16):
+        a = 2 * math.pi * k / 16 + rng.uniform(-0.1, 0.1)
+        r = ir * rng.uniform(0.85, 1.15)
+        x, y = ix + math.cos(a) * r, iy + math.sin(a) * r
+        place_mesh(rocks[rng.randrange(len(rocks))], x, y, yaw=rng.uniform(0, 360), scale=rng.uniform(1.0, 2.4), sink=0.35,
+                   folder="Islet")
+    broch = place_mesh(fort(models, "tower_round"), ix + ir * 0.2, iy - ir * 0.15, yaw=rng.uniform(0, 360), scale=0.5,
+                       sink=0.08, folder="Islet")
+    log("islet at (%.0f, %.0f) r=%.0f top %.0f" % (ix, iy, ir, height(ix, iy)))
+    return broch
+
+
+def trace_down(world, x, y, z_top, z_bottom):
+    res = unreal.SystemLibrary.line_trace_single(world, unreal.Vector(x, y, z_top), unreal.Vector(x, y, z_bottom),
+                                                 unreal.TraceTypeQuery.TRACE_TYPE_QUERY1, True, [],
+                                                 unreal.DrawDebugTrace.NONE, True)
+    hit = res[1] if isinstance(res, tuple) else res
+    if hit is None:
+        return None
+    t = hit.to_tuple()
+    if not t[0]:
+        return None
+    return t[5], t[7]  # impact point, impact normal
+
+
+def find_ledge(world, actor, approach):
+    """Walk from outside the actor toward its centre along approach; the first walkable surface well above the
+    ground is the lip. Returns (lip point, yaw) when a 1.7 m landing behind the lip is walkable too."""
+    origin, extent = actor.get_actor_bounds(False)
+    ax, ay = approach
+    n = math.hypot(ax, ay) or 1.0
+    ax, ay = ax / n, ay / n
+    reach = max(extent.x, extent.y) + 150.0
+    top = origin.z + extent.z + 300.0
+    prev = None
+    for step in range(int(reach * 2 / 20.0)):
+        d = -reach + step * 20.0
+        x, y = origin.x + ax * d, origin.y + ay * d
+        hit = trace_down(world, x, y, top, origin.z - extent.z - 500.0)
+        if hit is None:
+            continue
+        p, nrm = hit
+        ground = height(x, y)
+        if p.z > ground + 250.0 and nrm.z > 0.8:
+            land = trace_down(world, x + ax * 170.0, y + ay * 170.0, top, p.z - 200.0)
+            if land and land[1].z > 0.8 and abs(land[0].z - p.z) < 60.0:
+                return unreal.Vector(x - ax * 10.0, y - ay * 10.0, p.z + 20.0), math.degrees(math.atan2(ay, ax))
+        prev = hit
+    return None
+
+
+def build_grapples_and_loot(world, route, pads, broch):
+    """Grapple hook points on ruin and broch tops (forward = onto the walkable top) and Loot off the main route."""
+    ruins = [a for a in actors_sub.get_all_level_actors() if isinstance(a, unreal.StaticMeshActor)
+             and str(a.get_folder_path()) in ("Ruins", "Islet")]
+    # Every ruin is a candidate; keep up to 5 well-separated ledges (towers first), approached from the route side.
+    ruins.sort(key=lambda a: (0 if "tower" in a.get_actor_label() else 1, a.get_actor_label()))
+    grapples = []
+    for a in ruins:
+        if str(a.get_folder_path()) != "Ruins" or len(grapples) >= 5:
+            continue
+        o = a.get_actor_location()
+        if any((o.x - g_[1][0].x) ** 2 + (o.y - g_[1][0].y) ** 2 < 2000.0 ** 2 for g_ in grapples):
+            continue
+        px, py = route_nearest(route, o.x, o.y)
+        got = find_ledge(world, a, (o.x - px, o.y - py)) or find_ledge(world, a, (px - o.x, py - o.y))
+        if got:
+            grapples.append((a.get_actor_label().replace("modular_fort_01_", ""), got, a))
+    got = find_ledge(world, broch, (-BIOMES["islet"][0], -BIOMES["islet"][1]))
+    if got:
+        grapples.append(("broch", got, broch))
+    else:
+        warn("no grapple ledge on the islet broch")
+    for i, (name, (p, yaw), a) in enumerate(grapples):
+        target_point(p.x, p.y, "Grapple", "Grapple_%02d_%s" % (i + 1, name), z=p.z, yaw=yaw)
+    log("grapple points: %s" % [(n, round(p.z)) for n, (p, _), _ in grapples])
+
+    # Loot (5-7, max 2 Seeds, 1 Tear), all off the main route.
+    loot = []
+    rad = math.radians
+    for name, (p, yaw), a in grapples:
+        if name == "broch" or name.startswith("tower_round"):
+            # Up on the top, 2.5 m past the lip.
+            x, y = p.x + math.cos(rad(yaw)) * 250.0, p.y + math.sin(rad(yaw)) * 250.0
+            hit = trace_down(world, x, y, p.z + 300.0, p.z - 300.0)
+            if hit:
+                loot.append(("Seed", "Loot_%s_Top" % name, hit[0].x, hit[0].y, hit[0].z + 5.0))
+    # Deep in the marsh, on a dry hummock between pools.
+    rng = random.Random(31)
+    mx, my = BIOMES["marsh"]
+    for _ in range(400):
+        x, y = mx + rng.gauss(0, MARSH_RADIUS * 0.35), my + rng.gauss(0, MARSH_RADIUS * 0.35)
+        m, w, h, pool = biome(x, y)
+        if m > 0.85 and pool == 0.0 and LIB.get_path_distance(x, y) > 1800.0:
+            loot.append(("Tear", "Loot_Marsh", x, y, height(x, y) + 5.0))
+            break
+    # Cliff-edge viewpoint: the clifftop just past the stone circle, looking out to sea.
+    cdx, cdy = CLIFF_DIR
+    for side in (-0.35, 0.35):
+        ax, ay = cdx * math.cos(side) - cdy * math.sin(side), cdx * math.sin(side) + cdy * math.cos(side)
+        r = 10000.0
+        while r < 28000.0 and height(ax * r, ay * r) > 1200.0:
+            r += 100.0
+        x, y = ax * (r - 700.0), ay * (r - 700.0)
+        if height(x, y) > 1200.0 and normal_z(x, y) > 0.85:
+            loot.append(("", "Loot_Clifftop", x, y, height(x, y) + 5.0))
+            break
+    # Islet shore and behind a woodland rock.
+    ix, iy, ir = BIOMES["islet"]
+    loot.append(("", "Loot_IsletShore", ix - ir * 0.55, iy - ir * 0.3, height(ix - ir * 0.55, iy - ir * 0.3) + 5.0))
+    wx, wy = BIOMES["wood"]
+    for _ in range(300):
+        x, y = wx + rng.gauss(0, 2500), wy + rng.gauss(0, 2500)
+        if biome(x, y)[1] > 0.6 and LIB.get_path_distance(x, y) > 2000.0 and normal_z(x, y) > 0.9:
+            loot.append(("", "Loot_Woodland", x, y, height(x, y) + 5.0))
+            break
+    seeds = 0
+    for kind, label, x, y, z in loot[:7]:
+        if kind == "Seed":
+            seeds += 1
+            if seeds > 2:
+                kind = ""
+        target_point(x, y, "Loot", label, z=z, extra_tags=(kind,) if kind else ())
+    log("loot: %s" % [(k or "purse", l) for k, l, _, _, _ in loot[:7]])
+    return grapples
+
+
+def route_nearest(route, x, y):
+    best, bp = 1e18, route.points[0]
+    for i in range(101):
+        (px, py), _ = route.at(i / 100.0)
+        d = (px - x) ** 2 + (py - y) ** 2
+        if d < best:
+            best, bp = d, (px, py)
+    return bp
+
+def target_point(x, y, tag, label, z_offset=10.0, yaw=0.0, z=None, extra_tags=()):
+    tz = height(x, y) + z_offset if z is None else z
+    tp = spawn(unreal.TargetPoint, (x, y, tz), unreal.Rotator(yaw=yaw), label, "Gameplay")
+    tp.set_editor_property("tags", [unreal.Name(tag)] + [unreal.Name(t) for t in extra_tags])
     return tp
 
 
 def clear_markers():
     """No prop may stand on a gameplay marker: remove any dressing whose bounds (grown by 1.5 m) cover one."""
-    markers = [a for a in actors_sub.get_all_level_actors() if isinstance(a, (unreal.TargetPoint, unreal.PlayerStart))]
+    markers = [a for a in actors_sub.get_all_level_actors() if isinstance(a, unreal.PlayerStart) or (
+        isinstance(a, unreal.TargetPoint) and any(str(n) in ("Enemy", "Grace", "Boss", "ShadowBoss") for n in a.tags))]
     removed = []
     for a in actors_sub.get_all_level_actors():
         if not isinstance(a, unreal.StaticMeshActor):
@@ -1192,19 +1647,29 @@ def build_markers(route, start):
     t_circle = 1.0 - (ARENA_RADIUS + 1100.0) / route.length
     gx, gy = route.offset(t_circle, 380.0)
     target_point(gx, gy, "Grace", "Grace_StoneCircle")
-    enemies = [(0.21, -250.0), (0.23, 300.0), (0.44, 0.0), (0.47, 350.0), (0.50, -300.0), (0.64, 200.0), (0.67, -250.0),
-               (0.80, 250.0), (0.83, -200.0)]
-    for i, (t, side) in enumerate(enemies):
+    # (t, side, facing, extra tags). facing "away" = back turned to a player coming up the route (ambush);
+    # "back" = watching the way the player comes.
+    enemies = [(0.21, -250.0, "away", ()), (0.23, 300.0, "back", ()), (0.44, 0.0, "back", ()), (0.47, 350.0, "away", ("Leaper",)),
+               (0.50, -300.0, "away", ()), (0.64, 200.0, "away", ()), (0.67, -250.0, "back", ("Leaper",)),
+               (0.80, 250.0, "away", ()), (0.83, -200.0, "back", ())]
+    for i, (t, side, facing, extra) in enumerate(enemies):
         x, y = route.offset(t, side)
-        target_point(x, y, "Enemy", "Enemy_%02d" % (i + 1))
+        (_, _), (rdx, rdy) = route.at(t)
+        fyaw = math.degrees(math.atan2(rdy, rdx)) + (0.0 if facing == "away" else 180.0)
+        target_point(x, y, "Enemy", "Enemy_%02d" % (i + 1), yaw=fyaw, extra_tags=extra)
+    # Grace on the offshore islet and the shadow boss in the marsh clearing.
+    ix, iy, ir = BIOMES["islet"]
+    target_point(ix - ir * 0.25, iy + ir * 0.2, "Grace", "Grace_Islet")
+    cx, cy = BIOMES["clearing"]
+    target_point(cx, cy, "ShadowBoss", "ShadowBoss")
     target_point(HILL[0], HILL[1], "Boss", "Boss")
     clear_markers()
-    log("markers: PlayerStart yaw %.0f, 2 graces, %d enemies, boss at (%.0f, %.0f, %.0f)" % (
+    log("markers: PlayerStart yaw %.0f, 3 graces, %d enemies, shadow boss, boss at (%.0f, %.0f, %.0f)" % (
         yaw, len(enemies), HILL[0], HILL[1], height(*HILL)))
     return ps
 
 
-def write_shot_list(route, start):
+def write_shot_list(route, start, grapples=()):
     (sx, sy), (dx, dy) = route.at(0.0)
     lines = ["player player"]
     (mx, my), _ = route.at(0.40)
@@ -1219,6 +1684,29 @@ def write_shot_list(route, start):
     cdx, cdy = CLIFF_DIR
     lines.append(shot("cliffs_from_sea", cdx * 30000 - cdy * 9000, cdy * 30000 + cdx * 9000, 900.0, cdx * 16000, cdy * 16000, 1200.0, fov=65))
     lines.append(shot("arena_inside", hx - 1500.0, hy - 1200.0, ARENA_HEIGHT + 190.0, hx + 1500, hy + 1000, ARENA_HEIGHT + 200, fov=85))
+    # Biomes, swimming, a grapple ledge.
+    wx, wy = BIOMES["wood"]
+    (rx, ry) = route.offset(0.22, 900.0)
+    lines.append(shot("biome_woodland", rx, ry, height(rx, ry) + 230.0, wx, wy, height(wx, wy) + 300.0, fov=80))
+    mx, my = BIOMES["marsh"]
+    (rx, ry) = route.offset(0.56, -1500.0)
+    lines.append(shot("biome_marsh", rx, ry, height(rx, ry) + 260.0, mx, my, MARSH_LEVEL + 150.0, fov=80))
+    cx, cy = BIOMES["clearing"]
+    ex, ey = cx + 3200.0, cy + 800.0
+    lines.append(shot("marsh_clearing", ex, ey, max(height(ex, ey), POOL_LEVEL) + 450.0, cx, cy, height(cx, cy) + 100.0, fov=80))
+    (rx, ry) = route.at(0.80)[0]
+    lines.append(shot("biome_highland", rx, ry, height(rx, ry) + 250.0, HILL[0], HILL[1], ARENA_HEIGHT, fov=80))
+    lines.append(shot("biome_dunes", sx - dy * 2500, sy + dx * 2500, height(sx - dy * 2500, sy + dx * 2500) + 200.0,
+                      sx + dx * 3000, sy + dy * 3000, 400.0, fov=80))
+    ix, iy, ir = BIOMES["islet"]
+    idist = math.hypot(ix, iy)
+    sx2, sy2 = ix - ix / idist * (ir + 1300.0), iy - iy / idist * (ir + 1500.0)  # open water off the islet
+    lines.append("swim pawn %.0f %.0f %.0f %.1f" % (sx2, sy2, -60.0, math.degrees(math.atan2(iy - sy2, ix - sx2))))
+    lines.append(shot("islet", ix * 0.82 - 1500.0, iy * 0.82, 350.0, ix, iy, 500.0, fov=70))
+    for name, (p, yaw), a in list(grapples)[:2]:
+        back = math.radians(yaw + 180.0)
+        cxg, cyg = p.x + math.cos(back) * 1500.0, p.y + math.sin(back) * 1500.0
+        lines.append(shot("grapple_%s" % name, cxg, cyg, height(cxg, cyg) + 300.0, p.x, p.y, p.z - 250.0, fov=70))
     path = os.path.join(PROJECT, "Saved", "island_shots.txt")
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
@@ -1268,10 +1756,12 @@ def build_everything(textures, models):
     mask_tex = LIB.create_island_mask_texture(ROOT + "/Textures/Generated/T_IslandMask", 1024)
     eal.save_loaded_asset(mask_tex)
     GRASS_NOISE.append(textures["generated"]["T_IslandNoise"])
-    grass_mat = build_grass_material()
-    grass_type = build_grass_type(models, grass_mat)
-    terrain_mat = build_terrain_material(textures, mask_tex, grass_type)
+    biome_tex = LIB.create_island_biome_texture(ROOT + "/Textures/Generated/T_IslandBiome", 1024)
+    eal.save_loaded_asset(biome_tex)
+    grass_types = build_grass_types(models)
+    terrain_mat = build_terrain_material(textures, mask_tex, biome_tex, grass_types)
     apply_prop_materials(models, build_prop_master(textures))
+    apply_foliage_materials(models, build_foliage_master(textures))
     ocean_mat = build_ocean_material(textures, mask_tex)
 
     les, world = new_map()
@@ -1284,11 +1774,15 @@ def build_everything(textures, models):
     build_sky()
     build_ocean(ocean_mat)
     build_sea_walls(start)
+    build_water(world, textures, mask_tex)
     dress(models, route, pads, start)
     build_ruins(models, route, pads)
     build_stone_circle(models, route)
+    dress_biomes(world, models, route, pads)
+    broch = build_islet(models)
     build_markers(route, start)
-    write_shot_list(route, start)
+    grapples = build_grapples_and_loot(world, route, pads, broch)
+    write_shot_list(route, start, grapples)
 
     gm = unreal.load_class(None, GAME_MODE)
     if gm:

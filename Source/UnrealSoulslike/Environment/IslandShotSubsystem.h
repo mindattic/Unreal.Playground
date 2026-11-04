@@ -10,6 +10,7 @@ class ACameraActor;
 // Inert unless the game is started with -IslandShots=<file>. Each line of the file is
 //   <name> player                         (the normal third-person view)
 //   <name> X Y Z Pitch Yaw [FOV]          (a fixed camera, cm / degrees)
+//   <name> pawn X Y Z Yaw                 (teleport the player there, third-person view)
 // After the world has warmed up (shaders compiled, streaming settled) it frames each shot, writes
 // <ShotDir>/<name>.png (-IslandShotDir=<dir>, default Saved/IslandShots) and then quits.
 UCLASS()
@@ -29,6 +30,7 @@ private:
 	{
 		FString Name;
 		bool bPlayerView = true;
+		bool bMovePawn = false;
 		FVector Location = FVector::ZeroVector;
 		FRotator Rotation = FRotator::ZeroRotator;
 		float Fov = 70.f;

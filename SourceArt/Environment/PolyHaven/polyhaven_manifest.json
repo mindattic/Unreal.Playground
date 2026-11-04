@@ -21,6 +21,17 @@
       ],
       "gltf": "boulder_01_2k.gltf"
     },
+    "dandelion_01": {
+      "files": [
+        "dandelion_01.bin",
+        "dandelion_01_2k.gltf",
+        "textures/dandelion_01_alpha_2k.jpg",
+        "textures/dandelion_01_arm_2k.jpg",
+        "textures/dandelion_01_diff_2k.jpg",
+        "textures/dandelion_01_nor_gl_2k.jpg"
+      ],
+      "gltf": "dandelion_01_2k.gltf"
+    },
     "dead_tree_trunk": {
       "files": [
         "dead_tree_trunk.bin",
@@ -30,6 +41,34 @@
         "textures/dead_tree_trunk_nor_gl_2k.jpg"
       ],
       "gltf": "dead_tree_trunk_2k.gltf"
+    },
+    "fern_02": {
+      "files": [
+        "fern_02.bin",
+        "fern_02_2k.gltf",
+        "textures/fern_02_alpha_2k.jpg",
+        "textures/fern_02_arm_2k.jpg",
+        "textures/fern_02_diff_2k.jpg",
+        "textures/fern_02_nor_gl_2k.jpg"
+      ],
+      "gltf": "fern_02_2k.gltf"
+    },
+    "island_tree_02": {
+      "files": [
+        "island_tree_02.bin",
+        "island_tree_02_2k.gltf",
+        "textures/island_tree_02_arm_2k.jpg",
+        "textures/island_tree_02_branches_arm_2k.jpg",
+        "textures/island_tree_02_branches_diff_2k.jpg",
+        "textures/island_tree_02_branches_nor_gl_2k.jpg",
+        "textures/island_tree_02_diff_2k.jpg",
+        "textures/island_tree_02_leaves_alpha_2k.jpg",
+        "textures/island_tree_02_leaves_arm_2k.jpg",
+        "textures/island_tree_02_leaves_diff_2k.jpg",
+        "textures/island_tree_02_leaves_nor_gl_2k.jpg",
+        "textures/island_tree_02_nor_gl_2k.jpg"
+      ],
+      "gltf": "island_tree_02_2k.gltf"
     },
     "modular_fort_01": {
       "files": [
@@ -96,6 +135,17 @@
         "textures/rock_moss_set_02_rough_2k.jpg"
       ],
       "gltf": "rock_moss_set_02_2k.gltf"
+    },
+    "shrub_02": {
+      "files": [
+        "shrub_02.bin",
+        "shrub_02_2k.gltf",
+        "textures/shrub_02_alpha_2k.jpg",
+        "textures/shrub_02_arm_2k.jpg",
+        "textures/shrub_02_diff_2k.jpg",
+        "textures/shrub_02_nor_gl_2k.jpg"
+      ],
+      "gltf": "shrub_02_2k.gltf"
     }
   },
   "textures": {

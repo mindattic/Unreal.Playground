@@ -10,8 +10,15 @@
 #include "Math/UnrealMathUtility.h"
 #include "UObject/Package.h"
 
+#include "GameFramework/PhysicsVolume.h"
+#include "Components/HierarchicalInstancedStaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
+#include "Components/BrushComponent.h"
+
 #if WITH_EDITOR
 #include "AssetRegistry/AssetRegistryModule.h"
+#include "Builders/CubeBuilder.h"
+#include "ActorFactories/ActorFactory.h"
 #endif
 
 namespace IslandTerrain
@@ -79,6 +86,10 @@ namespace IslandTerrain
 		float Path = 0.f;
 		float Dirt = 0.f;
 		float Cliff = 0.f;
+		float Marsh = 0.f;
+		float Wood = 0.f;
+		float Heath = 0.f;
+		float Pool = 0.f; // metres of water above the ground (marsh pools)
 	};
 
 	static FSample Evaluate(float Xcm, float Ycm, bool bPads)
@@ -127,8 +138,18 @@ namespace IslandTerrain
 		const float CliffProfile = FMath::Lerp(FMath::Max(Underwater, -34.f), CliffTop, Face) + 5.f * Smooth(0.f, 120.f, S);
 		const float CliffFade = Smooth(-2.f, 25.f, S);
 
-		const float Smooth0 = FMath::Lerp(Shore + Rolling, CliffProfile + Rolling * 0.5f * CliffFade, Cliff);
-		const float Detail = Bumps + Knoll * (1.f - 0.5f * Cliff);
+		float Smooth0 = FMath::Lerp(Shore + Rolling, CliffProfile + Rolling * 0.5f * CliffFade, Cliff);
+
+		// Peat marsh: a flat, slightly hummocky basin.
+		const float MarshD = (float)FVector2D::Distance(Pm, L.MarshCenter / 100.0) + 9.f * Noise(Pm / 26.0, Seed + 101);
+		const float MarshR = L.MarshRadius / 100.f;
+		// The shadow-boss clearing sits at marsh level but stays firm turf (no bog colour, reeds or pools).
+		const float ClearDist = (float)FVector2D::Distance(Pm, L.ClearingCenter / 100.0);
+		const float MarshShape = (1.f - Smooth(MarshR * 0.6f, MarshR, MarshD)) * Smooth(5.f, 20.f, S);
+		const float Marsh = MarshShape * Smooth(L.ClearingRadius / 100.f, L.ClearingRadius / 100.f + 7.f, ClearDist);
+		Smooth0 = FMath::Lerp(Smooth0, L.MarshLevel / 100.f + 0.25f * Noise(Pm / 7.0, Seed + 103), MarshShape);
+
+		const float Detail = (Bumps + Knoll * (1.f - 0.5f * Cliff)) * (1.f - 0.85f * MarshShape);
 		float Height = Smooth0 + Detail;
 
 		// Route: keep the walking line smooth.
@@ -136,6 +157,14 @@ namespace IslandTerrain
 		const float PathW = L.PathWidth / 100.f;
 		const float PathMask = 1.f - Smooth(PathW, PathW * 3.f, PathD);
 		Height = FMath::Lerp(Height, Smooth0 + Bumps * 0.25f, PathMask);
+
+		// Marsh pools: noise blobs carved below the water line, kept off the causeway and the clearing.
+		const float ClearD = (float)FVector2D::Distance(Pm, L.ClearingCenter / 100.0);
+		const float ClearR = L.ClearingRadius / 100.f;
+		const float PoolNoise = Fbm(Pm / 16.0, 3, Seed + 107) + 0.35f * Noise(Pm / 5.0, Seed + 109);
+		float PoolMask = Smooth(0.06f, 0.16f, PoolNoise) * Smooth(0.75f, 0.95f, MarshShape)
+			* Smooth(PathW * 1.4f, PathW * 2.6f, PathD) * Smooth(ClearR + 2.f, ClearR + 9.f, ClearD);
+		Height = FMath::Lerp(Height, L.PoolLevel / 100.f - 1.2f, PoolMask);
 
 		// Hill with the flat arena on top.
 		const float HillD = (float)FVector2D::Distance(Pm, L.HillCenter / 100.0);
@@ -164,8 +193,25 @@ namespace IslandTerrain
 		const float ArenaDirt = (1.f - Smooth(ArenaR * 0.15f, ArenaR * 0.7f, HillD + 4.f * Noise(Pm / 5.0, Seed + 95)));
 		Dirt = FMath::Max(Dirt, ArenaDirt * 0.75f);
 
+		// Offshore islets: small domes with a sand rim rising out of the sea floor.
+		for (const FVector& Islet : L.Islets)
+		{
+			const float R = (float)Islet.Z / 100.f;
+			const float Di = (float)FVector2D::Distance(Pm, FVector2D(Islet.X, Islet.Y) / 100.0) + 4.f * Noise(Pm / 12.0, Seed + 111);
+			const float Si = R - Di;
+			const float IsletH = Si < 0.f ? -(0.12f * -Si + 0.004f * Si * Si)
+				: 1.2f * Smooth(0.f, 6.f, Si) + (L.IsletHeight / 100.f - 1.2f) * Smooth(4.f, R * 0.75f, Si) + Bumps * Smooth(4.f, 10.f, Si);
+			Height = FMath::Max(Height, IsletH);
+		}
+
 		FSample Out;
 		Out.Height = Height;
+		Out.Marsh = Marsh;
+		Out.Pool = FMath::Max(0.f, L.PoolLevel / 100.f - Height) * Marsh;
+		const float WoodD = (float)FVector2D::Distance(Pm, L.WoodCenter / 100.0) + 14.f * Noise(Pm / 30.0, Seed + 113);
+		Out.Wood = (1.f - Smooth(L.WoodRadius / 100.f * 0.5f, L.WoodRadius / 100.f, WoodD)) * Smooth(12.f, 30.f, S) * (1.f - Marsh);
+		Out.Heath = Smooth(13.f, 19.f, Height + 3.f * Noise(Pm / 18.0, Seed + 117)) * (1.f - HillShape * Smooth(-0.1f, 0.1f, ArenaR + 6.f - HillD))
+			* (1.f - Out.Wood) * (1.f - Marsh);
 		Out.Path = PathMask * Smooth(-0.6f, 0.2f, Noise(Pm / 2.5, Seed + 97) - PathD / FMath::Max(PathW, 0.01f) * 0.5f + 0.4f);
 		Out.Dirt = Dirt;
 		Out.Cliff = Cliff * Smooth(-8.f, 0.f, S) * (1.f - Smooth(15.f, 40.f, S));
@@ -261,6 +307,134 @@ ALandscape* UIslandBuilderLibrary::CreateIslandLandscape(UObject* WorldContextOb
 		Info->UpdateLayerInfoMap(Landscape);
 	}
 	return Landscape;
+#else
+	return nullptr;
+#endif
+}
+
+FVector4 UIslandBuilderLibrary::GetIslandBiome(float X, float Y)
+{
+	const IslandTerrain::FSample S = IslandTerrain::Evaluate(X, Y, true);
+	return FVector4(S.Marsh, S.Wood, S.Heath, FMath::Clamp(S.Pool / 1.5f, 0.f, 1.f));
+}
+
+namespace IslandTerrain
+{
+	// Writes Pixels (N x N, over the landscape extent) into a BGRA8 texture asset at PackagePath.
+	static UTexture2D* WriteTexture(const FString& PackagePath, int32 N, const TArray<FColor>& Pixels)
+	{
+#if WITH_EDITOR
+		const FString AssetName = FPackageName::GetLongPackageAssetName(PackagePath);
+		UPackage* Package = CreatePackage(*PackagePath);
+		Package->FullyLoad();
+		UTexture2D* Texture = FindObject<UTexture2D>(Package, *AssetName);
+		const bool bCreated = Texture == nullptr;
+		if (bCreated)
+		{
+			Texture = NewObject<UTexture2D>(Package, *AssetName, RF_Public | RF_Standalone | RF_Transactional);
+		}
+		Texture->PreEditChange(nullptr);
+		Texture->Source.Init(N, N, 1, 1, TSF_BGRA8, reinterpret_cast<const uint8*>(Pixels.GetData()));
+		Texture->SRGB = false;
+		Texture->CompressionSettings = TC_VectorDisplacementmap;
+		Texture->MipGenSettings = TMGS_FromTextureGroup;
+		Texture->AddressX = TA_Clamp;
+		Texture->AddressY = TA_Clamp;
+		Texture->PostEditChange();
+		Package->MarkPackageDirty();
+		if (bCreated)
+		{
+			FAssetRegistryModule::AssetCreated(Texture);
+		}
+		return Texture;
+#else
+		return nullptr;
+#endif
+	}
+
+	static uint8 To8(float V)
+	{
+		return (uint8)FMath::RoundToInt(FMath::Clamp(V, 0.f, 1.f) * 255.f);
+	}
+}
+
+UTexture2D* UIslandBuilderLibrary::CreateIslandBiomeTexture(const FString& PackagePath, int32 Resolution)
+{
+	using namespace IslandTerrain;
+	const int32 N = FMath::Clamp(Resolution, 64, 4096);
+	const float Extent = GetLandscapeExtent();
+	TArray<FColor> Pixels;
+	Pixels.SetNumUninitialized(N * N);
+	ParallelFor(N, [&](int32 Y)
+	{
+		for (int32 X = 0; X < N; ++X)
+		{
+			const FSample S = Evaluate(-Extent + (X + 0.5f) / N * 2.f * Extent, -Extent + (Y + 0.5f) / N * 2.f * Extent, true);
+			Pixels[Y * N + X] = FColor(To8(S.Marsh), To8(S.Wood), To8(S.Heath), To8(S.Pool / 1.5f));
+		}
+	});
+	return WriteTexture(PackagePath, N, Pixels);
+}
+
+AActor* UIslandBuilderLibrary::CreateInstancedMeshes(UObject* WorldContextObject, UStaticMesh* Mesh, const TArray<FTransform>& Instances,
+	const FString& Label, const FString& Folder, bool bCollision, float CullDistance)
+{
+#if WITH_EDITOR
+	UWorld* World = WorldContextObject ? WorldContextObject->GetWorld() : nullptr;
+	if (!World || !Mesh)
+	{
+		return nullptr;
+	}
+	AActor* Actor = World->SpawnActor<AActor>(AActor::StaticClass(), FTransform::Identity);
+	UHierarchicalInstancedStaticMeshComponent* Comp = NewObject<UHierarchicalInstancedStaticMeshComponent>(Actor, TEXT("Instances"), RF_Transactional);
+	Comp->SetStaticMesh(Mesh);
+	Comp->SetMobility(EComponentMobility::Static);
+	Comp->SetCollisionEnabled(bCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
+	if (bCollision)
+	{
+		Comp->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
+	}
+	if (CullDistance > 0.f)
+	{
+		Comp->InstanceEndCullDistance = (int32)CullDistance;
+		Comp->InstanceStartCullDistance = (int32)(CullDistance * 0.8f);
+	}
+	Actor->SetRootComponent(Comp);
+	Actor->AddInstanceComponent(Comp);
+	Comp->RegisterComponent();
+	Comp->AddInstances(Instances, false, true);
+	Actor->SetActorLabel(Label);
+	Actor->SetFolderPath(FName(*Folder));
+	return Actor;
+#else
+	return nullptr;
+#endif
+}
+
+AActor* UIslandBuilderLibrary::CreateWaterVolume(UObject* WorldContextObject, FVector Center, FVector Extent, const FString& Label)
+{
+#if WITH_EDITOR
+	UWorld* World = WorldContextObject ? WorldContextObject->GetWorld() : nullptr;
+	if (!World)
+	{
+		return nullptr;
+	}
+	APhysicsVolume* Volume = World->SpawnActor<APhysicsVolume>(Center, FRotator::ZeroRotator);
+	if (!Volume)
+	{
+		return nullptr;
+	}
+	UCubeBuilder* Builder = NewObject<UCubeBuilder>();
+	Builder->X = Extent.X * 2.f;
+	Builder->Y = Extent.Y * 2.f;
+	Builder->Z = Extent.Z * 2.f;
+	UActorFactory::CreateBrushForVolumeActor(Volume, Builder);
+	Volume->bWaterVolume = true;
+	Volume->FluidFriction = 0.6f;
+	Volume->SetActorLabel(Label);
+	Volume->PostEditChange();
+	Volume->GetBrushComponent()->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
+	return Volume;
 #else
 	return nullptr;
 #endif

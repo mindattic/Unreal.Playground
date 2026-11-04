@@ -33,7 +33,12 @@ TEXTURES = {
 MODELS = [
     "rock_moss_set_01", "rock_moss_set_02", "boulder_01", "rock_07", "rock_face_02",
     "mountainside", "modular_fort_01", "dead_tree_trunk",
+    # Biomes (UNR-T17): wind-bent island trees, bushes, ferns and wildflowers (all geometry leaves, Nanite-friendly).
+    "island_tree_02", "shrub_02", "fern_02", "dandelion_01",
 ]
+
+
+MODEL_EXTRA_MAPS = {"island_tree_02": ("leaves_alpha",), "shrub_02": ("Alpha",), "fern_02": ("Alpha",), "dandelion_01": ("Alpha",)}
 
 
 def get_json(url):
@@ -122,6 +127,12 @@ def main():
             got = fetch(entry["url"], path, entry.get("md5"))
             names.append(rel)
             print(("downloaded " if got else "ok         ") + os.path.relpath(path, REPO))
+        # Foliage glTFs reference JPGs without alpha: fetch the separate alpha mask the build's foliage material needs.
+        for key in MODEL_EXTRA_MAPS.get(mid, ()):
+            entry = get_json("%s/files/%s" % (API, mid))[key]["2k"]["jpg"]
+            rel = "textures/" + os.path.basename(entry["url"])
+            fetch(entry["url"], os.path.join(folder, *rel.split("/")), entry.get("md5"))
+            names.append(rel)
         manifest["models"][mid] = {"gltf": main_name, "files": sorted(names)}
     with open(os.path.join(DEST, "polyhaven_manifest.json"), "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2, sort_keys=True)

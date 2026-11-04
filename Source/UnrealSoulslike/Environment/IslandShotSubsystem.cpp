@@ -57,7 +57,13 @@ void UIslandShotSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 		}
 		FShot Shot;
 		Shot.Name = Parts[0];
-		if (Parts.Num() >= 6)
+		if (Parts.Num() >= 6 && Parts[1] == TEXT("pawn"))
+		{
+			Shot.bMovePawn = true;
+			Shot.Location = FVector(FCString::Atof(*Parts[2]), FCString::Atof(*Parts[3]), FCString::Atof(*Parts[4]));
+			Shot.Rotation = FRotator(0.f, FCString::Atof(*Parts[5]), 0.f);
+		}
+		else if (Parts.Num() >= 6)
 		{
 			Shot.bPlayerView = false;
 			Shot.Location = FVector(FCString::Atof(*Parts[1]), FCString::Atof(*Parts[2]), FCString::Atof(*Parts[3]));
@@ -89,6 +95,11 @@ void UIslandShotSubsystem::Frame(const FShot& Shot)
 	{
 		if (APawn* Pawn = PC->GetPawn())
 		{
+			if (Shot.bMovePawn)
+			{
+				Pawn->TeleportTo(Shot.Location, Shot.Rotation);
+				PC->SetControlRotation(FRotator(-12.f, Shot.Rotation.Yaw, 0.f));
+			}
 			PC->SetViewTarget(Pawn);
 		}
 		return;

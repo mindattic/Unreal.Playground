@@ -27,6 +27,10 @@ public class UnrealSoulslike : ModuleRules
 			"SlateCore",
 			"AssetRegistry",
 		});
+		if (Target.bBuildEditor)
+		{
+			PrivateDependencyModuleNames.Add("UnrealEd"); // island build helpers (brush volumes)
+		}
 		PublicIncludePaths.AddRange(new string[] {
 			"UnrealSoulslike",
 			"UnrealSoulslike/Souls",

@@ -6,6 +6,7 @@ Writes SourceArt/Environment/Generated/:
   T_WaterNormal.png   1024^2 tileable ocean wave normal map (tangent space, OpenGL green-up)
   T_IslandNoise.png   1024^2 tileable fbm noise, three scales in R/G/B (macro variation, foam)
   SM_GrassClump_A.obj / _B.obj / _C.obj   blade-geometry grass clumps (cm, Z-up: UE OBJ import keeps Z up)
+  SM_Marram.obj / SM_Reeds.obj / SM_Heather.obj   the same technique for dune, marsh and highland plants
 Deterministic (fixed seeds), so re-running reproduces the committed files.
 """
 import math
@@ -141,6 +142,10 @@ def main():
         grass_clump(os.path.join(OUT, "SM_GrassClump_A.obj"), 21, blades=34, height=38.0, spread=14.0, lean=0.45, width=2.2),
         grass_clump(os.path.join(OUT, "SM_GrassClump_B.obj"), 22, blades=22, height=60.0, spread=12.0, lean=0.6, width=1.8),
         grass_clump(os.path.join(OUT, "SM_GrassClump_C.obj"), 23, blades=40, height=22.0, spread=18.0, lean=0.3, width=2.6),
+        # Biomes (UNR-T17): marram on the dunes, reeds in the marsh, low heather on the highland.
+        grass_clump(os.path.join(OUT, "SM_Marram.obj"), 31, blades=26, height=85.0, spread=14.0, lean=0.55, width=1.3),
+        grass_clump(os.path.join(OUT, "SM_Reeds.obj"), 32, blades=30, height=165.0, spread=22.0, lean=0.12, width=1.6),
+        grass_clump(os.path.join(OUT, "SM_Heather.obj"), 33, blades=70, height=30.0, spread=24.0, lean=0.15, width=1.1),
     ]
     print("grass triangles:", tris)
     print("GENERATE_OK")

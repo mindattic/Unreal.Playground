@@ -7,6 +7,7 @@
 class ALandscape;
 class UMaterialInterface;
 class UTexture2D;
+class UStaticMesh;
 
 // Shape of the Hebrides island the build step (tools/build_island.py) generates. All distances in
 // centimetres, world XY, sea level at Z = 0. The editor Python fills this in and hands it to
@@ -61,6 +62,40 @@ struct FIslandLayout
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Island")
 	TArray<FVector> Pads;
 
+	// Peat marsh: a flat basin at MarshLevel with pools carved to below PoolLevel (the water surface).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Island|Biomes")
+	FVector2D MarshCenter = FVector2D(3500.0, -7500.0);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Island|Biomes")
+	float MarshRadius = 4500.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Island|Biomes")
+	float MarshLevel = 380.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Island|Biomes")
+	float PoolLevel = 330.f;
+
+	// Dry clearing inside the marsh kept free of pools (the shadow boss fight).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Island|Biomes")
+	FVector2D ClearingCenter = FVector2D(4500.0, -8500.0);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Island|Biomes")
+	float ClearingRadius = 1200.f;
+
+	// Woodland / green grassland weight (trees, ferns, flowers).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Island|Biomes")
+	FVector2D WoodCenter = FVector2D(-8000.0, 2000.0);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Island|Biomes")
+	float WoodRadius = 5500.f;
+
+	// Small offshore islets (X, Y, radius) rising to IsletHeight.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Island|Biomes")
+	TArray<FVector> Islets;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Island|Biomes")
+	float IsletHeight = 650.f;
+
 	// Landscape: ComponentsPerSide x ComponentsPerSide components of 2x2 63-quad sections.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Island")
 	int32 ComponentsPerSide = 8;
@@ -103,4 +138,21 @@ public:
 	// R = route, G = trampled dirt (pads, arena), B = water depth (0..10 m), A = cliff mask.
 	UFUNCTION(BlueprintCallable, Category = "Island")
 	static UTexture2D* CreateIslandMaskTexture(const FString& PackagePath, int32 Resolution = 1024);
+
+	// Biome weights over the landscape extent: R = marsh, G = woodland, B = heather highland, A = pool depth (0..1.5 m).
+	UFUNCTION(BlueprintCallable, Category = "Island")
+	static UTexture2D* CreateIslandBiomeTexture(const FString& PackagePath, int32 Resolution = 1024);
+
+	// 0..1 weights at a point (same values the biome texture stores).
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Island")
+	static FVector4 GetIslandBiome(float X, float Y);
+
+	// Editor: one actor holding a hierarchical instanced static mesh component (vegetation, scattered props).
+	UFUNCTION(BlueprintCallable, Category = "Island", meta = (WorldContext = "WorldContextObject"))
+	static AActor* CreateInstancedMeshes(UObject* WorldContextObject, UStaticMesh* Mesh, const TArray<FTransform>& Instances,
+		const FString& Label, const FString& Folder, bool bCollision, float CullDistance = 0.f);
+
+	// Editor: spawns a PhysicsVolume with bWaterVolume (characters swim in it) spanning Center +- Extent.
+	UFUNCTION(BlueprintCallable, Category = "Island", meta = (WorldContext = "WorldContextObject"))
+	static AActor* CreateWaterVolume(UObject* WorldContextObject, FVector Center, FVector Extent, const FString& Label);
 };
