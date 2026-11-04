@@ -1,0 +1,133 @@
+{
+  "ambientcg": {
+    "Grass003": [
+      "Grass003_2K-JPG_Color.jpg"
+    ],
+    "Grass004": [
+      "Grass004_2K-JPG_Color.jpg",
+      "Grass004_2K-JPG_NormalGL.jpg",
+      "Grass004_2K-JPG_Roughness.jpg",
+      "Grass004_2K-JPG_AmbientOcclusion.jpg"
+    ]
+  },
+  "models": {
+    "boulder_01": {
+      "files": [
+        "boulder_01.bin",
+        "boulder_01_2k.gltf",
+        "textures/boulder_01_arm_2k.jpg",
+        "textures/boulder_01_diff_2k.jpg",
+        "textures/boulder_01_nor_gl_2k.jpg"
+      ],
+      "gltf": "boulder_01_2k.gltf"
+    },
+    "dead_tree_trunk": {
+      "files": [
+        "dead_tree_trunk.bin",
+        "dead_tree_trunk_2k.gltf",
+        "textures/dead_tree_trunk_arm_2k.jpg",
+        "textures/dead_tree_trunk_diff_2k.jpg",
+        "textures/dead_tree_trunk_nor_gl_2k.jpg"
+      ],
+      "gltf": "dead_tree_trunk_2k.gltf"
+    },
+    "modular_fort_01": {
+      "files": [
+        "modular_fort_01.bin",
+        "modular_fort_01_2k.gltf",
+        "textures/modular_fort_01_plaster_arm_2k.jpg",
+        "textures/modular_fort_01_plaster_diff_2k.jpg",
+        "textures/modular_fort_01_plaster_nor_gl_2k.jpg",
+        "textures/modular_fort_01_trim_arm_2k.jpg",
+        "textures/modular_fort_01_trim_diff_2k.jpg",
+        "textures/modular_fort_01_trim_nor_gl_2k.jpg",
+        "textures/modular_fort_01_wall_arm_2k.jpg",
+        "textures/modular_fort_01_wall_diff_2k.jpg",
+        "textures/modular_fort_01_wall_nor_gl_2k.jpg"
+      ],
+      "gltf": "modular_fort_01_2k.gltf"
+    },
+    "mountainside": {
+      "files": [
+        "mountainside.bin",
+        "mountainside_2k.gltf",
+        "textures/mountainside_arm_2k.jpg",
+        "textures/mountainside_diff_2k.jpg",
+        "textures/mountainside_nor_gl_2k.jpg"
+      ],
+      "gltf": "mountainside_2k.gltf"
+    },
+    "rock_07": {
+      "files": [
+        "rock_07.bin",
+        "rock_07_2k.gltf",
+        "textures/rock_07_arm_2k.jpg",
+        "textures/rock_07_diff_2k.jpg",
+        "textures/rock_07_nor_gl_2k.jpg"
+      ],
+      "gltf": "rock_07_2k.gltf"
+    },
+    "rock_face_02": {
+      "files": [
+        "rock_face_02.bin",
+        "rock_face_02_2k.gltf",
+        "textures/rock_face_02_arm_2k.jpg",
+        "textures/rock_face_02_diff_2k.jpg",
+        "textures/rock_face_02_nor_gl_2k.jpg"
+      ],
+      "gltf": "rock_face_02_2k.gltf"
+    },
+    "rock_moss_set_01": {
+      "files": [
+        "rock_moss_set_01.bin",
+        "rock_moss_set_01_2k.gltf",
+        "textures/rock_moss_set_01_diff_2k.jpg",
+        "textures/rock_moss_set_01_nor_gl_2k.jpg",
+        "textures/rock_moss_set_01_rough_2k.jpg"
+      ],
+      "gltf": "rock_moss_set_01_2k.gltf"
+    },
+    "rock_moss_set_02": {
+      "files": [
+        "rock_moss_set_02.bin",
+        "rock_moss_set_02_2k.gltf",
+        "textures/rock_moss_set_02_diff_2k.jpg",
+        "textures/rock_moss_set_02_nor_gl_2k.jpg",
+        "textures/rock_moss_set_02_rough_2k.jpg"
+      ],
+      "gltf": "rock_moss_set_02_2k.gltf"
+    }
+  },
+  "textures": {
+    "aerial_beach_01": {
+      "Diffuse": "aerial_beach_01_diff_2k.jpg",
+      "Displacement": "aerial_beach_01_disp_2k.jpg",
+      "arm": "aerial_beach_01_arm_2k.jpg",
+      "nor_gl": "aerial_beach_01_nor_gl_2k.jpg"
+    },
+    "coast_sand_01": {
+      "Diffuse": "coast_sand_01_diff_2k.jpg",
+      "Displacement": "coast_sand_01_disp_2k.jpg",
+      "arm": "coast_sand_01_arm_2k.jpg",
+      "nor_gl": "coast_sand_01_nor_gl_2k.jpg"
+    },
+    "damp_beach_sand": {
+      "Diffuse": "damp_beach_sand_diff_2k.jpg"
+    },
+    "rocky_trail": {
+      "Diffuse": "rocky_trail_diff_2k.jpg",
+      "Displacement": "rocky_trail_disp_2k.jpg",
+      "arm": "rocky_trail_arm_2k.jpg",
+      "nor_gl": "rocky_trail_nor_gl_2k.jpg"
+    },
+    "seaside_rock": {
+      "Diffuse": "seaside_rock_diff_2k.jpg",
+      "Displacement": "seaside_rock_disp_2k.jpg",
+      "arm": "seaside_rock_arm_2k.jpg",
+      "nor_gl": "seaside_rock_nor_gl_2k.jpg"
+    },
+    "sparse_grass": {
+      "Diffuse": "sparse_grass_diff_2k.jpg"
+    }
+  }
+}

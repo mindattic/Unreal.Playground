@@ -37,3 +37,43 @@ These are tabletop-scale; scale them up (≈ ×5–8) to real size.
 
 Not in either pack: a modular bridge-deck piece designed as such (the foundation block above stands
 in), and Hebridean blackhouses specifically (the cottages are generic stone).
+
+## Island art (Poly Haven, ambientCG, generated) - used by `tools/build_island.py`
+
+Imported under `/Game/Island` (textures, models, materials, the landscape grass type) and assembled
+into `/Game/Souls/Maps/Lvl_Isle`. `PolyHaven/polyhaven_manifest.json` lists every file the fetcher
+wrote. Model sizes are as imported into UE (cm, X x Y x Z); glTF pivots keep the authoring scene
+offsets, which the build compensates for from each mesh's bounds.
+
+### Terrain textures (2k JPG; `*_diff` sRGB, `*_nor_gl` OpenGL normals imported with green flipped, `*_arm` = AO/Rough/Metal, `*_disp` height)
+
+| Set | Maps | Use in `M_IslandTerrain` |
+|---|---|---|
+| `AmbientCG/Grass004` | Color, NormalGL, Roughness, AO | main turf, two tiling scales |
+| `AmbientCG/Grass003` | Color | olive variation; moss on prop tops (`M_IslandProp`) |
+| `PolyHaven/Textures/sparse_grass` | diff | heather-brown patches |
+| `PolyHaven/Textures/aerial_beach_01` | diff, nor_gl, arm, disp | wind-rippled beach sand (aerial scan of 30 m; tiled at 11 m) |
+| `PolyHaven/Textures/coast_sand_01` | diff, nor_gl, arm, disp | pebbly sand mixed into the beach |
+| `PolyHaven/Textures/damp_beach_sand` | diff | wet sand at the waterline |
+| `PolyHaven/Textures/seaside_rock` | diff, nor_gl, arm, disp | steep slopes / cliff faces (bi-planar on steep ground) |
+| `PolyHaven/Textures/rocky_trail` | diff, nor_gl, arm, disp | the route, ruin pads, worn arena |
+
+### Models (glTF 2k, one static mesh per glTF node, Nanite on, complex-as-simple collision)
+
+| Model | Meshes (size cm) | Use |
+|---|---|---|
+| `rock_moss_set_01` / `_02` | 13 separate mossy rocks, 100-340 wide | boulder clusters, shore rocks, skerries |
+| `boulder_01` | 127 x 183 x 100 | boulders, outcrops |
+| `rock_07` | 17 x 32 x 14 (a small slab) | stood on end and scaled ~x8/x20/x4 for the standing stones |
+| `rock_face_02` | 271 x 213 x 247 | cliff cladding (x2-9), sea stacks, outcrops |
+| `mountainside` | 1021 x 525 x 1052 | cliff cladding (x1.9-2.7), sea stacks |
+| `modular_fort_01` | 20 kit pieces: walls (thin/thick/walkway), corners, gate, stairs, round tower (1584 x 1584 x 1350) | the ruins along the route, scaled x0.62 |
+| `dead_tree_trunk` | 305 x 28 x 29 | driftwood on the start beach |
+
+### Generated (`tools/generate_island_art.py`, deterministic)
+
+| File | What |
+|---|---|
+| `T_WaterNormal.png` | 1024^2 tileable wave normal map (OpenGL green), panned at three scales by `M_Ocean` |
+| `T_IslandNoise.png` | 1024^2 tileable fbm noise, three scales in R/G/B (macro variation, foam, moss) |
+| `SM_GrassClump_A/B/C.obj` | blade-geometry grass clumps (154-280 tris, Z-up cm; UE's OBJ import keeps Z up and mirrors Y) for the landscape grass type `LGT_IslandTurf` |
