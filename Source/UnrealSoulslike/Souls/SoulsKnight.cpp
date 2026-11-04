@@ -547,6 +547,12 @@ void ASoulsKnight::RunInputTest()
 		{ 6.7f, [](ASoulsKnight* K) { K->InputTestKey(EKeys::Gamepad_LeftShoulder, false); } },
 		{ 7.2f, [Tap](ASoulsKnight* K) { Tap(K, EKeys::Gamepad_FaceButton_Bottom, 0.15f); } },
 		{ 7.45f, [Check](ASoulsKnight* K) { Check(TEXT("A jumps"), K->GetCharacterMovement()->IsFalling(), FString::Printf(TEXT("vz=%.0f"), K->GetVelocity().Z)); K->Shot(TEXT("Input_5_jump")); } },
+		{ 8.4f, [Tap](ASoulsKnight* K) { Tap(K, EKeys::Gamepad_RightThumbstick, 0.08f); } },
+		{ 8.8f, [Check](ASoulsKnight* K) { Check(TEXT("tap R3 crouches"), K->Stance == EKnightStance::Crouched, FString::Printf(TEXT("stance=%d"), (int32)K->Stance)); K->Shot(TEXT("Input_6_crouch")); } },
+		{ 9.0f, [Tap](ASoulsKnight* K) { Tap(K, EKeys::Gamepad_RightThumbstick, 0.08f); } },
+		{ 9.4f, [Check](ASoulsKnight* K) { Check(TEXT("tap R3 again stands"), K->Stance == EKnightStance::Standing, FString::Printf(TEXT("stance=%d"), (int32)K->Stance)); } },
+		{ 9.8f, [Tap](ASoulsKnight* K) { Tap(K, EKeys::Gamepad_FaceButton_Top, 0.08f); Tap(K, EKeys::Gamepad_LeftTrigger, 0.08f); Tap(K, EKeys::Gamepad_RightTrigger, 0.3f); } },
+		{ 10.3f, [Check](ASoulsKnight* K) { Check(TEXT("Y, LT and RT do nothing"), K->Action == EKnightAction::None && K->GrappleMode == EGrappleMode::None && !K->bBlocking, FString::Printf(TEXT("action=%d grapple=%d"), (int32)K->Action, (int32)K->GrappleMode)); } },
 		// Reach: a foe (looking away) 3.3 m ahead; one tap of X must step in and land the blow.
 		{ 13.5f, [Side](ASoulsKnight* K)
 			{
@@ -570,16 +576,6 @@ void ASoulsKnight::RunInputTest()
 				Best->GetCharacterMovement()->StopMovementImmediately();
 				Side(K);
 			} },
-		{ 13.7f, [Tap](ASoulsKnight* K)
-			{
-				// Lock-on picks from what the camera faces: look at the foe first.
-				if (K->Controller)
-				{
-					K->Controller->SetControlRotation(FRotator(-10.f, K->GetActorRotation().Yaw, 0.f));
-				}
-				Tap(K, EKeys::Gamepad_RightThumbstick, 0.08f);
-			} },
-		{ 13.85f, [Check](ASoulsKnight* K) { Check(TEXT("tap R3 locks on"), K->LockTarget.IsValid(), TEXT("")); } },
 		{ 14.0f, [Tap, Probe](ASoulsKnight* K)
 			{
 				if (K->DemoVictim.IsValid())
@@ -589,19 +585,15 @@ void ASoulsKnight::RunInputTest()
 				}
 				Tap(K, EKeys::Gamepad_FaceButton_Left, 0.08f);
 			} },
-		{ 14.25f, [](ASoulsKnight* K) { K->Shot(TEXT("Input_6_light_attack")); } },
-		{ 15.2f, [Check, Probe, Tap](ASoulsKnight* K)
+		{ 14.1f, [Check](ASoulsKnight* K) { Check(TEXT("X is the one normal attack"), K->Action == EKnightAction::HeavyAttack, FString::Printf(TEXT("action=%d"), (int32)K->Action)); } },
+		{ 14.6f, [](ASoulsKnight* K) { K->Shot(TEXT("Input_7_attack")); } },
+		{ 16.0f, [Check, Probe](ASoulsKnight* K)
 			{
 				const ASoulsKnight* Foe = K->DemoVictim.Get();
-				Check(TEXT("light attack reaches a foe 3.3 m away"), Foe && Foe->GetHealth() < Probe->Key,
+				Check(TEXT("the attack reaches a foe 3.3 m away"), Foe && Foe->GetHealth() < Probe->Key,
 					FString::Printf(TEXT("hp %.0f -> %.0f, stepped %.0f cm"), Probe->Key, Foe ? Foe->GetHealth() : -1.f, FVector::Dist2D(Probe->Value, K->GetActorLocation())));
 				K->DemoVictim = nullptr;
-				Tap(K, EKeys::Gamepad_RightThumbstick, 0.08f);
-			} },
-		{ 15.5f, [Check](ASoulsKnight* K)
-			{
-				Check(TEXT("tap R3 again lets go"), !K->LockTarget.IsValid(), TEXT(""));
-				K->Shot(TEXT("Input_7_done"));
+				K->Shot(TEXT("Input_8_done"));
 			} },
 	};
 	for (const FStep& Step : Steps)
@@ -860,6 +852,8 @@ void ASoulsKnight::EnsureKnightInput()
 	GrappleAction = MakeAction(TEXT("IA_KnightGrapple"));
 	SprintAction = MakeAction(TEXT("IA_KnightSprint"));
 	KnightJumpAction = MakeAction(TEXT("IA_KnightJump"));
+	AttackAction = MakeAction(TEXT("IA_KnightAttack"));
+	CrouchAction = MakeAction(TEXT("IA_KnightCrouch"));
 
 	KnightMappingContext = NewObject<UInputMappingContext>(this, TEXT("IMC_Knight"));
 	// The combat template's map has no jump at all, so the knight carries its own.
@@ -873,25 +867,23 @@ void ASoulsKnight::EnsureKnightInput()
 	KnightMappingContext->MapKey(BlockAction, EKeys::RightMouseButton);
 	KnightMappingContext->MapKey(HealAction, EKeys::Gamepad_RightShoulder);
 	KnightMappingContext->MapKey(HealAction, EKeys::R);
-	KnightMappingContext->MapKey(ParryAction, EKeys::Gamepad_LeftTrigger);
 	KnightMappingContext->MapKey(ParryAction, EKeys::C);
-	KnightMappingContext->MapKey(LockOnAction, EKeys::Gamepad_RightThumbstick);
+	KnightMappingContext->MapKey(CrouchAction, EKeys::Gamepad_RightThumbstick);
+	KnightMappingContext->MapKey(CrouchAction, EKeys::LeftAlt);
+	KnightMappingContext->MapKey(AttackAction, EKeys::Gamepad_FaceButton_Left);
+	KnightMappingContext->MapKey(AttackAction, EKeys::LeftMouseButton);
 	KnightMappingContext->MapKey(LockOnAction, EKeys::MiddleMouseButton);
 	KnightMappingContext->MapKey(LockOnAction, EKeys::Q);
 	KnightMappingContext->MapKey(InteractAction, EKeys::Gamepad_DPad_Up);
 	KnightMappingContext->MapKey(InteractAction, EKeys::E);
-	KnightMappingContext->MapKey(GrappleAction, EKeys::Gamepad_RightTrigger);
 	KnightMappingContext->MapKey(GrappleAction, EKeys::G);
 	KnightMappingContext->MapKey(GrappleAction, EKeys::ThumbMouseButton);
 	// Light/heavy reuse the template's actions; these guarantee X/Y and LMB/F whatever its map says.
 	if (ComboAttackAction)
 	{
-		KnightMappingContext->MapKey(ComboAttackAction, EKeys::Gamepad_FaceButton_Left);
-		KnightMappingContext->MapKey(ComboAttackAction, EKeys::LeftMouseButton);
 	}
 	if (ChargedAttackAction)
 	{
-		KnightMappingContext->MapKey(ChargedAttackAction, EKeys::Gamepad_FaceButton_Top);
 		KnightMappingContext->MapKey(ChargedAttackAction, EKeys::F);
 	}
 }
@@ -927,6 +919,8 @@ void ASoulsKnight::SetupPlayerInputComponent(UInputComponent* PlayerInputCompone
 		Input->BindAction(LockOnAction, ETriggerEvent::Started, this, &ASoulsKnight::ToggleLockOn);
 		Input->BindAction(InteractAction, ETriggerEvent::Started, this, &ASoulsKnight::InteractPressed);
 		Input->BindAction(GrappleAction, ETriggerEvent::Started, this, &ASoulsKnight::GrapplePressed);
+		Input->BindAction(AttackAction, ETriggerEvent::Started, this, &ASoulsKnight::AttackPressed);
+		Input->BindAction(CrouchAction, ETriggerEvent::Started, this, &ASoulsKnight::CrouchToggle);
 	}
 }
 
@@ -1419,6 +1413,30 @@ void ASoulsKnight::SwingHit()
 	{
 		MeleeSweep(LightDamage, 14.f, 12.f, false);
 	}
+}
+
+void ASoulsKnight::AttackPressed()
+{
+	if (ASoulsTorch::GetWielded(this))
+	{
+		DoComboAttackStart(); // the torch swing (SwingHit hands it to the torch)
+		return;
+	}
+	DoChargedAttackStart();
+}
+
+void ASoulsKnight::CrouchToggle()
+{
+	if (IsDead() || IsSwimming() || GetUpFirst())
+	{
+		return;
+	}
+	if (IsBusy() || GetCharacterMovement()->IsFalling())
+	{
+		return;
+	}
+	SetStance(Stance == EKnightStance::Crouched ? EKnightStance::Standing : EKnightStance::Crouched);
+	UE_LOG(LogTemp, Log, TEXT("Stance: %s"), Stance == EKnightStance::Crouched ? TEXT("crouched") : TEXT("standing"));
 }
 
 void ASoulsKnight::DodgePressed()

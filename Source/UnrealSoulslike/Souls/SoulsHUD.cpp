@@ -136,7 +136,7 @@ void ASoulsHUD::DrawHUD()
 			if (It->IsPouncing() && It->Team != Knight->Team && FVector::Dist(It->GetActorLocation(), Knight->GetActorLocation()) < 1400.f)
 			{
 				const float Pulse = 0.65f + 0.35f * FMath::Sin(Now * 18.f);
-				Text(TEXT("BRACE   [ LB / LT ]"), Canvas->ClipX * 0.5f, Canvas->ClipY * 0.8f, FLinearColor(1.f, 0.85f, 0.5f, Pulse), 0.8f * S, true, TitleFont ? TitleFont.Get() : nullptr);
+				Text(TEXT("BRACE   [ LB ]"), Canvas->ClipX * 0.5f, Canvas->ClipY * 0.8f, FLinearColor(1.f, 0.85f, 0.5f, Pulse), 0.8f * S, true, TitleFont ? TitleFont.Get() : nullptr);
 				break;
 			}
 		}
@@ -217,10 +217,9 @@ void ASoulsHUD::DrawHUD()
 		{
 			const float Alpha = FMath::Clamp((HintUntil - Now) / 3.f, 0.f, 1.f) * 0.9f;
 			static const TCHAR* Lines[] = {
-				TEXT("Light  X / LMB     Heavy  Y / F     Guard  LB / RMB  (raise it just in time to parry)"),
-				TEXT("B / Shift:  crouch,  hold to dive prone  (rolls when sprinting or fighting)     Sprint  tap R3 or L3 / Ctrl     Jump  A"),
-				TEXT("Flask  RB / R     Lock on  hold R3 / MMB / Q     Parry  LT / C"),
-				TEXT("Grapple  RT / G     Brace a leaping foe  LB / LT     Strike the unaware for an ambush"),
+				TEXT("Attack  X / LMB     Shield  LB / RMB  (raise it just in time to parry)     Roll  B / Shift     Jump  A / Space"),
+				TEXT("Run  L3 / Ctrl  (toggle)     Crouch  R3 / Alt  (toggle)     Flask  RB / R     Use / whistle  D-pad up / E"),
+				TEXT("Shield up against a leaping foe to brace     Strike the unaware for an ambush"),
 			};
 			float LineY = Canvas->ClipY - 170.f * S;
 			for (const TCHAR* Line : Lines)

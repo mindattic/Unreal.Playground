@@ -58,21 +58,17 @@ Warden in the stone circle and Morrigan of the Mire, a shade who melts into shad
 | Action | Gamepad | Mouse / keyboard |
 |---|---|---|
 | Move / look | L-stick / R-stick | WASD / mouse |
-| Light attack (combo, riposte, backstab) | X | LMB |
-| Heavy attack | Y | F |
-| Crouch / stand (tap) | B | Shift |
-| Roll (tap while sprinting, locked on or with a foe on you) | B | Shift |
-| Dive prone and army-crawl (hold); get up (tap again) | B | Shift |
-| Sprint (tap; lasts until you stop) | R3 or L3 | Ctrl |
-| Jump | A | Space |
-| Guard (hold); raise it just as a blow lands to parry | LB | RMB |
-| Parry, or brace against a leaping enemy | LT (or LB) | C |
+| Attack (also ripostes and backstabs; swings a torch in hand) | X | LMB |
+| Raise the shield (hold); raise it just as a blow lands to parry; brace against a leaper | LB | RMB |
+| Dodge roll | B | Shift |
+| Jump; open the umbrella in the air | A | Space |
+| Run (toggle) | L3 | Ctrl |
+| Crouch (toggle) | R3 | Alt |
 | Flask | RB | R |
-| Grapple | RT | G / mouse thumb |
-| Slingshot: hold through a ledge grapple, release to fling | RT | G / mouse thumb |
-| Open the umbrella in the air (B, X or Y folds it) | A | Space |
-| Lock on (hold; tap again to let go) | R3 | Q / MMB |
-| Rest at grace / pick up | D-pad up | E |
+| Rest at grace / pick up / take a torch; elsewhere, whistle | D-pad up | E |
+| Keyboard only: lock on, parry, grapple, throw a torch | — | Q or MMB, C, G, F |
+
+Y, LT and RT do nothing.
 
 ## Build and run
 

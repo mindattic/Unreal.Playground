@@ -643,7 +643,6 @@ void USoulsGlider::EnsureInput()
 		GlideContext->MapKey(CloseAction, EKeys::Gamepad_FaceButton_Top);
 		GlideContext->MapKey(CloseAction, EKeys::LeftMouseButton);
 		GlideContext->MapKey(CloseAction, EKeys::F);
-		GlideContext->MapKey(TensionAction, EKeys::Gamepad_RightTrigger);
 		GlideContext->MapKey(TensionAction, EKeys::G);
 		GlideContext->MapKey(TensionAction, EKeys::ThumbMouseButton);
 	}

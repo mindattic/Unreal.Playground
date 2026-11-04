@@ -412,6 +412,10 @@ public:
 	void Whistle();
 	void ToggleLockOn();
 	void GrapplePressed();
+	// X: the one normal attack (the full overhead swing), or a torch swing with a torch in hand.
+	void AttackPressed();
+	// R3: crouch, or stand back up (from prone too).
+	void CrouchToggle();
 
 	// Fear and surprise (enemies).
 	void AddFear(float Amount);
@@ -569,6 +573,12 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> KnightJumpAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> AttackAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> CrouchAction;
 
 	FTimerHandle WindupTimer;
 	FTimerHandle StrikeTimer;
