@@ -68,8 +68,8 @@ _Nothing recorded yet._
 | UNR-T45 | 2026-11-04 | feature | open | Grapple: fill in throw/reel/haul/land animation beats and timing (reopens UNR-T35) | — |
 | UNR-T46 | 2026-11-04 | fix | closed | Rein in the pad: X = the one normal attack, LB shield, B roll, A jump, L3 run, R3 crouch; Y/LT/RT unbound | — |
 | UNR-T47 | 2026-11-04 | fix | closed | Keyboard mirrors the pad: LMB attack, RMB shield/parry, E roll, Space jump | — |
-| UNR-T48 | 2026-11-04 | fix | open | Remove the umbrella (and grapple slingshot) completely | — |
-| UNR-T49 | 2026-11-04 | fix | open | Dodge roll keeps the player's facing unless the stick is pressed | — |
-| UNR-T50 | 2026-11-04 | feature | open | Ludicrous gore: absurd blood sprays on every hit | — |
+| UNR-T48 | 2026-11-04 | fix | closed | Remove the umbrella (and grapple slingshot) completely | — |
+| UNR-T49 | 2026-11-04 | fix | closed | Dodge roll keeps the player's facing unless the stick is pressed | — |
+| UNR-T50 | 2026-11-04 | feature | closed | Ludicrous gore: absurd blood sprays on every hit | — |
 | UNR-T51 | 2026-11-04 | feature | open | Natural torch flames from a free fire particle pack | — |
-| UNR-T52 | 2026-11-04 | feature | open | Dodge roll cancels an attack less than 50% committed | — |
+| UNR-T52 | 2026-11-04 | feature | closed | Dodge roll cancels an attack less than 50% committed | — |

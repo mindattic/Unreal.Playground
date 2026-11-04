@@ -9,7 +9,6 @@ class UMaterialInterface;
 class USoundBase;
 class UStaticMeshComponent;
 class UInputAction;
-class USoulsGlider;
 class UInputMappingContext;
 class ASiteOfGrace;
 class AGrapplePoint;
@@ -80,10 +79,6 @@ public:
 	// The grapple's line, stretched from the off hand to the hook while it's out.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Knight")
 	TObjectPtr<UStaticMeshComponent> GrappleLine;
-
-	// The umbrella and the grapple slingshot (UNR-T42).
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Knight")
-	TObjectPtr<USoulsGlider> Glider;
 
 	// 0 = players, 1 = the island's enemies. Knights never hurt their own team.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight")

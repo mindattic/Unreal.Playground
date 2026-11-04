@@ -29,11 +29,6 @@ Warden in the stone circle and Morrigan of the Mire, a shade who melts into shad
   - lock-on
 - **Grapple.** Hook a glinting point on a ledge to be hauled up onto it. Hook a smaller enemy to
   yank it to your blade, dazed. Hook a big one to pull yourself in for a falling cut.
-- **Slingshot and umbrella.** Keep RT held as a ledge grapple reels you in and you hang taut under
-  the hook while the tension builds. Let go and it flings you up and past the hook. In the air,
-  press A (or keep it held) to open the umbrella you carry across your back. You sink slowly,
-  steer with the stick and drift with the prevailing wind. It folds when you land, attack or
-  press B.
 - **Brace and impale.** Leapers crouch and spring at you from range. Brace your blade while one is
   in the air and it's run through, held aloft and slides off dead. If you don't brace, you're
   knocked flat.
@@ -61,7 +56,7 @@ Warden in the stone circle and Morrigan of the Mire, a shade who melts into shad
 | Attack (also ripostes and backstabs; swings a torch in hand) | X | LMB |
 | Raise the shield (hold); raise it just as a blow lands to parry; brace against a leaper | LB | RMB |
 | Dodge roll | B | E |
-| Jump; open the umbrella in the air | A | Space |
+| Jump | A | Space |
 | Run (toggle) | L3 | Shift |
 | Crouch (toggle) | R3 | Ctrl / C |
 | Flask | RB | R |
@@ -92,8 +87,5 @@ Run these with `-RenderOffscreen` to check a build without anyone at the control
 - `-InputTest` presses real controller buttons through the player controller (crouch, crouch-walk,
   sprint on R3 and L3, roll, prone, crawl, get up, a light attack's reach) and logs `Input check:` PASS/FAIL.
 - `-HandShots` takes close shots of the sword fist and the shield arm, at rest and on guard.
-- `-GlideDemo` grapples a hook on Lvl_Isle with RT held, hangs, slingshots and opens the umbrella
-  at the apex. It glides and lands, screenshots each beat and logs `Glide check:` heights, speeds
-  and PASS/FAIL.
 
 Screenshots land in `Saved/Screenshots`.
