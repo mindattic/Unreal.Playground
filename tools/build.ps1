@@ -13,7 +13,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'find-engine.ps1')
 
 $repo = Split-Path -Parent $PSScriptRoot
-$uproject = Join-Path $repo 'Unreal.Soulslike.uproject'
+$uproject = Join-Path $repo 'UnrealSoulslike.uproject'
 $engine = Find-UnrealEngine
 $version = Get-UnrealEngineVersion $engine
 Write-Output "Engine: $engine (UE $version)"

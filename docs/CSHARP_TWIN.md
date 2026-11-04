@@ -138,7 +138,7 @@ extensions.
 ## Recommended setup
 
 1. Install UE 5.7 (or the newest 5.6–5.8) and set `EngineAssociation` to match.
-2. Keep the C++ game in `Unreal.Soulslike.uproject`. Add a sibling C# project,
+2. Keep the C++ game in `UnrealSoulslike.uproject`. Add a sibling C# project,
    `CSharp/UnrealSoulslikeCSharp.uproject`, with:
    - a stub C++ module,
    - `Plugins/UnrealSharp` (git submodule pinned to a commit),

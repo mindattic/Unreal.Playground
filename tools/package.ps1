@@ -7,7 +7,7 @@ param(
 )
 
 # Packages both builds of the game for a side-by-side comparison (UNR-T8):
-#   Builds\Cpp\Windows\Unreal.Soulslike.Cpp.exe       - the C++ project (Unreal.Soulslike.uproject)
+#   Builds\Cpp\Windows\Unreal.Soulslike.Cpp.exe       - the C++ project (UnrealSoulslike.uproject)
 #   Builds\CSharp\Windows\Unreal.Soulslike.CSharp.exe - the UnrealSharp twin (CSharp\UnrealSoulslikeCSharp.uproject)
 # and records how long every step took in Builds\build-times.json (merged, so -Only keeps the other side).
 #
@@ -92,7 +92,7 @@ function Rename-LauncherExe([string]$ArchiveRoot, [string]$NewName) {
 }
 
 if ($Only -ne 'CSharp') {
-  $uproject = Join-Path $repo 'Unreal.Soulslike.uproject'
+  $uproject = Join-Path $repo 'UnrealSoulslike.uproject'
   $archiveDir = Join-Path $buildsDir 'Cpp'
   Set-EngineAssociation $uproject
   Invoke-TimedStep 'cpp' 'build_cook_package' { Invoke-BuildCookRun $uproject $archiveDir }

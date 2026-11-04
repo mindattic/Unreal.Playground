@@ -11,7 +11,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'find-engine.ps1')
 
 $repo = Split-Path -Parent $PSScriptRoot
-$uproject = Join-Path $repo 'Unreal.Soulslike.uproject'
+$uproject = Join-Path $repo 'UnrealSoulslike.uproject'
 $editor = Join-Path (Find-UnrealEngine) 'Engine\Binaries\Win64\UnrealEditor.exe'
 $map = '/Game/Souls/Maps/Lvl_Isle'
 
