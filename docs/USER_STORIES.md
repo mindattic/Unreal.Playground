@@ -43,8 +43,8 @@ _Nothing recorded yet._
 | UNR-T20 | 2026-11-03 | docs | closed | README describes the vertical slice: island biomes, combat, grapple, brace/impale, ambush fear, swimming, exploration, bosses, controls, build/run/verify | be3d0ff |
 | UNR-T21 | 2026-11-04 | fix | closed | Leaving a boss arena kept that boss's fight (and bar) active elsewhere; abandoning the fight should end it and reset the boss | 7d79c01 |
 | UNR-T22 | 2026-11-04 | fix | closed | Packaged exe dies at start: the dotted project name Unreal.Soulslike.uproject makes the cooker write shader archives under Unreal.Soulslike/ while staging packs Unreal/, so no material shaders ship; rename to UnrealSoulslike.uproject | 13e103a |
-| UNR-T23 | 2026-11-04 | fix | open | Sword and shield attached to the wrong hands | — |
-| UNR-T24 | 2026-11-04 | feature | open | LB guard doubles as parry when timed: pressing guard right before a hit parries | — |
-| UNR-T25 | 2026-11-04 | fix | open | Gamepad: A jumps (unbound today), B rolls on press, tap L3 starts sprinting | — |
-| UNR-T26 | 2026-11-04 | feature | open | Enemies patrol; when two patrollers meet they stop, chat, then part ways | — |
+| UNR-T23 | 2026-11-04 | fix | closed | Sword and shield attached to the wrong hands | — |
+| UNR-T24 | 2026-11-04 | feature | closed | LB guard doubles as parry when timed: pressing guard right before a hit parries | — |
+| UNR-T25 | 2026-11-04 | fix | closed | Gamepad: A jumps (unbound today), B rolls on press, tap L3 starts sprinting | — |
+| UNR-T26 | 2026-11-04 | feature | closed | Enemies patrol; when two patrollers meet they stop, chat, then part ways | — |
 | UNR-T27 | 2026-11-04 | feature | open | Stealth stance: tap B standing still to crouch, hold B to dive prone and army-crawl, B again to stand; crouch/prone cut enemy sight and hearing so you can sneak up and backstab | — |

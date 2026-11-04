@@ -213,7 +213,7 @@ void ASoulsHUD::DrawHUD()
 			const float Alpha = FMath::Clamp((HintUntil - Now) / 3.f, 0.f, 1.f) * 0.9f;
 			static const TCHAR* Lines[] = {
 				TEXT("Light  X / LMB     Heavy  Y / F     Guard  LB / RMB  (raise it just in time to parry)"),
-				TEXT("Roll  B / Shift     Sprint  tap L3 / Ctrl     Jump  A / Space"),
+				TEXT("B / Shift:  roll on the move,  crouch standing still,  hold to dive prone     Sprint  tap L3 / Ctrl     Jump  A"),
 				TEXT("Flask  RB / R     Lock on  R3 / MMB / Q     Parry  LT / C"),
 				TEXT("Grapple  RT / G     Brace a leaping foe  LB / LT     Strike the unaware for an ambush"),
 			};

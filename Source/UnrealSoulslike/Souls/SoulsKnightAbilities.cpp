@@ -97,7 +97,7 @@ AActor* ASoulsKnight::FindGrappleTarget() const
 
 void ASoulsKnight::GrapplePressed()
 {
-	if (IsDead() || IsBusy() || IsSwimming() || GrappleMode != EGrappleMode::None)
+	if (IsDead() || IsBusy() || IsSwimming() || GrappleMode != EGrappleMode::None || GetUpFirst())
 	{
 		return;
 	}
@@ -592,4 +592,230 @@ void ASoulsKnight::TickSwimming(float DeltaSeconds)
 		}
 	}
 	bWasSwimming = bSwim;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Stealth stances: crouch, dive prone, army crawl
+// ---------------------------------------------------------------------------------------------
+
+namespace
+{
+	// Keep a looping stance montage going (and the one it replaces stopped).
+	void AbilityLoopMontage(UAnimInstance* Anim, UAnimMontage* Want, UAnimMontage* Other, float Rate)
+	{
+		if (!Anim || !Want || Anim->Montage_IsPlaying(Want))
+		{
+			return;
+		}
+		if (Other && Anim->Montage_IsActive(Other))
+		{
+			Anim->Montage_Stop(0.25f, Other);
+		}
+		Anim->Montage_Play(Want, Rate);
+		const FName Section = Want->GetSectionName(0);
+		Anim->Montage_SetNextSection(Section, Section, Want);
+	}
+
+	// Lie still, face down: the crawl held mid-stroke.
+	void AbilityHoldLying(UAnimInstance* Anim, UAnimMontage* Crawl)
+	{
+		if (!Anim || !Crawl)
+		{
+			return;
+		}
+		if (!Anim->Montage_IsActive(Crawl))
+		{
+			Anim->Montage_Play(Crawl, 1.f);
+		}
+		Anim->Montage_Pause(Crawl);
+	}
+}
+
+float ASoulsKnight::GetVisibilityScale() const
+{
+	switch (Stance)
+	{
+	case EKnightStance::Prone: return 0.3f;
+	case EKnightStance::Crouched: return 0.55f;
+	default: return bSprinting ? 1.15f : 1.f;
+	}
+}
+
+float ASoulsKnight::GetNoiseRadius() const
+{
+	// Inside this radius an enemy notices you whichever way it faces. Walking (not jogging) keeps it
+	// inside backstab reach; crouching or crawling all but silences you.
+	const float Speed = GetVelocity().Size2D();
+	switch (Stance)
+	{
+	case EKnightStance::Prone: return 50.f;
+	case EKnightStance::Crouched: return 110.f;
+	default:
+		if (bSprinting)
+		{
+			return 950.f;
+		}
+		return Speed > 350.f ? 420.f : (Speed > 60.f ? 190.f : 140.f);
+	}
+}
+
+void ASoulsKnight::SetStance(EKnightStance NewStance)
+{
+	if (NewStance == Stance)
+	{
+		return;
+	}
+	Stance = NewStance;
+	if (NewStance != EKnightStance::Standing)
+	{
+		bSprintToggled = false;
+		SetBlocking(false);
+	}
+	if (UAnimInstance* Anim = GetMesh()->GetAnimInstance())
+	{
+		for (UAnimMontage* Montage : { CrouchIdleMontage.Get(), CrouchMoveMontage.Get(), CrawlMontage.Get(), GetUpMontage.Get() })
+		{
+			if (Montage && Anim->Montage_IsActive(Montage))
+			{
+				Anim->Montage_Stop(0.25f, Montage);
+			}
+		}
+	}
+}
+
+bool ASoulsKnight::GetUpFirst()
+{
+	if (Stance != EKnightStance::Prone || IsDead())
+	{
+		return false;
+	}
+	if (!IsBusy())
+	{
+		GetUpFromProne();
+	}
+	return true;
+}
+
+void ASoulsKnight::DiveProne()
+{
+	if (Stance == EKnightStance::Prone || IsDead() || IsBusy() || IsSwimming())
+	{
+		return;
+	}
+	const FVector Stick = GetCharacterMovement()->GetCurrentAcceleration().GetSafeNormal2D();
+	const bool bMoving = !Stick.IsNearlyZero() || GetVelocity().Size2D() > 200.f;
+	const FVector Forward = Stick.IsNearlyZero() ? GetActorForwardVector().GetSafeNormal2D() : Stick;
+	PlayAction(EKnightAction::StanceShift, nullptr, bMoving ? 0.6f : 0.45f);
+	SetStance(EKnightStance::Prone);
+	SetActorRotation(FRotator(0.f, Forward.Rotation().Yaw, 0.f));
+	// A running leap flat onto the belly; from a standstill just drop.
+	LaunchCharacter(Forward * (bMoving ? 560.f : 120.f) + FVector(0.f, 0.f, bMoving ? 190.f : 0.f), true, true);
+	AbilityHoldLying(GetMesh()->GetAnimInstance(), CrawlMontage);
+	PlayRandomSound(FootstepSounds, 0.5f);
+	UE_LOG(LogTemp, Log, TEXT("Stealth: %s dives prone"), *GetName());
+}
+
+void ASoulsKnight::GetUpFromProne()
+{
+	if (Stance != EKnightStance::Prone)
+	{
+		return;
+	}
+	Stance = EKnightStance::Standing;
+	if (UAnimInstance* Anim = GetMesh()->GetAnimInstance())
+	{
+		if (CrawlMontage && Anim->Montage_IsActive(CrawlMontage))
+		{
+			Anim->Montage_Stop(0.2f, CrawlMontage);
+		}
+	}
+	// Push up off the belly through a crouch (the get-up clip starts on its back, so it would flip).
+	PlayAction(EKnightAction::StanceShift, CrouchIdleMontage, 0.5f);
+	UE_LOG(LogTemp, Log, TEXT("Stealth: %s gets up"), *GetName());
+}
+
+void ASoulsKnight::TickStance(float DeltaSeconds)
+{
+	UCharacterMovementComponent* Movement = GetCharacterMovement();
+	if (Stance != EKnightStance::Standing
+		&& (IsDead() || IsSwimming() || (Movement->IsFalling() && Action != EKnightAction::StanceShift)))
+	{
+		SetStance(EKnightStance::Standing);
+	}
+	float WantDrop = 0.f;
+	UAnimInstance* Anim = GetMesh()->GetAnimInstance();
+	if (Anim && !IsBusy() && Stance != EKnightStance::Standing)
+	{
+		const bool bMoving = GetVelocity().Size2D() > 30.f;
+		if (Stance == EKnightStance::Crouched)
+		{
+			AbilityLoopMontage(Anim, bMoving ? CrouchMoveMontage.Get() : CrouchIdleMontage.Get(),
+				bMoving ? CrouchIdleMontage.Get() : CrouchMoveMontage.Get(), 1.f);
+		}
+		else if (bMoving)
+		{
+			if (CrawlMontage && Anim->Montage_IsActive(CrawlMontage) && !Anim->Montage_IsPlaying(CrawlMontage))
+			{
+				Anim->Montage_Resume(CrawlMontage);
+				Anim->Montage_SetPlayRate(CrawlMontage, 0.75f);
+				const FName Section = CrawlMontage->GetSectionName(0);
+				Anim->Montage_SetNextSection(Section, Section, CrawlMontage);
+			}
+			AbilityLoopMontage(Anim, CrawlMontage, nullptr, 0.75f);
+		}
+		else
+		{
+			AbilityHoldLying(Anim, CrawlMontage);
+		}
+	}
+	if (Stance == EKnightStance::Prone)
+	{
+		WantDrop = CrawlMeshDrop;
+	}
+	if (WantDrop > 0.f || MeshDrop > 0.01f)
+	{
+		MeshDrop = FMath::FInterpTo(MeshDrop, WantDrop, DeltaSeconds, 8.f);
+		FVector Relative = GetMesh()->GetRelativeLocation();
+		Relative.Z = BaseMeshZ - MeshDrop;
+		GetMesh()->SetRelativeLocation(Relative);
+	}
+}
+
+// ---------------------------------------------------------------------------------------------
+// Idle talk
+// ---------------------------------------------------------------------------------------------
+
+void ASoulsKnight::SetTalking(bool bNewTalking)
+{
+	UAnimInstance* Anim = GetMesh()->GetAnimInstance();
+	if (bNewTalking)
+	{
+		bTalking = true;
+		if (Anim && TalkMontage && !Anim->IsAnyMontagePlaying())
+		{
+			Anim->Montage_Play(TalkMontage, FMath::FRandRange(0.9f, 1.1f));
+			const FName Section = TalkMontage->GetSectionName(0);
+			Anim->Montage_SetNextSection(Section, Section, TalkMontage);
+		}
+	}
+	else if (bTalking)
+	{
+		bTalking = false;
+		if (Anim && TalkMontage)
+		{
+			Anim->Montage_Stop(0.35f, TalkMontage);
+		}
+	}
+}
+
+void ASoulsKnight::PlayGesture()
+{
+	UAnimInstance* Anim = GetMesh()->GetAnimInstance();
+	if (Anim && !GestureMontages.IsEmpty() && !IsBusy())
+	{
+		if (UAnimMontage* Gesture = GestureMontages[FMath::RandRange(0, GestureMontages.Num() - 1)])
+		{
+			Anim->Montage_Play(Gesture, 1.f);
+		}
+	}
 }

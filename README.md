@@ -35,6 +35,10 @@ Warden in the stone circle and Morrigan of the Mire, a shade who melts into shad
 - **Surprise is rewarded.** An enemy you hit or startle while it's unaware freezes in shock: it
   takes extra damage and is open to a critical. Ambush kills pay half again in runes and spread
   fear. Shaken enemies hesitate and miss their swings; terrified ones flee or cower.
+- **Stealth.** Crouching or crawling makes you far harder to see and all but silent, so you can
+  creep up behind an enemy that hasn't noticed you and backstab it. Walking (not jogging) works
+  too if you stay out of its sight. Unaware enemies patrol around their posts. When two meet, they
+  stop to talk, nodding or shaking their heads, then go their separate ways.
 - **Swimming and exploration.** You can swim the sea and the marsh pools, at a cost in stamina.
   You only drown when exhausted. Golden Seeds (+1 flask), a Crimson Tear (stronger flasks) and
   rune purses wait on grapple ledges, in the marsh and on the islet.
@@ -51,10 +55,13 @@ Warden in the stone circle and Morrigan of the Mire, a shade who melts into shad
 | Move / look | L-stick / R-stick | WASD / mouse |
 | Light attack (combo, riposte, backstab) | X | LMB |
 | Heavy attack | Y | F |
-| Roll (tap) / sprint (hold) | B | Shift |
+| Roll (tap while moving) | B | Shift |
+| Crouch / stand (tap while still) | B | Shift |
+| Dive prone and army-crawl (hold); get up (tap again) | B | Shift |
+| Sprint (tap; lasts until you stop) | L3 | Ctrl |
 | Jump | A | Space |
-| Guard (hold) | LB | RMB |
-| Parry, or brace against a leaping enemy | LT | C |
+| Guard (hold); raise it just as a blow lands to parry | LB | RMB |
+| Parry, or brace against a leaping enemy | LT (or LB) | C |
 | Flask | RB | R |
 | Grapple | RT | G / mouse thumb |
 | Lock on | R3 | Q / MMB |
@@ -78,5 +85,7 @@ Run these with `-RenderOffscreen` to check a build without anyone at the control
 - `-KnightDemo` performs every move and mechanic against real enemies and screenshots each one.
 - `-IslandTour` screenshots each Site of Grace and boss arena.
 - `-ShadowBossTest -ShadowBossDemo` stages the shade's fight.
+- `-StealthDemo` dives prone, crawls, gets up, then crouch-walks up behind a sentry and backstabs it.
+- `-PatrolDemo` watches two patrolling enemies meet, talk and part.
 
 Screenshots land in `Saved/Screenshots`.

@@ -33,6 +33,16 @@ enum class EKnightAction : uint8
 	Shocked,       // ambushed: frozen in surprise, open to a critical
 	Impaled,       // caught on a braced blade
 	Submerged,     // melted into shadow (ASoulsShadowBoss): untouchable until it rises
+	StanceShift,   // diving to the ground or getting back up
+};
+
+// How low the knight is carrying itself: lower is slower but much harder to see or hear.
+UENUM(BlueprintType)
+enum class EKnightStance : uint8
+{
+	Standing,
+	Crouched,
+	Prone,
 };
 
 UENUM(BlueprintType)
@@ -122,6 +132,37 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight|Animation")
 	TObjectPtr<UAnimMontage> SwimIdleMontage;
+
+	// Stealth stances: crouch loops, the army crawl, and lying down / getting up (played forwards
+	// from its first, lying frame).
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight|Animation")
+	TObjectPtr<UAnimMontage> CrouchIdleMontage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight|Animation")
+	TObjectPtr<UAnimMontage> CrouchMoveMontage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight|Animation")
+	TObjectPtr<UAnimMontage> CrawlMontage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight|Animation")
+	TObjectPtr<UAnimMontage> GetUpMontage;
+
+	// Idle talk between patrollers: a talking loop and the odd nod or shake of the head.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight|Animation")
+	TObjectPtr<UAnimMontage> TalkMontage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight|Animation")
+	TArray<TObjectPtr<UAnimMontage>> GestureMontages;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight|Stealth")
+	float CrouchSpeed = 220.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight|Stealth")
+	float CrawlSpeed = 110.f;
+
+	// How far the crawl clip's body sits above the ground; the mesh is lowered by this while crawling.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight|Stealth")
+	float CrawlMeshDrop = 70.f;
 
 	// Play-rate of every attack animation (enemies swing slower so their attacks read).
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight|Animation")
@@ -327,6 +368,19 @@ public:
 	ASoulsPickup* GetNearbyPickup() const { return NearbyPickup.Get(); }
 	void SetNearbyPickup(ASoulsPickup* Pickup);
 
+	// Stealth: how much of the enemies' sight range this knight shows up at, and how far off it
+	// can be heard (enemies notice you inside this radius whichever way they face).
+	EKnightStance GetStance() const { return Stance; }
+	float GetVisibilityScale() const;
+	float GetNoiseRadius() const;
+	void SetStance(EKnightStance NewStance);
+	void DiveProne();
+	void GetUpFromProne();
+
+	// Idle talk (patrolling enemies): loop the talking animation, or stop it.
+	void SetTalking(bool bTalking);
+	void PlayGesture();
+
 	// Commands (player input and the enemy AI both drive the knight through these).
 	virtual void DoMove(float Right, float Forward) override;
 	virtual void DoLook(float Yaw, float Pitch) override;
@@ -393,9 +447,20 @@ protected:
 private:
 	// Verification run (-KnightDemo): performs every move and screenshots it.
 	void RunVerificationDemo();
+	// -StealthDemo: dive prone, crawl, get up, then crouch-walk up behind a sentry and backstab it.
+	void RunStealthDemo();
+	void TickStealthDemo();
 	void Shot(const TCHAR* Name);
+	TWeakObjectPtr<ASoulsKnight> DemoVictim;
+	FVector DemoMove = FVector::ZeroVector;
+	bool bDemoStalk = false;
+	float DemoStalkStart = 0.f;
 
 	void EnsureKnightInput();
+	void DodgeHeld();
+	void TickStance(float DeltaSeconds);
+	// Prone and asked to do something: get up instead (true = the request was used up).
+	bool GetUpFirst();
 	bool SpendStamina(float Cost);
 	void StartSwing(int32 Index);
 	void StartHeavy();
@@ -488,6 +553,12 @@ private:
 	bool bDodgeHeld = false;
 	bool bSprinting = false;
 	bool bSprintToggled = false;
+	bool bDodgeHoldFired = false;
+	bool bTalking = false;
+	EKnightStance Stance = EKnightStance::Standing;
+	float BaseMeshZ = 0.f;
+	float MeshDrop = 0.f;
+	FTimerHandle DodgeHoldTimer;
 	float DodgePressTime = 0.f;
 	float SprintPressTime = 0.f;
 	float BlockPressTime = -100.f;

@@ -22,10 +22,12 @@ UAL2_GLB = os.path.join(PROJECT, "SourceArt", "Animations", "UAL", "UAL2", "UAL2
 # Clip (as named in the source file) -> name of the retargeted Manny animation.
 UAL1_CLIPS = {"Roll": "A_Roll", "Sword_Idle": "A_SwordIdle", "Hit_Chest": "A_HitChest", "Death01": "A_Death",
               "Sword_Attack": "A_SwordAttack", "Swim_Fwd_Loop": "A_SwimFwd", "Swim_Idle_Loop": "A_SwimIdle",
-              "Spell_Simple_Shoot": "A_Throw"}
+              "Spell_Simple_Shoot": "A_Throw", "Crouch_Idle_Loop": "A_CrouchIdle", "Crouch_Fwd_Loop": "A_CrouchFwd",
+              "Idle_Talking_Loop": "A_Talk"}
 UAL2_CLIPS = {"Sword_Regular_A": "A_SwordA", "Sword_Regular_B": "A_SwordB", "Sword_Regular_C": "A_SwordC",
               "Sword_Block": "A_Block", "Consume": "A_Consume", "Idle_Shield_Break": "A_GuardBreak",
-              "Shield_OneShot": "A_Parry", "Hit_Knockback": "A_Knockback"}
+              "Shield_OneShot": "A_Parry", "Hit_Knockback": "A_Knockback", "LayToIdle": "A_LayToIdle",
+              "Yes": "A_Yes", "Idle_No_Loop": "A_No"}
 
 
 def log(msg):
@@ -201,7 +203,12 @@ MONTAGES = [("A_SwordA", "AM_SwordA"), ("A_SwordB", "AM_SwordB"), ("A_SwordC", "
             ("A_SwordAttack", "AM_SwordHeavy"), ("A_SwordAttack", "AM_Critical"), ("A_Roll", "AM_Roll"),
             ("A_Block", "AM_Block"), ("A_Consume", "AM_Heal"), ("A_HitChest", "AM_Hit"),
             ("A_Parry", "AM_Parry"), ("A_Knockback", "AM_Stagger"), ("A_GuardBreak", "AM_GuardBreak"),
-            ("A_SwimFwd", "AM_Swim"), ("A_SwimIdle", "AM_SwimIdle"), ("A_Throw", "AM_Throw")]
+            ("A_SwimFwd", "AM_Swim"), ("A_SwimIdle", "AM_SwimIdle"), ("A_Throw", "AM_Throw"),
+            # Stealth: crouch loops, the swim stroke doubling as an army crawl, lying down / getting up.
+            ("A_CrouchIdle", "AM_CrouchIdle"), ("A_CrouchFwd", "AM_CrouchFwd"), ("A_SwimFwd", "AM_Crawl"),
+            ("A_LayToIdle", "AM_GetUp"),
+            # Patrollers' idle talk.
+            ("A_Talk", "AM_Talk"), ("A_Yes", "AM_Yes"), ("A_No", "AM_No")]
 
 
 def import_texture(path, dest, normal=False):
@@ -499,9 +506,12 @@ def configure_knight(bp, montages, weapons, sounds, body_material=None):
     for prop, name in (("HeavyAttackMontage", "AM_SwordHeavy"), ("RollMontage", "AM_Roll"), ("BlockMontage", "AM_Block"),
                        ("HealMontage", "AM_Heal"), ("HitMontage", "AM_Hit"), ("ParryMontage", "AM_Parry"),
                        ("StaggerMontage", "AM_Stagger"), ("GuardBreakMontage", "AM_GuardBreak"), ("CriticalMontage", "AM_Critical"),
-                       ("SwimMontage", "AM_Swim"), ("SwimIdleMontage", "AM_SwimIdle"), ("ThrowMontage", "AM_Throw")):
+                       ("SwimMontage", "AM_Swim"), ("SwimIdleMontage", "AM_SwimIdle"), ("ThrowMontage", "AM_Throw"),
+                       ("CrouchIdleMontage", "AM_CrouchIdle"), ("CrouchMoveMontage", "AM_CrouchFwd"), ("CrawlMontage", "AM_Crawl"),
+                       ("GetUpMontage", "AM_GetUp"), ("TalkMontage", "AM_Talk")):
         if name in montages:
             cdo.set_editor_property(prop, montages[name])
+    cdo.set_editor_property("GestureMontages", [montages[n] for n in ("AM_Yes", "AM_No") if n in montages])
     cdo.get_editor_property("mesh").set_editor_property("skeletal_mesh_asset", eal.load_asset(MANNY_MESH))
     if "sword" in weapons:
         place(cdo.get_editor_property("Sword"), weapons["sword"], SWORD_TRANSFORM)

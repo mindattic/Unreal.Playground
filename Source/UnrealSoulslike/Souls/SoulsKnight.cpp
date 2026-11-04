@@ -48,6 +48,8 @@ namespace
 	constexpr float KSprintStaminaPerSecond = 14.f;
 	// Raising the guard this close before a blow lands turns it into a parry.
 	constexpr float KGuardParryWindow = 0.22f;
+	// Holding B this long drops you prone instead of rolling or crouching.
+	constexpr float KDodgeHoldToProne = 0.35f;
 	constexpr float KParryCost = 10.f;
 	constexpr float KLockRange = 2200.f;
 	constexpr float KLockBreakRange = 2900.f;
@@ -120,6 +122,7 @@ void ASoulsKnight::BeginPlay()
 	GetCharacterMovement()->MaxWalkSpeed = RunSpeed;
 
 	ApplyBodyMaterials(BodyMaterials);
+	BaseMeshZ = GetMesh()->GetRelativeLocation().Z;
 	if (UMaterialInterface* LineMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Souls/FX/M_GrappleLine.M_GrappleLine")))
 	{
 		GrappleLine->SetMaterial(0, LineMaterial);
@@ -140,6 +143,10 @@ void ASoulsKnight::BeginPlay()
 	if (Team == 0 && FParse::Param(FCommandLine::Get(), TEXT("KnightDemo")))
 	{
 		RunVerificationDemo();
+	}
+	if (Team == 0 && FParse::Param(FCommandLine::Get(), TEXT("StealthDemo")))
+	{
+		RunStealthDemo();
 	}
 #if !UE_BUILD_SHIPPING
 	// -SwordXform=x,y,z,pitch,yaw,roll[,scale] (and -ShieldXform=) to fit weapons without rebuilding content.
@@ -373,6 +380,101 @@ void ASoulsKnight::RunVerificationDemo()
 	}
 }
 
+void ASoulsKnight::RunStealthDemo()
+{
+	GEngine->Exec(GetWorld(), TEXT("r.MotionBlurQuality 0"));
+	struct FStep { float Time; TFunction<void(ASoulsKnight*)> Do; };
+	// Watch from the side, close and low.
+	auto SideView = [](ASoulsKnight* K)
+	{
+		K->GetCameraBoom()->TargetArmLength = 380.f;
+		K->GetCameraBoom()->SocketOffset = FVector(0.f, 0.f, 10.f);
+		if (K->Controller)
+		{
+			K->Controller->SetControlRotation(FRotator(-12.f, K->GetActorRotation().Yaw + 70.f, 0.f));
+		}
+	};
+	const TArray<FStep> Steps = {
+		{ 1.0f, [SideView](ASoulsKnight* K)
+			{
+				// The nearest ordinary foe becomes a sentry looking the other way.
+				ASoulsEnemy* Best = nullptr;
+				for (TActorIterator<ASoulsEnemy> It(K->GetWorld()); It; ++It)
+				{
+					if (!It->bIsBoss && !It->IsDead() && (!Best || K->GetDistanceTo(*It) < K->GetDistanceTo(Best)))
+					{
+						Best = *It;
+					}
+				}
+				if (!Best)
+				{
+					UE_LOG(LogUnrealSoulslike, Warning, TEXT("Stealth check: no foe to sneak up on"));
+					return;
+				}
+				Best->PatrolRadius = 0.f;
+				Best->GetCharacterMovement()->StopMovementImmediately();
+				K->DemoVictim = Best;
+				const FVector Behind = -Best->GetActorForwardVector().GetSafeNormal2D();
+				K->SetActorLocation(Best->GetActorLocation() + Behind * 900.f + FVector(0.f, 0.f, 40.f), false, nullptr, ETeleportType::TeleportPhysics);
+				K->FaceTowards(Best->GetActorLocation());
+				SideView(K);
+				K->DiveProne();
+			} },
+		{ 1.8f, [](ASoulsKnight* K) { K->Shot(TEXT("Stealth_1_prone")); } },
+		{ 2.0f, [](ASoulsKnight* K) { K->DemoMove = K->GetActorForwardVector(); } },
+		{ 3.4f, [](ASoulsKnight* K) { K->Shot(TEXT("Stealth_2_crawl")); } },
+		{ 3.6f, [](ASoulsKnight* K) { K->DemoMove = FVector::ZeroVector; K->GetUpFromProne(); } },
+		{ 3.9f, [](ASoulsKnight* K) { K->Shot(TEXT("Stealth_3_getting_up")); } },
+		{ 5.0f, [](ASoulsKnight* K) { K->SetStance(EKnightStance::Crouched); } },
+		{ 5.6f, [](ASoulsKnight* K) { K->Shot(TEXT("Stealth_4_crouch")); K->bDemoStalk = true; K->DemoStalkStart = K->GetWorld()->GetTimeSeconds(); } },
+	};
+	for (const FStep& Step : Steps)
+	{
+		FTimerHandle Handle;
+		const TWeakObjectPtr<ASoulsKnight> WeakThis(this);
+		const TFunction<void(ASoulsKnight*)> Do = Step.Do;
+		GetWorldTimerManager().SetTimer(Handle, [WeakThis, Do]() { if (WeakThis.IsValid()) { Do(WeakThis.Get()); } }, Step.Time, false);
+	}
+}
+
+void ASoulsKnight::TickStealthDemo()
+{
+	if (!DemoMove.IsNearlyZero())
+	{
+		AddMovementInput(DemoMove, 1.f);
+	}
+	ASoulsKnight* Victim = DemoVictim.Get();
+	if (!bDemoStalk || !Victim)
+	{
+		return;
+	}
+	const float Now = GetWorld()->GetTimeSeconds();
+	const ASoulsEnemyController* Mind = Cast<ASoulsEnemyController>(Victim->GetController());
+	const bool bNoticed = Mind && Mind->GetMind() != EEnemyMind::Idle;
+	const FVector Spot = Victim->GetActorLocation() - Victim->GetActorForwardVector().GetSafeNormal2D() * 150.f;
+	const float Distance = FVector::Dist2D(GetActorLocation(), Victim->GetActorLocation());
+	if (bNoticed || Now - DemoStalkStart > 20.f)
+	{
+		UE_LOG(LogUnrealSoulslike, Warning, TEXT("Stealth check: FAILED (noticed=%d, distance=%.0f)"), bNoticed ? 1 : 0, Distance);
+		bDemoStalk = false;
+		Shot(TEXT("Stealth_5_backstab"));
+		return;
+	}
+	if (Distance > 200.f)
+	{
+		AddMovementInput((Spot - GetActorLocation()).GetSafeNormal2D(), 1.f);
+		return;
+	}
+	bDemoStalk = false;
+	FaceTowards(Victim->GetActorLocation());
+	DoComboAttackStart();
+	UE_LOG(LogUnrealSoulslike, Log, TEXT("Stealth check: reached %.0f cm behind an unaware foe; action=%d (critical=%d)"), Distance,
+		static_cast<int32>(Action), Action == EKnightAction::Critical ? 1 : 0);
+	FTimerHandle Handle;
+	const TWeakObjectPtr<ASoulsKnight> WeakThis(this);
+	GetWorldTimerManager().SetTimer(Handle, [WeakThis]() { if (WeakThis.IsValid()) { WeakThis->Shot(TEXT("Stealth_5_backstab")); } }, 0.7f, false);
+}
+
 void ASoulsKnight::Shot(const TCHAR* Name)
 {
 	FScreenshotRequest::RequestScreenshot(FString::Printf(TEXT("Knight_%s"), Name), true, false);
@@ -591,6 +693,15 @@ void ASoulsKnight::PlayAction(EKnightAction NewAction, UAnimMontage* Montage, fl
 	GetWorldTimerManager().ClearTimer(ActionTimer);
 	GetWorldTimerManager().ClearTimer(HitTimer);
 	GetWorldTimerManager().ClearTimer(WhooshTimer);
+	// Any real action brings a crouching or prone knight back to its feet.
+	if (NewAction != EKnightAction::StanceShift && Stance != EKnightStance::Standing)
+	{
+		SetStance(EKnightStance::Standing);
+	}
+	if (bTalking)
+	{
+		SetTalking(false);
+	}
 	Action = NewAction;
 	ActionElapsed = 0.f;
 	ActionDuration = Duration;
@@ -640,7 +751,7 @@ void ASoulsKnight::Interrupt()
 
 void ASoulsKnight::DoComboAttackStart()
 {
-	if (IsDead() || IsSwimming() || SwordComboMontages.IsEmpty())
+	if (IsDead() || IsSwimming() || SwordComboMontages.IsEmpty() || GetUpFirst())
 	{
 		return;
 	}
@@ -684,7 +795,7 @@ void ASoulsKnight::StartSwing(int32 Index)
 
 void ASoulsKnight::DoChargedAttackStart()
 {
-	if (IsDead() || IsSwimming() || IsBusy() || !HeavyAttackMontage || GetCharacterMovement()->IsFalling())
+	if (IsDead() || IsSwimming() || IsBusy() || !HeavyAttackMontage || GetCharacterMovement()->IsFalling() || GetUpFirst())
 	{
 		return;
 	}
@@ -729,37 +840,70 @@ void ASoulsKnight::SwingHit()
 
 void ASoulsKnight::DodgePressed()
 {
-	// B rolls the instant it's pressed; sprinting lives on L3.
+	// B, Ghost Recon style: tap on the move to roll, tap standing still to crouch, hold to dive
+	// prone (and tap again to get up).
 	bDodgeHeld = true;
+	bDodgeHoldFired = false;
 	DodgePressTime = GetWorld()->GetTimeSeconds();
-	bSprintToggled = false;
-	FVector Direction = GetCharacterMovement()->GetCurrentAcceleration().GetSafeNormal2D();
-	if (Direction.IsNearlyZero())
+	GetWorldTimerManager().SetTimer(DodgeHoldTimer, this, &ASoulsKnight::DodgeHeld, KDodgeHoldToProne, false);
+}
+
+void ASoulsKnight::DodgeHeld()
+{
+	if (bDodgeHeld && Stance != EKnightStance::Prone && !IsDead() && !IsBusy() && !IsSwimming() && !GetCharacterMovement()->IsFalling())
 	{
-		// No stick: roll away from whatever we face (a backstep, Souls style, but rolling).
-		Direction = LockTarget.IsValid() ? -AttackDirection() : GetActorForwardVector();
+		bDodgeHoldFired = true;
+		DiveProne();
 	}
-	DodgeToward(Direction);
 }
 
 void ASoulsKnight::DodgeReleased()
 {
+	GetWorldTimerManager().ClearTimer(DodgeHoldTimer);
+	const bool bTap = bDodgeHeld && !bDodgeHoldFired;
 	bDodgeHeld = false;
+	bDodgeHoldFired = false;
+	if (!bTap || IsDead())
+	{
+		return;
+	}
+	if (Stance == EKnightStance::Prone)
+	{
+		GetUpFromProne();
+		return;
+	}
+	const FVector Stick = GetCharacterMovement()->GetCurrentAcceleration().GetSafeNormal2D();
+	const bool bMoving = !Stick.IsNearlyZero() || bSprinting;
+	// In the middle of a fight (busy, locked on or swinging) B is always the roll.
+	if (bMoving || IsBusy() || LockTarget.IsValid() || IsSwimming())
+	{
+		bSprintToggled = false;
+		DodgeToward(bMoving ? (Stick.IsNearlyZero() ? GetActorForwardVector() : Stick) : -AttackDirection());
+		return;
+	}
+	SetStance(Stance == EKnightStance::Crouched ? EKnightStance::Standing : EKnightStance::Crouched);
 }
 
 void ASoulsKnight::SprintPressed()
 {
 	// Tap L3 to break into a sprint; it lasts until you stop, guard, act or run out of stamina.
+	if (GetUpFirst())
+	{
+		return;
+	}
+	SetStance(EKnightStance::Standing);
 	bSprintToggled = !bSprintToggled;
 	SprintPressTime = GetWorld()->GetTimeSeconds();
 }
 
 void ASoulsKnight::JumpPressed()
 {
-	if (!IsDead() && !IsSwimming())
+	if (IsDead() || IsSwimming() || GetUpFirst())
 	{
-		Jump();
+		return;
 	}
+	SetStance(EKnightStance::Standing);
+	Jump();
 }
 
 void ASoulsKnight::JumpReleased()
@@ -790,6 +934,11 @@ void ASoulsKnight::DodgeToward(const FVector& Direction)
 void ASoulsKnight::BlockPressed()
 {
 	bBlockHeld = true;
+	if (GetUpFirst())
+	{
+		return;
+	}
+	SetStance(EKnightStance::Standing);
 	// Something leaping at you: the guard button sets the blade instead.
 	if (IsPlayerControlled() && !IsDead() && !IsSwimming() && !IsBusy() && FindIncomingPouncer())
 	{
@@ -847,6 +996,10 @@ void ASoulsKnight::SetBlocking(bool bNewBlocking)
 
 void ASoulsKnight::ParryPressed()
 {
+	if (GetUpFirst())
+	{
+		return;
+	}
 	// Something leaping at you: set the blade instead of the shield.
 	if (!IsDead() && !IsSwimming() && (!IsBusy() || Action == EKnightAction::Parry) && FindIncomingPouncer())
 	{
@@ -872,7 +1025,7 @@ bool ASoulsKnight::IsInParryWindow() const
 
 void ASoulsKnight::HealPressed()
 {
-	if (IsDead() || IsSwimming() || IsBusy() || Flasks <= 0 || CurrentHP >= MaxHP || !HealMontage)
+	if (IsDead() || IsSwimming() || IsBusy() || Flasks <= 0 || CurrentHP >= MaxHP || !HealMontage || GetUpFirst())
 	{
 		return;
 	}
@@ -1459,6 +1612,7 @@ void ASoulsKnight::Tick(float DeltaSeconds)
 	{
 		return;
 	}
+	TickStealthDemo();
 
 	if (Action == EKnightAction::LightAttack && bComboQueued && ActionElapsed >= ActionDuration * ComboChainFraction
 		&& SwingIndex + 1 < SwordComboMontages.Num() && SpendStamina(LightAttackCost))
@@ -1496,8 +1650,10 @@ void ASoulsKnight::Tick(float DeltaSeconds)
 		{
 			bSprintToggled = false;
 		}
-		bSprinting = bSprintToggled && !IsBusy() && !bBlocking && bMoving && Stamina > 0.f;
-		Movement->MaxWalkSpeed = bBlocking ? KBlockWalkSpeed : (bSprinting ? KSprintSpeed : RunSpeed);
+		bSprinting = bSprintToggled && Stance == EKnightStance::Standing && !IsBusy() && !bBlocking && bMoving && Stamina > 0.f;
+		Movement->MaxWalkSpeed = Stance == EKnightStance::Prone ? CrawlSpeed
+			: Stance == EKnightStance::Crouched ? CrouchSpeed
+			: bBlocking ? KBlockWalkSpeed : (bSprinting ? KSprintSpeed : RunSpeed);
 		if (bSprinting)
 		{
 			Stamina -= KSprintStaminaPerSecond * DeltaSeconds;
@@ -1511,7 +1667,7 @@ void ASoulsKnight::Tick(float DeltaSeconds)
 			if (StepDistance > (bSprinting ? 210.f : 165.f))
 			{
 				StepDistance = 0.f;
-				PlayRandomSound(FootstepSounds, 0.28f);
+				PlayRandomSound(FootstepSounds, Stance == EKnightStance::Standing ? 0.28f : 0.1f);
 			}
 		}
 
@@ -1526,6 +1682,7 @@ void ASoulsKnight::Tick(float DeltaSeconds)
 	UpdateGrappleLine();
 	TickPounce(DeltaSeconds);
 	TickSwimming(DeltaSeconds);
+	TickStance(DeltaSeconds);
 	TickFear(DeltaSeconds);
 	if (IsPlayerControlled() && Now - GrappleCandidateCheck > 0.1f)
 	{

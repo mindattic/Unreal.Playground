@@ -138,12 +138,17 @@ bool ASoulsEnemyController::CanSee(const AActor* Other) const
 	}
 	const FVector To = Other->GetActorLocation() - Me->GetActorLocation();
 	const float Distance = To.Size();
-	if (Distance > Me->SightRange)
+	// Crouching or crawling knights are much harder to pick out, and quieter.
+	const ASoulsKnight* OtherKnight = Cast<ASoulsKnight>(Other);
+	const float Visibility = OtherKnight ? OtherKnight->GetVisibilityScale() : 1.f;
+	const float Hearing = OtherKnight ? OtherKnight->GetNoiseRadius() : 450.f;
+	if (Distance > Me->SightRange * Visibility)
 	{
 		return false;
 	}
-	// A wide forward cone, or anything close enough to hear.
-	if (Distance > 450.f && FVector::DotProduct(Me->GetActorForwardVector(), To.GetSafeNormal()) < 0.2f)
+	// A wide forward cone (narrower while chatting), or anything close enough to hear.
+	const float Cone = IsChatting() ? 0.55f : 0.2f;
+	if (Distance > Hearing && FVector::DotProduct(Me->GetActorForwardVector(), To.GetSafeNormal()) < Cone)
 	{
 		return false;
 	}
@@ -310,6 +315,10 @@ void ASoulsEnemyController::EndChat(float Now, bool bPartWays)
 	ASoulsEnemyController* Partner = ChatPartner.Get();
 	ChatPartner = nullptr;
 	bSpeaking = false;
+	if (ASoulsEnemy* Body = Knight())
+	{
+		Body->SetTalking(false);
+	}
 	ChatCooldownUntil = Now + FMath::FRandRange(18.f, 30.f);
 	if (bPartWays && Knight())
 	{
@@ -352,8 +361,24 @@ void ASoulsEnemyController::ThinkPatrol(float Now)
 		{
 			bSpeaking = !bSpeaking;
 			Partner->bSpeaking = !bSpeaking;
-			NextTurnSwap = Now + FMath::FRandRange(1.2f, 2.6f);
+			NextTurnSwap = Now + FMath::FRandRange(1.6f, 3.f);
 			Partner->NextTurnSwap = NextTurnSwap;
+			// The one who just stopped talking nods or shakes its head at the reply now and then.
+			for (ASoulsEnemyController* Side : { this, Partner })
+			{
+				if (ASoulsEnemy* Body = Side->Knight(); Body && !Side->bSpeaking)
+				{
+					Body->SetTalking(false);
+					if (FMath::FRand() < 0.6f)
+					{
+						Body->PlayGesture();
+					}
+				}
+			}
+		}
+		if (bSpeaking)
+		{
+			Me->SetTalking(true);
 		}
 		if (Now >= ChatUntil && this < Partner)
 		{
