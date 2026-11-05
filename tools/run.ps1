@@ -92,7 +92,7 @@ Add-Type -Namespace SoulsCap -Name U -MemberDefinition @'
 `$o = New-Object SoulsCap.U+POINT
 [SoulsCap.U]::ClientToScreen(`$p.MainWindowHandle, [ref]`$o) | Out-Null
 `$region = '{0},{1},{2},{3}' -f `$o.X, `$o.Y, (`$r.R - `$r.L), (`$r.B - `$r.T)
-Start-Process -FilePath '$capture' -ArgumentList @('record', '--region', `$region, '--app', 'Unreal.Soulslike') -WindowStyle Minimized | Out-Null
+Start-Process -FilePath '$capture' -ArgumentList @('record', '--region', `$region, '--app', 'Unreal.Soulslike', '--hq') -WindowStyle Minimized | Out-Null
 `$p.WaitForExit()
 & '$capture' stop | Out-Null
 "@
