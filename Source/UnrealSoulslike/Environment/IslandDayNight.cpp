@@ -309,7 +309,10 @@ void AIslandDayNight::Apply(float Hours)
 	const float Elev = IslandDN::ElevationDeg(SunDir);
 	SunElevation = Elev;
 	const float Day = FMath::SmoothStep(-6.f, 12.f, Elev);
-	const float Night = 1.f - FMath::SmoothStep(-12.f, 0.f, Elev);
+	// The night lift (exposure) holds until the sun is well up: a sun on the horizon gives next to no
+	// light, so ending it at 0 degrees made dawn and dusk the darkest moments of the day (and the game
+	// starts at dawn).
+	const float Night = 1.f - FMath::SmoothStep(-12.f, 25.f, Elev);
 
 	// Sun: dim and warm near the horizon, whiter and stronger toward noon, gone 10 degrees under.
 	if (ADirectionalLight* SunActor = Sun.Get())
@@ -349,7 +352,8 @@ void AIslandDayNight::Apply(float Hours)
 	if (ASkyLight* SkyActor = Sky.Get())
 	{
 		USkyLightComponent* SkyComp = SkyActor->GetLightComponent();
-		SkyComp->SetIntensity(FMath::Lerp(NightSkyIntensity, DaySkyIntensity, Day));
+		// The lift holds until the sun is well up (the low sun's sky capture is dim: dawn went dark).
+		SkyComp->SetIntensity(FMath::Lerp(NightSkyIntensity, DaySkyIntensity, FMath::SmoothStep(0.f, 25.f, Elev)));
 		SkyComp->SetLightColor(FMath::Lerp(NightSkyTint, FLinearColor::White, Day));
 		if (!SkyComp->bRealTimeCapture && FMath::Abs(Elev - LastSkyCaptureElevation) > 1.5f)
 		{
