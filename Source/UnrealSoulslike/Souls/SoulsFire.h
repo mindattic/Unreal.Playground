@@ -9,15 +9,15 @@
 class AActor;
 class ACameraActor;
 class APhysicsVolume;
-class UInstancedStaticMeshComponent;
-class UMaterialInterface;
+class UNiagaraComponent;
+class UNiagaraSystem;
 class UPointLightComponent;
-class UStaticMesh;
 class UStaticMeshComponent;
 class UTexture2D;
 
-// Field fire (UNR-T41). A fire started in grass, heather, ferns, shrubs or trees grows and spreads
-// through the vegetation on a 1.28 m grid, then burns out; it never crosses water, sand or bare rock.
+// Field fire (UNR-T41, UNR-T75). A fire started in grass, heather, ferns, shrubs or trees races through the
+// vegetation on a 1.28 m grid, pushed by a slowly veering wind (fast downwind, crawling upwind, embers
+// jumping it ahead), climbs into the bushes and trees, then burns out; it never crosses water, sand or bare rock.
 // Burning plants char black, then shrink and dissolve away. The burn state lives in one small texture
 // (/Game/Souls/FX/T_FireField, built by tools/build_island.py) that the island's grass, foliage,
 // prop and terrain materials sample: R = char, G = heat (ember glow), B = consumed (grass shrinks).
@@ -38,9 +38,27 @@ struct UNREALSOULSLIKE_API FSoulsFire
 
 enum class ESoulsFireItemKind : uint8 { Flower, Fern, Shrub, Tree, Log };
 
-// Runs the fire simulation and its cheap visuals (additive flame cones, smoke puffs, a few pooled
-// flickering point lights) for one game world. Idle and free until something ignites.
-// -FireDemo: ignites a grassy spot near the player start and screenshots the spread, char and dissolve.
+// One pooled Niagara component of the field fire's visuals and what it's showing.
+USTRUCT()
+struct FSoulsFireFxSlot
+{
+	GENERATED_BODY()
+
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraComponent> Comp;
+
+	int64 Key = -1;      // the patch / tile / plant it shows; -1 = free
+	float FreeAt = 0.f;  // a let-go slot's last particles are gone by then (reusing it earlier would pop them)
+	bool bOn = false;
+};
+
+// Runs the fire simulation and its visuals for one game world: no meshes, only particles (UNR-T75).
+// Pooled Niagara systems built by tools/build_torch_fire.py from flipbooks of a real fire simulation:
+// a flame patch per 2 x 2 burning cells (and on burning plants), thick smoke columns and ember clouds over
+// the busiest 8 m tiles, heat haze near the camera, and a few pooled flickering point lights. The nearest
+// and strongest win when the caps are reached. Idle and free until something ignites.
+// -FireDemo: ignites a grassy spot near the player start and screenshots the spread, char and dissolve from
+// afar and up close, by day and then at night.
 UCLASS()
 class UNREALSOULSLIKE_API USoulsFireSubsystem : public UTickableWorldSubsystem
 {
@@ -78,12 +96,13 @@ private:
 		bool bDone = false;
 	};
 
-	struct FPuff
+	// A place the visuals want a pooled effect this step.
+	struct FFxWant
 	{
+		int64 Key = 0;
 		FVector Location = FVector::ZeroVector;
-		float Age = 0.f;
-		float Life = 0.f;
-		float Size = 1.f;
+		float Scale = 1.f;
+		float Priority = 0.f; // lower wins
 	};
 
 	void EnsureStarted();
@@ -100,7 +119,13 @@ private:
 	void Step(float Dt);
 	void StepItems();
 	void UpdateVisuals(float Dt);
+	// Shows Wants (the best Max of them) with the pooled components, keeping a slot on the same key
+	// steady, letting go of the rest (their particles burn out over Linger seconds) and starting new ones.
+	void UpdatePool(TArray<FSoulsFireFxSlot>& Pool, UNiagaraSystem* System, TArray<FFxWant>& Wants, int32 Max, float Linger);
 	void UploadField();
+	FVector ViewLocation() const;
+	// Where most of the fire is burning now (the -FireDemo close-ups aim at it).
+	FVector BurningCentroid() const;
 
 	float CellIntensity(int32 Cell, float T) const;
 	float CellDuration(int32 Cell) const;
@@ -122,7 +147,6 @@ private:
 	TMap<int32, TArray<int32>> CellItems; // cell -> plants standing in it
 	TArray<FItem> Items;
 	TArray<int32> ActiveItems;
-	TArray<FPuff> Puffs;
 	TArray<TWeakObjectPtr<APhysicsVolume>> WaterVolumes;
 	TArray<float> LightTarget;
 	FCollisionQueryParams TraceParams;
@@ -132,11 +156,13 @@ private:
 	int32 BurntCells = 0;
 	int32 ConsumedItems = 0;
 	int32 FlamesShown = 0;
+	int32 SmokeShown = 0;
 	int32 LightsLit = 0;
 	float Clock = 0.f;
 	float StepAccum = 0.f;
-	float PuffAccum = 0.f;
 	FRandomStream Rng;
+	// The wind now (unit-ish, XY): veers slowly about the prevailing wind and gusts.
+	FVector2D WindNow = FVector2D(0.6f, 0.8f);
 	bool bStarted = false;
 	bool bActive = false;
 	bool bFieldTouched = false;
@@ -148,38 +174,49 @@ private:
 	float DemoIgniteAt = 0.f;
 	int32 DemoShot = 0;
 	float DemoNextLog = 0.f;
+	int32 DemoEvent = 0;
 	FVector DemoSpot = FVector::ZeroVector;
 	FVector DemoOrigin = FVector::ZeroVector;
 
 	UPROPERTY()
 	TObjectPtr<UTexture2D> FieldTexture;
 
+	// /Game/Souls/FX/Fire/NS_Field* and NS_FireHaze (tools/build_torch_fire.py), loaded on first ignition.
 	UPROPERTY()
-	TObjectPtr<UStaticMesh> FlameMesh;
+	TObjectPtr<UNiagaraSystem> FlameSystem;
 
 	UPROPERTY()
-	TObjectPtr<UStaticMesh> PuffMesh;
+	TObjectPtr<UNiagaraSystem> SmokeSystem;
 
 	UPROPERTY()
-	TObjectPtr<UMaterialInterface> FlameMaterial;
+	TObjectPtr<UNiagaraSystem> EmberSystem;
 
 	UPROPERTY()
-	TObjectPtr<UMaterialInterface> SmokeMaterial;
+	TObjectPtr<UNiagaraSystem> HazeSystem;
 
 	UPROPERTY()
 	TObjectPtr<AActor> Visuals;
 
 	UPROPERTY()
-	TObjectPtr<UInstancedStaticMeshComponent> Flames;
+	TArray<FSoulsFireFxSlot> FlamePool;
 
 	UPROPERTY()
-	TObjectPtr<UInstancedStaticMeshComponent> Smoke;
+	TArray<FSoulsFireFxSlot> SmokePool;
+
+	UPROPERTY()
+	TArray<FSoulsFireFxSlot> EmberPool;
+
+	UPROPERTY()
+	TArray<FSoulsFireFxSlot> HazePool;
 
 	UPROPERTY()
 	TArray<TObjectPtr<UPointLightComponent>> Lights;
 
 	UPROPERTY()
 	TObjectPtr<ACameraActor> DemoCamera;
+
+	UPROPERTY()
+	TObjectPtr<ACameraActor> DemoCloseCamera;
 };
 
 // Editor helper for tools/build_island.py: the blank burn-field texture the vegetation materials sample.

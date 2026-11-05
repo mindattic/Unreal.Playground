@@ -15,33 +15,6 @@ class UPointLightComponent;
 class UStaticMesh;
 class UStaticMeshComponent;
 
-// A cheap fire: a few glowing, flickering blobs that always rise (world-up), whichever way their
-// parent is turned. The fallback for a torch's head and a knight set alight when the Niagara fire
-// (UNR-T51, tools/build_torch_fire.py) hasn't been built into Content/ yet.
-USTRUCT()
-struct FSoulsFlames
-{
-	GENERATED_BODY()
-
-	// Turned to the world (absolute rotation), so the parts' offsets are world-aligned.
-	UPROPERTY(Transient)
-	TObjectPtr<USceneComponent> Anchor;
-
-	UPROPERTY(Transient)
-	TArray<TObjectPtr<UStaticMeshComponent>> Parts;
-
-	TArray<FVector> BaseScale;
-	TArray<FVector> BaseOffset;
-	float Phase = 0.f;
-
-	// Size 1 = a torch head; a burning knight uses about 2.5.
-	void Build(AActor* Owner, USceneComponent* Parent, FName Socket, float Size);
-	// Lean = where the flames trail (world space, cm), e.g. against the way the fire is moving.
-	void Flicker(float DeltaSeconds, const FVector& Lean);
-	void SetVisible(bool bVisible);
-	void DestroyParts();
-};
-
 UENUM()
 enum class ESoulsTorchState : uint8
 {
@@ -52,9 +25,11 @@ enum class ESoulsTorchState : uint8
 	Out,       // burnt out or drowned: gone soon
 };
 
-// UNR-T40. A burning torch: a point light that flickers over Niagara flames, embers and smoke (UNR-T51:
-// a tall tongue in a hand or bracket, a wider little fire when it lies on the ground; always rising
-// world-up, leaning away from the way the head moves). Falls back to flame blobs without the FX assets.
+// UNR-T40. A burning torch: a point light that flickers over Niagara fire, embers, smoke and heat haze
+// (UNR-T51, UNR-T75: flipbooks rendered from a real fire simulation; a tall flame in a hand or bracket,
+// a wider fire when it lies on the ground; always rising world-up, leaning away from the way the head
+// moves). The torches at rest nearest the camera burn with a live Niagara Fluids 3D gas fire instead
+// (souls.Fire.Fluid*). No mesh flames: without the FX assets a torch only glows.
 // - Some enemies carry one in the off hand instead of a shield (USoulsTorchSubsystem arms them).
 // - Torches burn in brackets on the ruined keep's and the broch's walls (TargetPoints tagged "Torch",
 //   placed by tools/build_island.py). Interact takes one: it becomes the main-hand weapon, the sword is
@@ -118,32 +93,32 @@ public:
 	TObjectPtr<UStaticMesh> CylinderMesh;
 
 	UPROPERTY()
-	TObjectPtr<UStaticMesh> SphereMesh;
-
-	UPROPERTY()
 	TObjectPtr<UStaticMesh> CubeMesh;
-
-	UPROPERTY()
-	TObjectPtr<UMaterialInterface> FlameCoreMaterial;
-
-	UPROPERTY()
-	TObjectPtr<UMaterialInterface> FlameMaterial;
 
 	UPROPERTY()
 	TObjectPtr<UMaterialInterface> IronMaterial;
 
-	// UNR-T51 fire: /Game/Souls/FX/Fire/NS_Torch* (tools/build_torch_fire.py), loaded on first use in
+	// UNR-T51/T75 fire: /Game/Souls/FX/Fire/NS_* (tools/build_torch_fire.py), loaded on first use in
 	// play, never from this class's constructor. In a packaged (monolithic) build class defaults are
 	// built before the Niagara module has started; loading a Niagara system then crashes in
 	// UNiagaraStatelessEmitter::Serialize. They're cooked through DirectoriesToAlwaysCook (/Game/Souls).
-	// True when they exist (else the torches fall back to the flame blobs).
+	// True when they exist (else a torch only glows).
 	static bool HasFireFx();
 	// The loaded systems (null without them): the flame in a hand / bracket / flight, the ground fire,
-	// the embers and the smoke.
+	// the embers, the smoke, the heat haze and the Niagara Fluids gas fire (null without the plugin).
 	static UNiagaraSystem* GetFlameSystem();
 	static UNiagaraSystem* GetGroundFlameSystem();
 	static UNiagaraSystem* GetEmberSystem();
 	static UNiagaraSystem* GetSmokeSystem();
+	static UNiagaraSystem* GetHazeSystem();
+	static UNiagaraSystem* GetFluidFireSystem();
+
+	// True while this torch burns with the live gas simulation (one of the few hero fires).
+	bool IsFluidFire() const { return bFluidHero; }
+	// Picks the hero fires: the lit torches at rest (bracket or ground) nearest the view, up to
+	// souls.Fire.FluidCount within souls.Fire.FluidRange. Called from every torch's Tick, runs once a
+	// frame at most and re-picks a few times a second.
+	static void UpdateFluidHeroes(UWorld* World);
 
 protected:
 	virtual void BeginPlay() override;
@@ -160,8 +135,11 @@ private:
 	void SetCenterAndAxis(const FVector& Center, const FVector& Axis);
 	FVector GetCenter() const;
 	FVector GetAxis() const;
-	// Switches the Niagara fire between held/wall flames, a ground fire and out, as the state demands.
+	// Switches the Niagara fire between held/wall flames, a ground fire, the hero gas fire and out, as the
+	// state demands.
 	void RefreshFire();
+	// Sizes the gas fire's grid and points its source at the burning head, then starts it.
+	void StartFluidFire();
 
 	UPROPERTY(VisibleAnywhere, Category = "Torch")
 	TObjectPtr<USceneComponent> Root;
@@ -193,8 +171,13 @@ private:
 	UPROPERTY(VisibleAnywhere, Category = "Torch")
 	TObjectPtr<UNiagaraComponent> SmokeFx;
 
-	UPROPERTY(Transient)
-	FSoulsFlames Flames;
+	// Heat shimmer over a torch at rest (UNR-T75).
+	UPROPERTY(VisibleAnywhere, Category = "Torch")
+	TObjectPtr<UNiagaraComponent> HazeFx;
+
+	// The hero fire: Niagara Fluids' 3D gas fire (UNR-T75), only while picked by UpdateFluidHeroes.
+	UPROPERTY(VisibleAnywhere, Category = "Torch")
+	TObjectPtr<UNiagaraComponent> FluidFx;
 
 	// The wall bracket left behind when a mounted torch is taken.
 	UPROPERTY(Transient)
@@ -217,8 +200,11 @@ private:
 	float LightPhase = 0.f;
 	FVector LastHeadLocation = FVector::ZeroVector;
 	FVector FlameLean = FVector::ZeroVector;
-	// 0 = out, 1 = flames (hand, bracket, flight), 2 = ground fire; 255 = not set up yet.
+	bool bLoggedBadTransform = false;
+	// Bits: 1 = flames (hand, bracket, flight), 2 = ground fire, 4 = smoke and haze, 8 = gas fire;
+	// 255 = not set up yet.
 	uint8 FireLook = 255;
+	bool bFluidHero = false;
 };
 
 // A knight set alight: small flames on the body and a little health lost every half second, until it
@@ -244,12 +230,9 @@ private:
 	void Stop();
 
 	UPROPERTY(Transient)
-	FSoulsFlames Flames;
-
-	UPROPERTY(Transient)
 	TObjectPtr<UPointLightComponent> Glow;
 
-	// The Niagara fire on the body (UNR-T51), when the assets exist (otherwise Flames).
+	// The Niagara fire on the body (UNR-T51), when the assets exist.
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UNiagaraComponent>> Fx;
 
@@ -282,6 +265,9 @@ private:
 	void ConsiderTorchBearer(TWeakObjectPtr<ASoulsEnemy> WeakEnemy);
 	// -TorchDemo: picks up, swings, drops, throws, sees a torch-bearer fall and takes a wall torch,
 	// screenshotting each beat (Saved/Screenshots/TorchDemo_*) and logging "Torch check:" PASS/FAIL.
+	// The fire close-ups are shot twice, with the hero gas fire and with the flipbook sprites only
+	// (..._fluid / ..._sprites), and a night close-up ends it (TorchDemo_13_night_*; -TimeOfDay=21 at
+	// launch shoots the whole demo at night).
 	void RunDemo();
 
 	FDelegateHandle SpawnHandle;

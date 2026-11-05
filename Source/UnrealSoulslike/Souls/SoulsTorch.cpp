@@ -25,11 +25,14 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/WorldSettings.h"
+#include "HAL/IConsoleManager.h"
+#include "IslandDayNight.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInterface.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
 #include "TimerManager.h"
 #include "UnrealClient.h"
@@ -58,7 +61,7 @@ namespace
 
 	constexpr float TorchLength = 72.f;           // cm, butt to the top of the head
 	constexpr float TorchGripFromButt = 20.f;      // where the fist closes on the shaft
-	constexpr float TorchLightIntensity = 6000.f;
+	constexpr float TorchLightIntensity = 3000.f;
 	constexpr float TorchLightRadius = 1100.f;
 	constexpr float TorchBurnSeconds = 240.f;      // off the wall and out of an enemy's hand
 	constexpr float TorchSwingReach = 175.f;
@@ -75,11 +78,35 @@ namespace
 	const FLinearColor TorchFireColor(1.f, 0.52f, 0.2f);
 	constexpr float TorchBurnFxScale = 1.7f;       // a burning knight's fire: the ground fire, spread wider
 
-	// UNR-T51 fire, built by tools/build_torch_fire.py from the CC0 Kenney particle sprites.
+	// UNR-T51/T75 fire, built by tools/build_torch_fire.py from flipbooks of a Mantaflow fire simulation
+	// (tools/bake_fire_flipbooks.py), plus the NiagaraFluids plugin's 3D gas fire for the hero fires.
 	const TCHAR* const TorchFlameFxPath = TEXT("/Game/Souls/FX/Fire/NS_TorchFlame.NS_TorchFlame");
 	const TCHAR* const TorchGroundFlameFxPath = TEXT("/Game/Souls/FX/Fire/NS_TorchFlameGround.NS_TorchFlameGround");
 	const TCHAR* const TorchEmberFxPath = TEXT("/Game/Souls/FX/Fire/NS_TorchEmbers.NS_TorchEmbers");
 	const TCHAR* const TorchSmokeFxPath = TEXT("/Game/Souls/FX/Fire/NS_TorchSmoke.NS_TorchSmoke");
+	const TCHAR* const TorchHazeFxPath = TEXT("/Game/Souls/FX/Fire/NS_FireHaze.NS_FireHaze");
+	const TCHAR* const TorchFluidFxPath = TEXT("/Game/Souls/FX/Fire/NS_FluidFire.NS_FluidFire");
+
+	// UNR-T75 hero fires: a live 3D gas simulation (Niagara Fluids) for the few torches at rest nearest
+	// the view. All of it tunable from the console, no rebuild needed.
+	// Off by default: on UE 5.8 the Niagara Fluids gas fire (even Epic's stock Grid3D_Gas_Fire, with no
+	// overrides) corrupts the heap within seconds of starting in -game, and crashed the game at load.
+	TAutoConsoleVariable<int32> CVarFluidFire(TEXT("souls.Fire.Fluid"), 0,
+		TEXT("1: the torches at rest nearest the camera burn with the Niagara Fluids 3D gas fire (unstable on UE 5.8: heap corruption); 0: flipbook sprites only."));
+	TAutoConsoleVariable<int32> CVarFluidCount(TEXT("souls.Fire.FluidCount"), 2,
+		TEXT("How many hero gas fires may run at once."));
+	TAutoConsoleVariable<float> CVarFluidRange(TEXT("souls.Fire.FluidRange"), 2200.f,
+		TEXT("Hero gas fires only within this many cm of the camera."));
+	TAutoConsoleVariable<int32> CVarFluidRes(TEXT("souls.Fire.FluidRes"), 64,
+		TEXT("Gas fire grid cells along its longest axis (User.ResolutionMaxAxis)."));
+	TAutoConsoleVariable<float> CVarFluidWidth(TEXT("souls.Fire.FluidWidth"), 70.f,
+		TEXT("Gas fire grid width and depth, cm (User.WorldSpaceSize X/Y)."));
+	TAutoConsoleVariable<float> CVarFluidHeight(TEXT("souls.Fire.FluidHeight"), 140.f,
+		TEXT("Gas fire grid height, cm (User.WorldSpaceSize Z)."));
+	TAutoConsoleVariable<float> CVarFluidLift(TEXT("souls.Fire.FluidLift"), 0.4f,
+		TEXT("The gas fire's centre sits this fraction of its height above the burning head (the grid is centred on the component)."));
+	TAutoConsoleVariable<int32> CVarFluidHeadSource(TEXT("souls.Fire.FluidHeadSource"), 1,
+		TEXT("1: the gas fire burns from the torch's head (User.StaticMesh = the head); 0: the template's own source mesh."));
 
 	struct FTorchFireSystems
 	{
@@ -87,6 +114,8 @@ namespace
 		UNiagaraSystem* GroundFlame = nullptr;
 		UNiagaraSystem* Ember = nullptr;
 		UNiagaraSystem* Smoke = nullptr;
+		UNiagaraSystem* Haze = nullptr;
+		UNiagaraSystem* Fluid = nullptr;
 	};
 
 	// Loaded once, on first use in play (never while class defaults are built: in a packaged build that
@@ -109,7 +138,7 @@ namespace
 				}
 				else
 				{
-					UE_LOG(LogUnrealSoulslike, Warning, TEXT("Torch fire: %s missing (run tools/build_torch_fire.py); using flame blobs"), Path);
+					UE_LOG(LogUnrealSoulslike, Warning, TEXT("Torch fire: %s missing (run tools/build_torch_fire.py); the torches only glow"), Path);
 				}
 				return System;
 			};
@@ -117,6 +146,15 @@ namespace
 			Systems.GroundFlame = Load(TorchGroundFlameFxPath);
 			Systems.Ember = Load(TorchEmberFxPath);
 			Systems.Smoke = Load(TorchSmokeFxPath);
+			Systems.Haze = Load(TorchHazeFxPath);
+			// Optional: needs the NiagaraFluids plugin (enabled in the .uproject).
+			Systems.Fluid = LoadObject<UNiagaraSystem>(nullptr, TorchFluidFxPath, {}, LOAD_NoWarn | LOAD_Quiet);
+			if (Systems.Fluid)
+			{
+				Systems.Fluid->AddToRoot();
+			}
+			UE_LOG(LogUnrealSoulslike, Log, TEXT("Torch fire: flipbook systems %s, hero gas fire %s"),
+				Systems.Flame ? TEXT("loaded") : TEXT("MISSING"), Systems.Fluid ? TEXT("loaded") : TEXT("missing (sprites only)"));
 		}
 		return Systems;
 	}
@@ -138,10 +176,14 @@ namespace
 		}
 	}
 
-	// 0.7..1.2: a fire's uneven breathing.
+	// About 0.6..1.3: a fire's uneven breathing. Slow swells (the flames' height), quick licks and
+	// gutters, from layered noise rather than sines so it never visibly repeats.
 	float TorchFlickerScale(float Phase)
 	{
-		return 0.92f + 0.12f * FMath::PerlinNoise1D(Phase * 5.3f) + 0.07f * FMath::Sin(Phase * 17.f) + 0.05f * FMath::Sin(Phase * 31.7f + 1.3f);
+		const float Swell = FMath::PerlinNoise1D(Phase * 1.7f);
+		const float Lick = FMath::PerlinNoise1D(Phase * 6.1f + 17.3f);
+		const float Gutter = FMath::PerlinNoise1D(Phase * 14.3f + 41.9f);
+		return FMath::Clamp(0.95f + 0.16f * Swell + 0.10f * Lick + 0.06f * Gutter, 0.55f, 1.3f);
 	}
 
 	bool TorchInWater(const UWorld* World, const FVector& Point)
@@ -209,107 +251,6 @@ namespace
 }
 
 // ---------------------------------------------------------------------------------------------
-// Flames
-// ---------------------------------------------------------------------------------------------
-
-void FSoulsFlames::Build(AActor* Owner, USceneComponent* Parent, FName Socket, float Size)
-{
-	const ASoulsTorch* Defaults = GetDefault<ASoulsTorch>();
-	if (!Owner || !Parent || !Defaults->SphereMesh)
-	{
-		return;
-	}
-	Anchor = NewObject<USceneComponent>(Owner);
-	Anchor->SetupAttachment(Parent, Socket);
-	Anchor->SetUsingAbsoluteRotation(true);
-	Anchor->RegisterComponent();
-	Anchor->SetWorldRotation(FRotator::ZeroRotator);
-
-	struct FPart { FVector Offset; FVector Scale; bool bCore; };
-	// A hot core and three tongues of different heights (unit sphere is 100 cm across).
-	const FPart Layout[] = {
-		{ FVector(0.f, 0.f, 3.f), FVector(0.05f, 0.05f, 0.09f), true },
-		{ FVector(0.f, 0.f, 9.f), FVector(0.10f, 0.10f, 0.22f), false },
-		{ FVector(2.5f, -2.f, 12.f), FVector(0.07f, 0.07f, 0.17f), false },
-		{ FVector(-2.5f, 2.f, 11.f), FVector(0.065f, 0.065f, 0.15f), false },
-	};
-	Phase = FMath::FRand() * 10.f;
-	for (const FPart& Part : Layout)
-	{
-		UStaticMeshComponent* Blob = NewObject<UStaticMeshComponent>(Owner);
-		Blob->SetStaticMesh(Defaults->SphereMesh);
-		if (UMaterialInterface* Material = Part.bCore ? Defaults->FlameCoreMaterial.Get() : Defaults->FlameMaterial.Get())
-		{
-			Blob->SetMaterial(0, Material);
-		}
-		Blob->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		Blob->SetGenerateOverlapEvents(false);
-		Blob->SetCastShadow(false);
-		Blob->SetupAttachment(Anchor);
-		Blob->SetRelativeLocation(Part.Offset * Size);
-		Blob->SetRelativeScale3D(Part.Scale * Size);
-		Blob->RegisterComponent();
-		Parts.Add(Blob);
-		BaseScale.Add(Part.Scale * Size);
-		BaseOffset.Add(Part.Offset * Size);
-	}
-}
-
-void FSoulsFlames::Flicker(float DeltaSeconds, const FVector& Lean)
-{
-	Phase += DeltaSeconds;
-	for (int32 Index = 0; Index < Parts.Num(); ++Index)
-	{
-		UStaticMeshComponent* Blob = Parts[Index];
-		if (!Blob || !BaseScale.IsValidIndex(Index))
-		{
-			continue;
-		}
-		const float Seed = 1.7f * Index;
-		const float N1 = FMath::PerlinNoise1D(Phase * 7.f + Seed * 13.f);
-		const float N2 = FMath::PerlinNoise1D(Phase * 11.f + Seed * 5.f);
-		const float Up = 1.f + 0.4f * N1 + 0.12f * FMath::Sin(Phase * 23.f + Seed);
-		const float Wide = 1.f + 0.15f * N2;
-		const FVector& Base = BaseScale[Index];
-		Blob->SetRelativeScale3D(FVector(Base.X * Wide, Base.Y * Wide, Base.Z * FMath::Max(Up, 0.3f)));
-		// The taller tongues trail further.
-		const FVector& Offset = BaseOffset[Index];
-		const float Trail = FMath::Clamp(Offset.Z / 12.f, 0.2f, 1.2f);
-		Blob->SetRelativeLocation(Offset + FVector(N2, N1, 0.f) * 1.2f + Lean * Trail);
-	}
-}
-
-void FSoulsFlames::SetVisible(bool bVisible)
-{
-	for (UStaticMeshComponent* Blob : Parts)
-	{
-		if (Blob)
-		{
-			Blob->SetVisibility(bVisible);
-		}
-	}
-}
-
-void FSoulsFlames::DestroyParts()
-{
-	for (UStaticMeshComponent* Blob : Parts)
-	{
-		if (Blob)
-		{
-			Blob->DestroyComponent();
-		}
-	}
-	Parts.Reset();
-	BaseScale.Reset();
-	BaseOffset.Reset();
-	if (Anchor)
-	{
-		Anchor->DestroyComponent();
-		Anchor = nullptr;
-	}
-}
-
-// ---------------------------------------------------------------------------------------------
 // The torch
 // ---------------------------------------------------------------------------------------------
 
@@ -318,16 +259,10 @@ ASoulsTorch::ASoulsTorch()
 	PrimaryActorTick.bCanEverTick = true;
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderFinder(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereFinder(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeFinder(TEXT("/Engine/BasicShapes/Cube.Cube"));
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> CoreFinder(TEXT("/Game/Souls/FX/M_GraceGlow.M_GraceGlow"));
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> FlameFinder(TEXT("/Game/Souls/FX/M_GraceBeam.M_GraceBeam"));
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> IronFinder(TEXT("/Game/Souls/FX/M_GrappleLine.M_GrappleLine"));
 	CylinderMesh = CylinderFinder.Object;
-	SphereMesh = SphereFinder.Object;
 	CubeMesh = CubeFinder.Object;
-	FlameCoreMaterial = CoreFinder.Object;
-	FlameMaterial = FlameFinder.Object ? FlameFinder.Object : CoreFinder.Object;
 	IronMaterial = IronFinder.Object;
 	// (The Niagara fire is NOT loaded here: see HasFireFx.)
 
@@ -385,6 +320,8 @@ ASoulsTorch::ASoulsTorch()
 	GroundFlameFx->SetRelativeLocation(FVector(0.f, 0.f, -4.f));
 	EmberFx = MakeFx(TEXT("EmberFx"));
 	SmokeFx = MakeFx(TEXT("SmokeFx"));
+	HazeFx = MakeFx(TEXT("HazeFx"));
+	FluidFx = MakeFx(TEXT("FluidFx"));
 }
 
 bool ASoulsTorch::HasFireFx()
@@ -397,6 +334,8 @@ UNiagaraSystem* ASoulsTorch::GetFlameSystem() { return TorchFireSystems().Flame;
 UNiagaraSystem* ASoulsTorch::GetGroundFlameSystem() { return TorchFireSystems().GroundFlame; }
 UNiagaraSystem* ASoulsTorch::GetEmberSystem() { return TorchFireSystems().Ember; }
 UNiagaraSystem* ASoulsTorch::GetSmokeSystem() { return TorchFireSystems().Smoke; }
+UNiagaraSystem* ASoulsTorch::GetHazeSystem() { return TorchFireSystems().Haze; }
+UNiagaraSystem* ASoulsTorch::GetFluidFireSystem() { return TorchFireSystems().Fluid; }
 
 void ASoulsTorch::BeginPlay()
 {
@@ -413,10 +352,8 @@ void ASoulsTorch::BeginPlay()
 		GroundFlameFx->SetAsset(GetGroundFlameSystem());
 		EmberFx->SetAsset(GetEmberSystem());
 		SmokeFx->SetAsset(GetSmokeSystem());
-	}
-	else
-	{
-		Flames.Build(this, FlameRoot, NAME_None, 1.f);
+		HazeFx->SetAsset(GetHazeSystem());
+		FluidFx->SetAsset(GetFluidFireSystem());
 	}
 	LightPhase = FMath::FRand() * 20.f;
 	BurnLeft = TorchBurnSeconds;
@@ -430,28 +367,127 @@ void ASoulsTorch::RefreshFire()
 	{
 		return;
 	}
-	const uint8 Flame = !bLit ? 0 : (State == ESoulsTorchState::Ground ? 2 : 1);
+	const bool bAtRest = State == ESoulsTorchState::Ground || State == ESoulsTorchState::Mounted;
+	const bool bFluid = bLit && bFluidHero && bAtRest && FluidFx->GetAsset() != nullptr;
+	// The sprite flames give way to the gas fire while this torch is a hero.
+	const uint8 Flame = (!bLit || bFluid) ? 0 : (State == ESoulsTorchState::Ground ? 2 : 1);
 	// The fire simulates in the torch's own space, so a long-lived smoke plume would be dragged along
-	// rigidly by a running bearer: only a torch at rest (bracket or ground) smokes.
-	const bool bSmoke = bLit && (State == ESoulsTorchState::Ground || State == ESoulsTorchState::Mounted);
-	const uint8 Want = Flame | (bSmoke ? 4 : 0);
+	// rigidly by a running bearer: only a torch at rest smokes and shimmers (the gas fire makes its own smoke).
+	const bool bSmoke = bLit && bAtRest && !bFluid;
+	const bool bHaze = bLit && bAtRest;
+	const uint8 Want = Flame | (bSmoke ? 4 : 0) | (bFluid ? 8 : 0) | (bHaze ? 16 : 0) | (bLit ? 32 : 0);
 	if (Want == FireLook)
 	{
 		return;
 	}
 	const uint8 Was = FireLook == 255 ? 0 : FireLook;
 	FireLook = Want;
-	// Only what changed is switched; the tall torch flame and the low ground fire cross-fade (the old
-	// one's live particles burn out).
+	// Only what changed is switched; the tall torch flame, the low ground fire and the gas fire
+	// cross-fade (the old one's live particles burn out).
 	if ((Was & 3) != Flame)
 	{
 		TorchSetFx(FlameFx, Flame == 1);
 		TorchSetFx(GroundFlameFx, Flame == 2);
-		TorchSetFx(EmberFx, Flame != 0);
+	}
+	if (((Was & 32) != 0) != bLit)
+	{
+		TorchSetFx(EmberFx, bLit);
 	}
 	if (((Was & 4) != 0) != bSmoke)
 	{
 		TorchSetFx(SmokeFx, bSmoke);
+	}
+	if (((Was & 16) != 0) != bHaze)
+	{
+		TorchSetFx(HazeFx, bHaze);
+	}
+	if (((Was & 8) != 0) != bFluid)
+	{
+		if (bFluid)
+		{
+			StartFluidFire();
+		}
+		else
+		{
+			TorchSetFx(FluidFx, false);
+		}
+	}
+}
+
+void ASoulsTorch::StartFluidFire()
+{
+	const float Width = FMath::Max(CVarFluidWidth.GetValueOnGameThread(), 10.f);
+	const float Height = FMath::Max(CVarFluidHeight.GetValueOnGameThread(), 10.f);
+	const int32 Resolution = FMath::Clamp(CVarFluidRes.GetValueOnGameThread(), 16, 256);
+	FluidFx->SetRelativeLocation(FVector(0.f, 0.f, Height * CVarFluidLift.GetValueOnGameThread()));
+	FluidFx->SetVariableVec3(FName(TEXT("User.WorldSpaceSize")), FVector(Width, Width, Height));
+	FluidFx->SetVariableInt(FName(TEXT("User.ResolutionMaxAxis")), Resolution);
+	if (CVarFluidHeadSource.GetValueOnGameThread() > 0)
+	{
+		UNiagaraFunctionLibrary::OverrideSystemUserVariableStaticMeshComponent(FluidFx, TEXT("User.StaticMesh"), Head);
+	}
+	FluidFx->Activate(true);
+	UE_LOG(LogUnrealSoulslike, Log, TEXT("Torch: %s burns with the gas fire (%.0f x %.0f cm, res %d)"), *GetName(), Width, Height, Resolution);
+}
+
+void ASoulsTorch::UpdateFluidHeroes(UWorld* World)
+{
+	static uint64 LastFrame = 0;
+	static double LastPick = -1.0;
+	static TWeakObjectPtr<UWorld> LastWorld;
+	if (!World || GFrameCounter == LastFrame)
+	{
+		return;
+	}
+	LastFrame = GFrameCounter;
+	const double Now = World->GetTimeSeconds();
+	if (LastWorld.Get() == World && Now >= LastPick && Now - LastPick < 0.4)
+	{
+		return;
+	}
+	LastWorld = World;
+	LastPick = Now;
+
+	FVector View = FVector::ZeroVector;
+	bool bHasView = false;
+	if (APlayerController* Player = World->GetFirstPlayerController(); Player && Player->PlayerCameraManager)
+	{
+		View = Player->PlayerCameraManager->GetCameraLocation();
+		bHasView = true;
+	}
+	// -NoFluidFire on the command line: flipbook sprites only.
+	static const bool bNoFluid = FParse::Param(FCommandLine::Get(), TEXT("NoFluidFire"));
+	const bool bEnabled = bHasView && !bNoFluid && CVarFluidFire.GetValueOnGameThread() > 0 && GetFluidFireSystem() != nullptr;
+	const float Range = CVarFluidRange.GetValueOnGameThread();
+	struct FCandidate
+	{
+		ASoulsTorch* Torch;
+		float Score;
+	};
+	TArray<FCandidate> Candidates;
+	for (TActorIterator<ASoulsTorch> It(World); It; ++It)
+	{
+		ASoulsTorch* Torch = *It;
+		const bool bAtRest = Torch->State == ESoulsTorchState::Ground || Torch->State == ESoulsTorchState::Mounted;
+		if (!bEnabled || !Torch->bLit || !bAtRest || Torch->IsActorBeingDestroyed())
+		{
+			Torch->bFluidHero = false;
+			continue;
+		}
+		const float Distance = (float)FVector::Dist(View, Torch->GetHeadLocation());
+		if (Distance > Range * (Torch->bFluidHero ? 1.15f : 1.f))
+		{
+			Torch->bFluidHero = false;
+			continue;
+		}
+		// A sitting hero keeps its place against a slightly nearer newcomer (no flip-flopping).
+		Candidates.Add({ Torch, Distance * (Torch->bFluidHero ? 0.85f : 1.f) });
+	}
+	Candidates.Sort([](const FCandidate& A, const FCandidate& B) { return A.Score < B.Score; });
+	const int32 Count = FMath::Max(CVarFluidCount.GetValueOnGameThread(), 0);
+	for (int32 Index = 0; Index < Candidates.Num(); ++Index)
+	{
+		Candidates[Index].Torch->bFluidHero = Index < Count;
 	}
 }
 
@@ -825,7 +861,6 @@ void ASoulsTorch::Extinguish()
 		return;
 	}
 	bLit = false;
-	Flames.SetVisible(false);
 	Light->SetVisibility(false);
 	if (State == ESoulsTorchState::Held)
 	{
@@ -1068,6 +1103,13 @@ void ASoulsTorch::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	LightPhase += DeltaSeconds;
+	if (!bLoggedBadTransform && (!GetActorTransform().IsValid() || GetActorScale3D().IsNearlyZero() || !FlameRoot->GetComponentTransform().IsValid()))
+	{
+		bLoggedBadTransform = true;
+		UE_LOG(LogUnrealSoulslike, Warning, TEXT("Torch: %s has a bad transform (actor %s, flame root %s, state %d, holder %s, lean %s, last head %s, dt %f)"),
+			*GetName(), *GetActorTransform().ToString(), *FlameRoot->GetComponentTransform().ToString(), (int32)State,
+			Holder.IsValid() ? *Holder->GetName() : TEXT("none"), *FlameLean.ToString(), *LastHeadLocation.ToString(), DeltaSeconds);
+	}
 
 	// Flames trail behind a swung or thrown torch.
 	const FVector HeadNow = GetHeadLocation();
@@ -1080,8 +1122,11 @@ void ASoulsTorch::Tick(float DeltaSeconds)
 	FlameLean = FMath::VInterpTo(FlameLean, (-HeadVelocity * 0.012f).GetClampedToMaxSize(14.f), DeltaSeconds, 12.f);
 	if (bLit)
 	{
-		Flames.Flicker(DeltaSeconds, FlameLean);
-		Light->SetIntensity(TorchLightIntensity * TorchFlickerScale(LightPhase));
+		// The light breathes with the fire and its centre wanders a little, so what it lights lives.
+		const float GroundBoost = State == ESoulsTorchState::Ground ? 1.15f : 1.f;
+		Light->SetIntensity(TorchLightIntensity * GroundBoost * TorchFlickerScale(LightPhase));
+		Light->SetRelativeLocation(FVector(2.5f * FMath::PerlinNoise1D(LightPhase * 3.1f + 7.f),
+			2.5f * FMath::PerlinNoise1D(LightPhase * 2.7f + 31.f), 12.f + 4.f * FMath::PerlinNoise1D(LightPhase * 4.3f + 53.f)));
 		// The Niagara fire simulates in FlameRoot's space: tip that space away from the motion so the
 		// flames trail a swing or a throw, and stand straight up (world-up) when still.
 		FlameRoot->SetWorldRotation(FRotationMatrix::MakeFromZ(FVector(0.f, 0.f, 22.f) + FlameLean).Rotator());
@@ -1133,6 +1178,7 @@ void ASoulsTorch::Tick(float DeltaSeconds)
 	}
 	if (!IsActorBeingDestroyed())
 	{
+		UpdateFluidHeroes(GetWorld());
 		RefreshFire();
 	}
 }
@@ -1168,9 +1214,9 @@ void USoulsBurnComponent::Ignite(ASoulsKnight* Victim, AActor* InSource, float S
 		USceneComponent* Parent = Mesh ? static_cast<USceneComponent*>(Mesh) : Victim->GetRootComponent();
 		if (ASoulsTorch::HasFireFx())
 		{
-			// The torch's ground fire and embers on the chest, upright whichever way the body turns,
-			// spread wider over the torso.
-			for (UNiagaraSystem* System : { ASoulsTorch::GetGroundFlameSystem(), ASoulsTorch::GetEmberSystem() })
+			// The torch's ground fire, embers and heat haze on the chest, upright whichever way the body
+			// turns, spread wider over the torso.
+			for (UNiagaraSystem* System : { ASoulsTorch::GetGroundFlameSystem(), ASoulsTorch::GetEmberSystem(), ASoulsTorch::GetHazeSystem() })
 			{
 				if (!System)
 				{
@@ -1190,10 +1236,6 @@ void USoulsBurnComponent::Ignite(ASoulsKnight* Victim, AActor* InSource, float S
 				Fx->Activate(true);
 				Burn->Fx.Add(Fx);
 			}
-		}
-		else
-		{
-			Burn->Flames.Build(Victim, Parent, Bone, 2.2f);
 		}
 		Burn->Glow = NewObject<UPointLightComponent>(Victim);
 		Burn->Glow->SetupAttachment(Parent, Bone);
@@ -1246,7 +1288,15 @@ void USoulsBurnComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const FVector Location = Victim->GetActorLocation();
 	const FVector Moving = DeltaTime > 0.f ? (Location - LastLocation) / DeltaTime : FVector::ZeroVector;
 	LastLocation = Location;
-	Flames.Flicker(DeltaTime, (-Moving * 0.02f).GetClampedToMaxSize(25.f));
+	// The flames simulate on the body: tip them back against the way it runs.
+	const FRotator Lean = FRotationMatrix::MakeFromZ(FVector(0.f, 0.f, 40.f) + (-Moving * 0.03f).GetClampedToMaxSize(30.f)).Rotator();
+	for (UNiagaraComponent* Each : Fx)
+	{
+		if (Each)
+		{
+			Each->SetWorldRotation(Lean);
+		}
+	}
 	if (Glow)
 	{
 		Glow->SetIntensity(TorchBurnLight * TorchFlickerScale(Phase) * FMath::Clamp(Remaining / 0.8f, 0.f, 1.f));
@@ -1261,7 +1311,6 @@ void USoulsBurnComponent::OnComponentDestroyed(bool bDestroyingHierarchy)
 
 void USoulsBurnComponent::Stop()
 {
-	Flames.DestroyParts();
 	// Let the body's fire die down (live particles finish), then the components go.
 	for (UNiagaraComponent* Each : Fx)
 	{
@@ -1382,6 +1431,7 @@ namespace
 		TWeakObjectPtr<ASoulsTorch> Torch;
 		TWeakObjectPtr<ASoulsTorch> BearerTorch;
 		TWeakObjectPtr<ASoulsTorch> WallTorch;
+		TWeakObjectPtr<ASoulsTorch> FireTorch;
 		TWeakObjectPtr<ACameraActor> CloseCamera;
 		FVector Origin = FVector::ZeroVector;
 		FVector Forward = FVector::ForwardVector;
@@ -1397,7 +1447,7 @@ namespace
 	void TorchDemoCheck(const TSharedRef<FTorchDemo>& Demo, const TCHAR* What, bool bOk)
 	{
 		(bOk ? Demo->Passed : Demo->Failed)++;
-		UE_LOG(LogUnrealSoulslike, Log, TEXT("Torch check: %s %s"), What, bOk ? TEXT("PASS") : TEXT("FAIL"));
+		UE_LOG(LogUnrealSoulslike, Log, TEXT("Torch check: %s %s [%d/%d]"), What, bOk ? TEXT("PASS") : TEXT("FAIL"), Demo->Passed, Demo->Failed);
 	}
 
 	void TorchDemoShot(const TCHAR* Name)
@@ -1421,7 +1471,7 @@ namespace
 	// UNR-T51: a close look at a torch's fire from a camera of its own (the knight's boom always centres
 	// the knight, which hides or crops a fire lying at its feet). From the knight's side of the torch,
 	// swung 40 degrees round, 1.4 m off and a little above, so the flames fill the middle of the frame.
-	void TorchDemoCloseUp(const TSharedRef<FTorchDemo>& Demo, ASoulsKnight* Knight, const ASoulsTorch* Torch)
+	void TorchDemoCloseUp(const TSharedRef<FTorchDemo>& Demo, ASoulsKnight* Knight, const ASoulsTorch* Torch, float Distance = 140.f, float Rise = 45.f)
 	{
 		UWorld* World = Demo->World.Get();
 		APlayerController* Player = Knight ? Cast<APlayerController>(Knight->GetController()) : nullptr;
@@ -1436,7 +1486,7 @@ namespace
 			Away = -Demo->Forward;
 		}
 		Away = Away.RotateAngleAxis(40.f, FVector::UpVector);
-		FVector Eye = Fire + Away * 140.f + FVector(0.f, 0.f, 45.f);
+		FVector Eye = Fire + Away * Distance + FVector(0.f, 0.f, Rise);
 		// Keep the lens out of a rise in the ground.
 		FHitResult Hit;
 		FCollisionQueryParams Params(SCENE_QUERY_STAT(TorchDemoEye), false, Knight);
@@ -1470,6 +1520,33 @@ namespace
 		if (APlayerController* Player = Knight ? Cast<APlayerController>(Knight->GetController()) : nullptr)
 		{
 			Player->SetViewTarget(Knight);
+		}
+	}
+
+	// UNR-T75: the hero gas fire on or off (souls.Fire.Fluid), to shoot the same fire both ways.
+	// Only with -FluidFire on the command line: the gas fire is off by default (see CVarFluidFire).
+	void TorchDemoFluid(bool bOn)
+	{
+		static const bool bOptIn = FParse::Param(FCommandLine::Get(), TEXT("FluidFire"));
+		if (!bOptIn)
+		{
+			return;
+		}
+		if (IConsoleVariable* Var = IConsoleManager::Get().FindConsoleVariable(TEXT("souls.Fire.Fluid")))
+		{
+			Var->Set(bOn ? 1 : 0, ECVF_SetByCode);
+		}
+	}
+
+	void TorchDemoNight(UWorld* World, float Hours)
+	{
+		if (AIslandDayNight* Sky = AIslandDayNight::Get(World))
+		{
+			Sky->SetTimeOfDay(Hours, true);
+		}
+		else
+		{
+			UE_LOG(LogUnrealSoulslike, Warning, TEXT("Torch demo: no day/night actor, the night shots are lit as the level is"));
 		}
 	}
 
@@ -1523,6 +1600,7 @@ void USoulsTorchSubsystem::RunDemo()
 	{
 		Demo->Origin = K->GetActorLocation();
 		Demo->Forward = K->GetActorForwardVector().GetSafeNormal2D();
+		UE_LOG(LogUnrealSoulslike, Log, TEXT("Torch demo: knight at %s forward %s scale %s"), *Demo->Origin.ToString(), *Demo->Forward.ToString(), *K->GetActorScale3D().ToString());
 		TorchDemoStage(Demo, K);
 		if (ASoulsTorch* Torch = ASoulsTorch::SpawnTorch(K->GetWorld(), Demo->Origin + Demo->Forward * 110.f))
 		{
@@ -1537,9 +1615,9 @@ void USoulsTorchSubsystem::RunDemo()
 		TorchDemoCheck(Demo, TEXT("torches burn with the Niagara fire (else run tools/build_torch_fire.py)"), ASoulsTorch::HasFireFx());
 		TorchDemoCloseUp(Demo, K, Demo->Torch.Get());
 	} });
-	Steps.Add({ 0.65f, [](ASoulsKnight*) { TorchDemoShot(TEXT("01b_ground_fire")); } });
-	Steps.Add({ 0.8f, [](ASoulsKnight* K) { TorchDemoCloseUpEnd(K); } });
-	Steps.Add({ 0.9f, [](ASoulsKnight*) { TorchDemoShot(TEXT("01_ground_torch")); } });
+	Steps.Add({ 1.0f, [](ASoulsKnight*) { TorchDemoShot(TEXT("01b_ground_fire")); } });
+	Steps.Add({ 1.08f, [](ASoulsKnight* K) { TorchDemoCloseUpEnd(K); } });
+	Steps.Add({ 1.15f, [](ASoulsKnight*) { TorchDemoShot(TEXT("01_ground_torch")); } });
 	Steps.Add({ 1.2f, [](ASoulsKnight* K) { K->InteractPressed(); } });
 	Steps.Add({ 1.4f, [Demo](ASoulsKnight* K)
 	{
@@ -1726,13 +1804,53 @@ void USoulsTorchSubsystem::RunDemo()
 		TorchDemoView(K, 160.f, 240.f, -10.f);
 	} });
 	Steps.Add({ 21.2f, [](ASoulsKnight*) { TorchDemoShot(TEXT("12_wall_torch_taken")); } });
-	Steps.Add({ 22.0f, [Demo](ASoulsKnight*)
+	// UNR-T75: the fire judged up close, the same fire with the hero gas simulation and with the flipbook
+	// sprites only, by day (as launched) and then at night.
+	Steps.Add({ 22.4f, [Demo](ASoulsKnight* K)
+	{
+		TorchDemoStage(Demo, K);
+		const FVector Spot = Demo->Origin + Demo->Forward * 220.f;
+		if (ASoulsTorch* Torch = ASoulsTorch::SpawnTorch(K->GetWorld(), Spot))
+		{
+			Torch->LayOnGround(Spot, K->GetActorRightVector());
+			Demo->FireTorch = Torch;
+		}
+		TorchDemoFluid(true);
+	} });
+	Steps.Add({ 22.6f, [Demo](ASoulsKnight* K) { TorchDemoCloseUp(Demo, K, Demo->FireTorch.Get(), 150.f, 40.f); } });
+	Steps.Add({ 25.0f, [Demo](ASoulsKnight*)
+	{
+		const ASoulsTorch* Torch = Demo->FireTorch.Get();
+		const bool bWantFluid = CVarFluidFire.GetValueOnGameThread() > 0 && ASoulsTorch::GetFluidFireSystem() != nullptr;
+		TorchDemoCheck(Demo, bWantFluid ? TEXT("the torch nearest the camera burns with the gas fire (NiagaraFluids)")
+			: TEXT("the close-up torch burns with the flipbook fire (gas fire off)"),
+			Torch && (bWantFluid ? Torch->IsFluidFire() : (Torch->IsLit() && !Torch->IsFluidFire())));
+		TorchDemoShot(TEXT("13_fire_fluid"));
+		TorchDemoFluid(false);
+	} });
+	Steps.Add({ 26.8f, [](ASoulsKnight*) { TorchDemoShot(TEXT("13b_fire_sprites")); } });
+	Steps.Add({ 27.0f, [Demo](ASoulsKnight*)
+	{
+		TorchDemoNight(Demo->World.Get(), 21.f);
+		TorchDemoFluid(true);
+	} });
+	Steps.Add({ 29.6f, [](ASoulsKnight*) { TorchDemoShot(TEXT("14_night_fire_fluid")); TorchDemoFluid(false); } });
+	Steps.Add({ 31.3f, [](ASoulsKnight*) { TorchDemoShot(TEXT("14b_night_fire_sprites")); TorchDemoFluid(true); } });
+	Steps.Add({ 31.5f, [Demo](ASoulsKnight* K) { TorchDemoCloseUp(Demo, K, Demo->FireTorch.Get(), 430.f, 150.f); } });
+	Steps.Add({ 33.2f, [](ASoulsKnight*) { TorchDemoShot(TEXT("15_night_fire_wide")); } });
+	Steps.Add({ 33.4f, [](ASoulsKnight* K)
+	{
+		TorchDemoCloseUpEnd(K);
+		TorchDemoView(K, 150.f, 260.f, -12.f);
+	} });
+	Steps.Add({ 34.4f, [](ASoulsKnight*) { TorchDemoShot(TEXT("16_night_wielded")); } });
+	Steps.Add({ 34.8f, [Demo](ASoulsKnight*)
 	{
 		if (ACameraActor* Camera = Demo->CloseCamera.Get())
 		{
 			Camera->Destroy();
 		}
-		UE_LOG(LogUnrealSoulslike, Log, TEXT("Torch demo: %d passed, %d failed"), Demo->Passed, Demo->Failed);
+		UE_LOG(LogUnrealSoulslike, Log, TEXT("Torch demo: %d passed, %d failed"), (int32)Demo->Passed, (int32)Demo->Failed);
 	} });
 
 	// Wait for the player's knight (and a few seconds for the world to settle), then play the steps.

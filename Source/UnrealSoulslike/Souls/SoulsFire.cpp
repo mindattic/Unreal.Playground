@@ -18,10 +18,12 @@
 #include "HAL/PlatformMisc.h"
 #include "Kismet/GameplayStatics.h"
 #include "LandscapeProxy.h"
-#include "Materials/MaterialInterface.h"
+#include "IslandDayNight.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "Misc/Paths.h"
+#include "NiagaraComponent.h"
+#include "NiagaraSystem.h"
 #include "RenderingThread.h"
 #include "UnrealClient.h"
 
@@ -47,27 +49,39 @@ namespace SoulsFireTuning
 	constexpr uint8 FuelBurnable = 3;
 
 	constexpr float SimDt = 0.1f;
-	constexpr float SpreadRate = 0.34f;   // ignition hazard per neighbour per second at full flame
-	constexpr float FireLife = 70.f;      // a fire stops spreading this long after it started
+	// UNR-T75: a grass fire races. Ignition hazard per neighbour per second at full flame, times the wind
+	// factor: about 2.6x straight downwind (the front runs ~1.5 m/s), 1x across it, 0.12x into the wind.
+	constexpr float SpreadRate = 0.62f;
+	constexpr float WindPush = 1.6f;
+	constexpr float UpwindFloor = 0.12f;
+	// Embers blown ahead: chance per second that a strongly burning cell lights one 2..4 cells downwind.
+	constexpr float SpotRate = 0.05f;
+	constexpr float FireLife = 60.f;      // a fire stops spreading this long after it started
 	constexpr float SandLine = 260.f;     // ground below this (cm) is beach / sea: no fuel
 	constexpr float MinGroundNormalZ = 0.78f; // steeper ground is bare rock
 	constexpr int32 MaxBurningCells = 6000;
-	constexpr int32 MaxFlames = 1800;
-	constexpr int32 MaxPuffs = 40;
+	// Visual budget (pooled Niagara components; the nearest / strongest win).
+	constexpr int32 PatchCells = 2;        // a flame patch covers 2 x 2 cells (2.56 m)
+	constexpr int32 MaxFlamePatches = 90;
+	constexpr int32 MaxSmokeColumns = 10;
+	constexpr int32 MaxEmberClouds = 10;
+	constexpr int32 MaxHazeTiles = 6;
 	constexpr int32 MaxLights = 8;
 	constexpr float LightTile = 800.f;
 
-	// Cell timeline (seconds after ignition).
-	constexpr float Ramp = 2.f;
-	constexpr float Decay = 3.f;
+	// Cell timeline (seconds after ignition): grass flares fast and burns out behind the front.
+	constexpr float Ramp = 1.f;
+	constexpr float Decay = 2.5f;
 	constexpr float EmberTime = 15.f;
 
+	// The prevailing wind (XY, unit); the live wind veers about it (USoulsFireSubsystem::WindNow).
 	const FVector2D Wind(0.6f, 0.8f);
 
 	const TCHAR* FieldPath = TEXT("/Game/Souls/FX/T_FireField.T_FireField");
-	const TCHAR* FlamePath = TEXT("/Game/Souls/FX/M_FireFlame.M_FireFlame");
-	const TCHAR* SmokePath = TEXT("/Game/Souls/FX/M_FireSmoke.M_FireSmoke");
-	const TCHAR* GlowPath = TEXT("/Game/Souls/FX/M_GraceGlow.M_GraceGlow");
+	const TCHAR* FlameFxPath = TEXT("/Game/Souls/FX/Fire/NS_FieldFire.NS_FieldFire");
+	const TCHAR* SmokeFxPath = TEXT("/Game/Souls/FX/Fire/NS_FieldSmoke.NS_FieldSmoke");
+	const TCHAR* EmberFxPath = TEXT("/Game/Souls/FX/Fire/NS_FieldEmbers.NS_FieldEmbers");
+	const TCHAR* HazeFxPath = TEXT("/Game/Souls/FX/Fire/NS_FireHaze.NS_FireHaze");
 
 	float Smooth(float A, float B, float X)
 	{
@@ -259,14 +273,15 @@ void USoulsFireSubsystem::LoadAssets()
 	{
 		UE_LOG(LogSoulsFire, Warning, TEXT("T_FireField missing (rebuild the island with tools/build_island.py): flames only, no char"));
 	}
-	FlameMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cone.Cone"));
-	PuffMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere"));
-	FlameMaterial = LoadObject<UMaterialInterface>(nullptr, FlamePath, {}, LOAD_NoWarn);
-	if (!FlameMaterial)
+	// Loaded here, on the first ignition in play (never from a constructor: see ASoulsTorch::HasFireFx).
+	FlameSystem = LoadObject<UNiagaraSystem>(nullptr, FlameFxPath, {}, LOAD_NoWarn | LOAD_Quiet);
+	SmokeSystem = LoadObject<UNiagaraSystem>(nullptr, SmokeFxPath, {}, LOAD_NoWarn | LOAD_Quiet);
+	EmberSystem = LoadObject<UNiagaraSystem>(nullptr, EmberFxPath, {}, LOAD_NoWarn | LOAD_Quiet);
+	HazeSystem = LoadObject<UNiagaraSystem>(nullptr, HazeFxPath, {}, LOAD_NoWarn | LOAD_Quiet);
+	if (!FlameSystem)
 	{
-		FlameMaterial = LoadObject<UMaterialInterface>(nullptr, GlowPath, {}, LOAD_NoWarn);
+		UE_LOG(LogSoulsFire, Warning, TEXT("NS_FieldFire missing (run tools/build_torch_fire.py): the fire chars the ground but shows no flames"));
 	}
-	SmokeMaterial = LoadObject<UMaterialInterface>(nullptr, SmokePath, {}, LOAD_NoWarn);
 }
 
 void USoulsFireSubsystem::IndexVegetation()
@@ -363,32 +378,6 @@ void USoulsFireSubsystem::SpawnVisuals()
 	Visuals->SetRootComponent(Root);
 	Root->RegisterComponent();
 
-	auto MakeIsm = [&](const TCHAR* Name, UStaticMesh* Mesh, UMaterialInterface* Material, int32 CustomFloats)
-	{
-		UInstancedStaticMeshComponent* Ism = NewObject<UInstancedStaticMeshComponent>(Visuals, Name);
-		Ism->SetMobility(EComponentMobility::Movable);
-		Ism->SetupAttachment(Root);
-		Ism->SetStaticMesh(Mesh);
-		if (Material)
-		{
-			Ism->SetMaterial(0, Material);
-		}
-		Ism->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		Ism->SetCastShadow(false);
-		Ism->SetReceivesDecals(false);
-		Ism->SetCanEverAffectNavigation(false);
-		Ism->NumCustomDataFloats = CustomFloats;
-		Ism->RegisterComponent();
-		return Ism;
-	};
-	if (FlameMesh)
-	{
-		Flames = MakeIsm(TEXT("FireFlames"), FlameMesh, FlameMaterial, 0);
-	}
-	if (PuffMesh && SmokeMaterial)
-	{
-		Smoke = MakeIsm(TEXT("FireSmoke"), PuffMesh, SmokeMaterial, 1);
-	}
 	for (int32 i = 0; i < MaxLights; ++i)
 	{
 		UPointLightComponent* Light = NewObject<UPointLightComponent>(Visuals);
@@ -525,7 +514,8 @@ bool USoulsFireSubsystem::IgniteCell(int32 Cell, float InFireStart)
 float USoulsFireSubsystem::CellDuration(int32 Cell) const
 {
 	using namespace SoulsFireTuning;
-	const float Hold = 3.f + 4.f * FMath::Min(Load[Cell] - 1.f, 2.f);
+	// Bare grass is a quick flash; heather, shrubs and trees keep a patch burning longer.
+	const float Hold = 2.5f + 4.f * FMath::Min(Load[Cell] - 1.f, 2.f);
 	return Ramp + Hold + Decay;
 }
 
@@ -649,6 +639,13 @@ void USoulsFireSubsystem::Tick(float DeltaTime)
 		return;
 	}
 	Clock += DeltaTime;
+	// The wind veers slowly (tens of degrees over a minute) and gusts.
+	{
+		const float Base = (float)FMath::Atan2(SoulsFireTuning::Wind.Y, SoulsFireTuning::Wind.X);
+		const float Veer = FMath::DegreesToRadians(35.f) * FMath::PerlinNoise1D(Clock * 0.035f + 3.7f);
+		const float Gust = 1.f + 0.3f * FMath::PerlinNoise1D(Clock * 0.21f + 11.3f);
+		WindNow = FVector2D(FMath::Cos(Base + Veer), FMath::Sin(Base + Veer)) * Gust;
+	}
 	StepAccum += FMath::Min(DeltaTime, 0.25f);
 	int32 Steps = 0;
 	while (StepAccum >= SoulsFireTuning::SimDt && Steps < 3)
@@ -657,13 +654,14 @@ void USoulsFireSubsystem::Tick(float DeltaTime)
 		Step(SoulsFireTuning::SimDt);
 		++Steps;
 	}
-	// Flicker the pooled lights every frame (the flames flicker in their material).
+	// Flicker the pooled lights every frame with the fire's breathing (layered noise, never repeating).
 	for (int32 i = 0; i < Lights.Num(); ++i)
 	{
 		if (Lights[i] && LightTarget[i] > 0.f)
 		{
-			const float F = 0.78f + 0.14f * FMath::Sin(Clock * 13.1f + i * 1.7f) + 0.08f * FMath::Sin(Clock * 29.3f + i * 4.1f);
-			Lights[i]->SetIntensity(LightTarget[i] * F);
+			const float F = 0.82f + 0.14f * FMath::PerlinNoise1D(Clock * 1.9f + i * 7.1f) + 0.1f * FMath::PerlinNoise1D(Clock * 7.3f + i * 3.3f)
+				+ 0.05f * FMath::PerlinNoise1D(Clock * 17.f + i * 1.3f);
+			Lights[i]->SetIntensity(LightTarget[i] * FMath::Max(F, 0.4f));
 		}
 	}
 }
@@ -705,7 +703,7 @@ void USoulsFireSubsystem::Step(float Dt)
 			continue;
 		}
 
-		// Spread to the eight neighbours, faster downwind, slowing as the fire ages.
+		// Spread to the eight neighbours, far faster downwind, slowing as the fire ages.
 		if (I > 0.15f && BurningCells < MaxBurningCells)
 		{
 			const float Age = Clock - FireStart[Cell];
@@ -733,12 +731,25 @@ void USoulsFireSubsystem::Step(float Dt)
 					}
 					const FVector2D Dir = FVector2D(float(Dx), float(Dy)).GetSafeNormal();
 					const float Diag = (Dx != 0 && Dy != 0) ? 0.7f : 1.f;
-					const float WindF = 1.f + 0.6f * (float)FVector2D::DotProduct(Dir, Wind);
+					const float WindF = FMath::Max(UpwindFloor, 1.f + WindPush * (float)FVector2D::DotProduct(Dir, WindNow));
 					const float P = SpreadRate * I * AgeFactor * Diag * WindF * FMath::Min(0.7f + 0.3f * Load[Cell], 1.6f) * Dt;
 					if (Rng.FRand() < P)
 					{
 						IgniteCell(Next, FireStart[Cell]);
 					}
+				}
+			}
+			// Embers blown ahead light spot fires a few cells downwind: the front jumps and runs.
+			if (I > 0.6f && Rng.FRand() < SpotRate * AgeFactor * (float)WindNow.Size() * Dt)
+			{
+				const float Jump = Rng.FRandRange(2.f, 4.5f);
+				const float Side = Rng.FRandRange(-1.2f, 1.2f);
+				const FVector2D W = WindNow.GetSafeNormal();
+				const int32 X = Cx + FMath::RoundToInt(W.X * Jump - W.Y * Side);
+				const int32 Y = Cy + FMath::RoundToInt(W.Y * Jump + W.X * Side);
+				if (X >= 0 && Y >= 0 && X < N && Y < N)
+				{
+					IgniteCell(Y * N + X, FireStart[Cell]);
 				}
 			}
 		}
@@ -758,7 +769,7 @@ void USoulsFireSubsystem::Step(float Dt)
 	UpdateVisuals(Dt);
 	UploadField();
 
-	if (Active.Num() == 0 && ActiveItems.Num() == 0 && Puffs.Num() == 0)
+	if (Active.Num() == 0 && ActiveItems.Num() == 0)
 	{
 		bActive = false;
 		for (int32 i = 0; i < Lights.Num(); ++i)
@@ -834,30 +845,37 @@ void USoulsFireSubsystem::UpdateVisuals(float Dt)
 	{
 		return;
 	}
-	struct FTile { FVector Sum = FVector::ZeroVector; float Weight = 0.f; };
+	const FVector View = ViewLocation();
+	struct FTile
+	{
+		FVector Sum = FVector::ZeroVector;
+		float Weight = 0.f;
+	};
 	TMap<int64, FTile> Tiles;
+	auto TileKey = [](const FVector& P, float Size)
+	{
+		return (int64(FMath::FloorToInt32((float)(P.X / Size))) << 32) ^ int64(uint32(FMath::FloorToInt32((float)(P.Y / Size))));
+	};
 	auto AddLight = [&](const FVector& P, float W)
 	{
-		const int64 Key = (int64(FMath::FloorToInt32((float)(P.X / LightTile))) << 32) ^ int64(uint32(FMath::FloorToInt32((float)(P.Y / LightTile))));
-		FTile& Tile = Tiles.FindOrAdd(Key);
+		FTile& Tile = Tiles.FindOrAdd(TileKey(P, LightTile));
 		Tile.Sum += P * W;
 		Tile.Weight += W;
 	};
 
-	// Flames: one cone per burning cell (taller as the fire matures and where fuel is heavy), more on burning plants.
-	TArray<FTransform> Xfs;
-	Xfs.Reserve(FMath::Min(Active.Num() + ActiveItems.Num() * 2, MaxFlames));
-	const FBox MeshBox = FlameMesh ? FlameMesh->GetBoundingBox() : FBox(FVector(-50.f), FVector(50.f));
-	const FVector MeshSize = MeshBox.GetSize().ComponentMax(FVector(1.f));
-	auto AddFlame = [&](const FVector& Base, float Width, float Height, float Yaw)
+	// Flames: one patch of flipbook fire per 2 x 2 burning cells, taller as the fire matures and where the
+	// fuel is heavy; more on the plants burning in it.
+	struct FPatch
 	{
-		if (Xfs.Num() >= MaxFlames || Height < 5.f)
-		{
-			return;
-		}
-		const FVector Scale(Width / MeshSize.X, Width / MeshSize.Y, Height / MeshSize.Z);
-		Xfs.Add(FTransform(FRotator(0.f, Yaw, 0.f), Base - FVector(0.f, 0.f, MeshBox.Min.Z * Scale.Z), Scale));
+		float SumZ = 0.f;
+		float MaxI = 0.f;
+		float MaxLoad = 1.f;
+		float Grow = 0.f;
+		int32 Cells = 0;
+		int32 X = 0;
+		int32 Y = 0;
 	};
+	TMap<int64, FPatch> Patches;
 	for (const int32 Cell : Active)
 	{
 		const float I = CellIntensity(Cell, Clock - IgniteTime[Cell]);
@@ -865,15 +883,36 @@ void USoulsFireSubsystem::UpdateVisuals(float Dt)
 		{
 			continue;
 		}
-		const uint32 H = Hash(uint32(Cell));
-		const float R1 = Hash01(H), R2 = Hash01(H + 1), R3 = Hash01(H + 2);
-		const FVector C = CellCenter(Cell);
-		const FVector P(C.X + (R1 - 0.5f) * CellSize * 0.6f, C.Y + (R2 - 0.5f) * CellSize * 0.6f, C.Z - 5.f);
-		const float Grow = 0.55f + 0.45f * Smooth(0.f, 18.f, Clock - FireStart[Cell]);
-		const float Height = (75.f + 40.f * FMath::Min(Load[Cell] - 1.f, 2.f)) * I * Grow * (0.75f + 0.5f * R3);
-		AddFlame(P, 75.f * (0.6f + 0.4f * I), Height, R1 * 360.f);
-		AddLight(P, I);
+		const int32 Px = (Cell % N) / PatchCells;
+		const int32 Py = (Cell / N) / PatchCells;
+		FPatch& Patch = Patches.FindOrAdd(int64(Py) * N + Px);
+		Patch.X = Px;
+		Patch.Y = Py;
+		Patch.SumZ += GroundZ[Cell];
+		Patch.MaxI = FMath::Max(Patch.MaxI, I);
+		Patch.MaxLoad = FMath::Max(Patch.MaxLoad, Load[Cell]);
+		Patch.Grow = FMath::Max(Patch.Grow, Smooth(0.f, 18.f, Clock - FireStart[Cell]));
+		++Patch.Cells;
+		AddLight(CellCenter(Cell), I);
 	}
+	TArray<FFxWant> FlameWants;
+	FlameWants.Reserve(Patches.Num() + ActiveItems.Num());
+	for (const TPair<int64, FPatch>& Pair : Patches)
+	{
+		const FPatch& Patch = Pair.Value;
+		const float Span = PatchCells * CellSize;
+		const FVector P(-Half + (Patch.X + 0.5f) * Span, -Half + (Patch.Y + 0.5f) * Span, Patch.SumZ / Patch.Cells - 6.f);
+		const float Cover = FMath::Sqrt(float(Patch.Cells) / float(PatchCells * PatchCells));
+		FFxWant& Want = FlameWants.AddDefaulted_GetRef();
+		Want.Key = Pair.Key;
+		Want.Location = P;
+		Want.Scale = FMath::Clamp((0.45f + 0.55f * Patch.MaxI) * (0.6f + 0.4f * Patch.Grow) * (0.75f + 0.25f * Cover)
+			* (0.9f + 0.3f * FMath::Min(Patch.MaxLoad - 1.f, 2.f)), 0.25f, 1.8f);
+		// Near first; a strong patch counts as a little nearer than a dying one.
+		Want.Priority = (float)FVector::Dist(View, P) * (1.25f - 0.25f * Patch.MaxI);
+	}
+	// Burning plants: the fire climbs them (flames up the trunk and through the crown of a tree).
+	constexpr int64 ItemKeyBase = int64(1) << 40;
 	for (const int32 Index : ActiveItems)
 	{
 		const FItem& Item = Items[Index];
@@ -882,119 +921,77 @@ void USoulsFireSubsystem::UpdateVisuals(float Dt)
 		{
 			continue;
 		}
-		const float R = Hash01(uint32(Index) * 7u + 3u);
 		const float H = Item.Height * FMath::Max(Item.Scale, 0.3f);
+		auto AddItemFlame = [&](int32 Part, const FVector& At, float Scale)
+		{
+			FFxWant& Want = FlameWants.AddDefaulted_GetRef();
+			Want.Key = ItemKeyBase + int64(Index) * 4 + Part;
+			Want.Location = At;
+			Want.Scale = FMath::Clamp(Scale * I, 0.2f, 3.f);
+			Want.Priority = (float)FVector::Dist(View, At) * (1.2f - 0.2f * I);
+		};
 		switch (Item.Kind)
 		{
 		case ESoulsFireItemKind::Tree:
-			AddFlame(Item.Base + FVector(0.f, 0.f, H * 0.15f), H * 0.25f, H * 0.5f * I, R * 360.f);
-			AddFlame(Item.Base + FVector(H * 0.08f, -H * 0.05f, H * 0.45f), H * 0.3f, H * 0.45f * I, R * 360.f + 120.f);
-			AddFlame(Item.Base + FVector(-H * 0.06f, H * 0.07f, H * 0.65f), H * 0.22f, H * 0.4f * I, R * 360.f + 240.f);
+			AddItemFlame(0, Item.Base + FVector(0.f, 0.f, H * 0.1f), H / 380.f);
+			AddItemFlame(1, Item.Base + FVector(H * 0.06f, -H * 0.04f, H * 0.4f), H / 320.f);
+			AddItemFlame(2, Item.Base + FVector(-H * 0.05f, H * 0.06f, H * 0.62f), H / 360.f);
 			AddLight(Item.Base + FVector(0.f, 0.f, H * 0.4f), 4.f * I);
 			break;
 		case ESoulsFireItemKind::Log:
-			AddFlame(Item.Base, FMath::Max(H, 80.f) * 0.8f, 130.f * I, R * 360.f);
+			AddItemFlame(0, Item.Base, 0.8f);
 			AddLight(Item.Base, 1.5f * I);
 			break;
 		case ESoulsFireItemKind::Shrub:
-			AddFlame(Item.Base, H * 0.9f, (H * 1.3f + 60.f) * I, R * 360.f);
+			AddItemFlame(0, Item.Base, FMath::Max(H, 60.f) / 110.f);
 			AddLight(Item.Base, 2.f * I);
 			break;
 		default:
-			AddFlame(Item.Base, FMath::Max(H, 40.f) * 0.8f, (H * 1.5f + 30.f) * I, R * 360.f);
+			AddItemFlame(0, Item.Base, FMath::Max(H, 40.f) / 140.f);
 			break;
 		}
 	}
-	if (Flames)
-	{
-		const int32 Shown = Xfs.Num();
-		const FVector Park = Xfs.Num() > 0 ? Xfs[0].GetLocation() : FVector::ZeroVector;
-		const int32 Pool = Flames->GetInstanceCount();
-		// Park the flames no longer needed (shown last step, not this one) as invisible specks.
-		for (int32 i = Shown; i < FMath::Min(FlamesShown, Pool); ++i)
-		{
-			Xfs.Add(FTransform(FRotator::ZeroRotator, Park, FVector(0.0001f)));
-		}
-		if (Xfs.Num() > Pool)
-		{
-			TArray<FTransform> Extra(Xfs.GetData() + Pool, Xfs.Num() - Pool);
-			Flames->AddInstances(Extra, false, false, false);
-		}
-		const int32 Update = FMath::Min(Xfs.Num(), Pool);
-		if (Update > 0)
-		{
-			Flames->BatchUpdateInstancesTransforms(0, TArrayView<const FTransform>(Xfs.GetData(), Update), false, false, true);
-		}
-		Flames->UpdateBounds();
-		Flames->MarkRenderTransformDirty();
-		FlamesShown = Shown;
-	}
+	FlamesShown = FMath::Min(FlameWants.Num(), MaxFlamePatches);
+	UpdatePool(FlamePool, FlameSystem, FlameWants, MaxFlamePatches, 1.8f);
 
-	// Smoke: a few dark puffs rising from the strongest flames, swelling and fading.
-	if (Smoke)
+	// Smoke columns and ember clouds over the busiest 8 m tiles (seen from afar: by weight, not distance);
+	// heat haze over the burning tiles nearest the camera.
+	TArray<FFxWant> SmokeWants;
+	TArray<FFxWant> EmberWants;
+	TArray<FFxWant> HazeWants;
+	for (const TPair<int64, FTile>& Pair : Tiles)
 	{
-		PuffAccum += Dt * FMath::Min(1.f + BurningCells / 40.f, 8.f) * (BurningCells > 0 ? 1.f : 0.f);
-		while (PuffAccum >= 1.f)
+		const FTile& Tile = Pair.Value;
+		if (Tile.Weight < 1.2f)
 		{
-			PuffAccum -= 1.f;
-			if (Puffs.Num() >= MaxPuffs || Active.Num() == 0)
-			{
-				continue;
-			}
-			for (int32 Try = 0; Try < 6; ++Try)
-			{
-				const int32 Cell = Active[Rng.RandHelper(Active.Num())];
-				if (CellIntensity(Cell, Clock - IgniteTime[Cell]) > 0.4f)
-				{
-					FPuff& Puff = Puffs.AddDefaulted_GetRef();
-					Puff.Location = CellCenter(Cell) + FVector(0.f, 0.f, 90.f);
-					Puff.Life = Rng.FRandRange(5.f, 7.f);
-					Puff.Size = 1.2f + 0.4f * FMath::Min(Load[Cell], 3.f);
-					break;
-				}
-			}
+			continue;
 		}
-		const int32 Before = Smoke->GetInstanceCount();
-		TArray<FTransform> PuffXfs;
-		TArray<float> Opacity;
-		for (int32 i = Puffs.Num() - 1; i >= 0; --i)
+		const FVector P = Tile.Sum / Tile.Weight;
+		const float Distance = (float)FVector::Dist(View, P);
+		FFxWant Want;
+		Want.Key = Pair.Key;
+		Want.Location = P;
+		Want.Scale = FMath::Clamp(0.55f + 0.1f * FMath::Sqrt(Tile.Weight), 0.55f, 1.6f);
+		Want.Priority = -Tile.Weight;
+		SmokeWants.Add(Want);
+		if (Distance < 9000.f)
 		{
-			FPuff& Puff = Puffs[i];
-			Puff.Age += Dt;
-			if (Puff.Age >= Puff.Life)
-			{
-				Puffs.RemoveAtSwap(i, EAllowShrinking::No);
-				continue;
-			}
-			Puff.Location += FVector(Wind.X * 45.f, Wind.Y * 45.f, 150.f) * Dt;
+			Want.Scale = FMath::Clamp(0.6f + 0.08f * FMath::Sqrt(Tile.Weight), 0.6f, 1.4f);
+			Want.Priority = Distance - 150.f * Tile.Weight;
+			EmberWants.Add(Want);
 		}
-		for (const FPuff& Puff : Puffs)
+		if (Distance < 3500.f)
 		{
-			const float S = Puff.Size * (1.f + Puff.Age * 0.8f);
-			PuffXfs.Add(FTransform(FRotator::ZeroRotator, Puff.Location, FVector(S)));
-			Opacity.Add(0.32f * FMath::Sin(UE_PI * Puff.Age / Puff.Life));
-		}
-		for (int32 i = PuffXfs.Num(); i < Before; ++i)
-		{
-			PuffXfs.Add(FTransform(FRotator::ZeroRotator, FVector::ZeroVector, FVector(0.0001f)));
-			Opacity.Add(0.f);
-		}
-		if (PuffXfs.Num() > Before)
-		{
-			TArray<FTransform> Extra(PuffXfs.GetData() + Before, PuffXfs.Num() - Before);
-			Smoke->AddInstances(Extra, false, false, false);
-		}
-		if (PuffXfs.Num() > 0)
-		{
-			Smoke->BatchUpdateInstancesTransforms(0, TArrayView<const FTransform>(PuffXfs.GetData(), FMath::Min(PuffXfs.Num(), Smoke->GetInstanceCount())), false, false, true);
-			for (int32 i = 0; i < Opacity.Num() && i < Smoke->GetInstanceCount(); ++i)
-			{
-				Smoke->SetCustomDataValue(i, 0, Opacity[i], false);
-			}
-			Smoke->UpdateBounds();
-			Smoke->MarkRenderTransformDirty();
+			Want.Location = P + FVector(0.f, 0.f, 60.f);
+			Want.Scale = 4.f;
+			Want.Priority = Distance;
+			HazeWants.Add(Want);
 		}
 	}
+	SmokeShown = FMath::Min(SmokeWants.Num(), MaxSmokeColumns);
+	UpdatePool(SmokePool, SmokeSystem, SmokeWants, MaxSmokeColumns, 9.5f);
+	UpdatePool(EmberPool, EmberSystem, EmberWants, MaxEmberClouds, 4.5f);
+	UpdatePool(HazePool, HazeSystem, HazeWants, MaxHazeTiles, 1.6f);
 
 	// Lights: the brightest few patches of fire each get one pooled light.
 	TArray<FTile> Sorted;
@@ -1022,6 +1019,123 @@ void USoulsFireSubsystem::UpdateVisuals(float Dt)
 			Light->SetVisibility(false);
 		}
 	}
+}
+
+void USoulsFireSubsystem::UpdatePool(TArray<FSoulsFireFxSlot>& Pool, UNiagaraSystem* System, TArray<FFxWant>& Wants, int32 Max, float Linger)
+{
+	if (!System || !Visuals)
+	{
+		return;
+	}
+	Wants.Sort([](const FFxWant& A, const FFxWant& B) { return A.Priority < B.Priority; });
+	if (Wants.Num() > Max)
+	{
+		Wants.SetNum(Max);
+	}
+	TMap<int64, int32> WantIndex;
+	WantIndex.Reserve(Wants.Num());
+	for (int32 i = 0; i < Wants.Num(); ++i)
+	{
+		WantIndex.Add(Wants[i].Key, i);
+	}
+	TArray<bool> Served;
+	Served.Init(false, Wants.Num());
+	// Local +X downwind: the field systems push their smoke, embers and flames that way.
+	const FRotator Facing(0.f, FMath::RadiansToDegrees(FMath::Atan2(WindNow.Y, WindNow.X)), 0.f);
+	auto Place = [&Facing](UNiagaraComponent* Comp, const FFxWant& Want)
+	{
+		Comp->SetWorldLocationAndRotation(Want.Location, Facing);
+		Comp->SetWorldScale3D(FVector(Want.Scale));
+	};
+	for (FSoulsFireFxSlot& Slot : Pool)
+	{
+		if (!Slot.bOn || !Slot.Comp)
+		{
+			continue;
+		}
+		if (const int32* Found = WantIndex.Find(Slot.Key))
+		{
+			Place(Slot.Comp, Wants[*Found]);
+			Served[*Found] = true;
+		}
+		else
+		{
+			Slot.Comp->Deactivate();
+			Slot.bOn = false;
+			Slot.Key = -1;
+			Slot.FreeAt = Clock + Linger;
+		}
+	}
+	int32 Search = 0;
+	for (int32 i = 0; i < Wants.Num(); ++i)
+	{
+		if (Served[i])
+		{
+			continue;
+		}
+		FSoulsFireFxSlot* Free = nullptr;
+		for (; Search < Pool.Num(); ++Search)
+		{
+			FSoulsFireFxSlot& Slot = Pool[Search];
+			if (Slot.Comp && !Slot.bOn && Clock >= Slot.FreeAt)
+			{
+				Free = &Slot;
+				++Search;
+				break;
+			}
+		}
+		if (!Free)
+		{
+			// Room for the ones still burning out, then no more.
+			if (Pool.Num() >= Max + Max / 2)
+			{
+				break;
+			}
+			UNiagaraComponent* Comp = NewObject<UNiagaraComponent>(Visuals);
+			Comp->bAutoActivate = false;
+			Comp->SetAsset(System);
+			Comp->SetupAttachment(Visuals->GetRootComponent());
+			Comp->SetCastShadow(false);
+			Comp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Comp->RegisterComponent();
+			FSoulsFireFxSlot& Added = Pool.AddDefaulted_GetRef();
+			Added.Comp = Comp;
+			Free = &Added;
+			Search = Pool.Num();
+		}
+		Free->Key = Wants[i].Key;
+		Free->bOn = true;
+		Place(Free->Comp, Wants[i]);
+		Free->Comp->Activate(true);
+	}
+}
+
+FVector USoulsFireSubsystem::ViewLocation() const
+{
+	if (const UWorld* World = GetWorld())
+	{
+		if (const APlayerController* Player = World->GetFirstPlayerController(); Player && Player->PlayerCameraManager)
+		{
+			return Player->PlayerCameraManager->GetCameraLocation();
+		}
+	}
+	return DemoSpot;
+}
+
+FVector USoulsFireSubsystem::BurningCentroid() const
+{
+	FVector Sum = FVector::ZeroVector;
+	float Weight = 0.f;
+	for (const int32 Cell : Active)
+	{
+		const float I = CellIntensity(Cell, Clock - IgniteTime[Cell]);
+		if (I > 0.3f)
+		{
+			Sum += CellCenter(Cell) * I;
+			Weight += I;
+		}
+	}
+	return Weight > 0.f ? Sum / Weight : DemoSpot;
 }
 
 void USoulsFireSubsystem::UploadField()
@@ -1217,18 +1331,102 @@ void USoulsFireSubsystem::TickDemo(float DeltaTime)
 		{
 			Burning += Items[Index].IgniteTime >= 0.f && Clock >= Items[Index].IgniteTime ? 1 : 0;
 		}
-		UE_LOG(LogSoulsFire, Display, TEXT("FireDemo: %s t=%.1fs burning=%d active=%d burnt=%d plantsBurning=%d plantsConsumed=%d flames=%d puffs=%d lights=%d burningAtSpot=%d"),
-			Tag, T, BurningCells, Active.Num(), BurntCells, Burning, ConsumedItems, FlamesShown, Puffs.Num(), LightsLit,
-			FSoulsFire::IsBurningAt(World, DemoSpot) ? 1 : 0);
+		UE_LOG(LogSoulsFire, Display, TEXT("FireDemo: %s t=%.1fs burning=%d active=%d burnt=%d plantsBurning=%d plantsConsumed=%d flames=%d smoke=%d lights=%d burningAtSpot=%d wind=(%.2f,%.2f)"),
+			Tag, T, BurningCells, Active.Num(), BurntCells, Burning, ConsumedItems, FlamesShown, SmokeShown, LightsLit,
+			FSoulsFire::IsBurningAt(World, DemoSpot) ? 1 : 0, WindNow.X, WindNow.Y);
 	};
-	static const float ShotTimes[] = { 0.5f, 3.f, 6.f, 9.f, 12.f, 15.f, 18.f, 21.f, 25.f, 30.f };
-	if (DemoShot < (int32)UE_ARRAY_COUNT(ShotTimes) && T >= ShotTimes[DemoShot])
+	// UNR-T75: the wide shots as before, plus close-ups at the fire front (low, a few metres off it) by day
+	// and, after the sky is turned to night (21:00, held), the same again so the fire can be judged in the dark.
+	enum class EDemo : uint8 { Wide, CloseOn, CloseShot, WideOn, Night };
+	struct FEvent
 	{
-		const FString Name = FString::Printf(TEXT("FireDemo_%02d_%02ds"), DemoShot + 1, FMath::RoundToInt(ShotTimes[DemoShot]));
-		const FString Path = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("Screenshots") / (Name + TEXT(".png")));
-		FScreenshotRequest::RequestScreenshot(Path, false, false);
-		Counts(*Name);
-		++DemoShot;
+		float Time;
+		EDemo What;
+	};
+	static const FEvent Events[] = {
+		{ 0.5f, EDemo::Wide }, { 3.f, EDemo::Wide }, { 6.f, EDemo::Wide },
+		{ 7.5f, EDemo::CloseOn }, { 7.8f, EDemo::CloseShot }, { 8.6f, EDemo::CloseShot }, { 8.8f, EDemo::WideOn },
+		{ 9.f, EDemo::Wide }, { 12.f, EDemo::Wide },
+		{ 13.f, EDemo::Night },
+		{ 15.f, EDemo::Wide },
+		{ 16.f, EDemo::CloseOn }, { 16.3f, EDemo::CloseShot }, { 17.2f, EDemo::CloseShot }, { 17.4f, EDemo::WideOn },
+		{ 18.f, EDemo::Wide }, { 21.f, EDemo::Wide }, { 25.f, EDemo::Wide }, { 30.f, EDemo::Wide },
+	};
+	APlayerController* Player = UGameplayStatics::GetPlayerController(World, 0);
+	while (DemoEvent < (int32)UE_ARRAY_COUNT(Events) && T >= Events[DemoEvent].Time)
+	{
+		const FEvent& Event = Events[DemoEvent++];
+		const bool bNight = DemoEvent > 10;
+		switch (Event.What)
+		{
+		case EDemo::Wide:
+		case EDemo::CloseShot:
+		{
+			const bool bClose = Event.What == EDemo::CloseShot;
+			const FString Name = FString::Printf(TEXT("FireDemo_%02d_%02ds%s%s"), DemoShot + 1, FMath::RoundToInt(Event.Time),
+				bClose ? TEXT("_close") : TEXT(""), bNight ? TEXT("_night") : TEXT(""));
+			const FString Path = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("Screenshots") / (Name + TEXT(".png")));
+			FScreenshotRequest::RequestScreenshot(Path, false, false);
+			Counts(*Name);
+			++DemoShot;
+			break;
+		}
+		case EDemo::CloseOn:
+		{
+			// Low, 7 m back from the strongest burning, on the side the wide camera looks from.
+			const FVector Front = BurningCentroid();
+			FVector Away = (DemoOrigin - Front).GetSafeNormal2D();
+			if (Away.IsNearlyZero())
+			{
+				Away = FVector(-1.f, 0.f, 0.f);
+			}
+			FVector Eye = Front + Away * 700.f + FVector(0.f, 0.f, 220.f);
+			FHitResult Hit;
+			if (World->LineTraceSingleByChannel(Hit, FVector(Eye.X, Eye.Y, Eye.Z + 3000.f), FVector(Eye.X, Eye.Y, Eye.Z - 3000.f), ECC_Visibility))
+			{
+				Eye.Z = FMath::Max(Eye.Z, Hit.ImpactPoint.Z + 160.f);
+			}
+			const FRotator Look = (Front + FVector(0.f, 0.f, 110.f) - Eye).Rotation();
+			if (!DemoCloseCamera)
+			{
+				FActorSpawnParameters Params;
+				Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+				DemoCloseCamera = World->SpawnActor<ACameraActor>(Eye, Look, Params);
+				if (DemoCloseCamera)
+				{
+					DemoCloseCamera->GetCameraComponent()->bConstrainAspectRatio = false;
+					DemoCloseCamera->GetCameraComponent()->SetFieldOfView(60.f);
+				}
+			}
+			if (DemoCloseCamera)
+			{
+				DemoCloseCamera->SetActorLocationAndRotation(Eye, Look);
+				if (Player)
+				{
+					Player->SetViewTarget(DemoCloseCamera);
+				}
+			}
+			UE_LOG(LogSoulsFire, Display, TEXT("FireDemo: close camera at %s on the front at %s"), *Eye.ToCompactString(), *Front.ToCompactString());
+			break;
+		}
+		case EDemo::WideOn:
+			if (Player && DemoCamera)
+			{
+				Player->SetViewTarget(DemoCamera);
+			}
+			break;
+		case EDemo::Night:
+			if (AIslandDayNight* Sky = AIslandDayNight::Get(World))
+			{
+				Sky->SetTimeOfDay(21.f, true);
+				UE_LOG(LogSoulsFire, Display, TEXT("FireDemo: night (21:00)"));
+			}
+			else
+			{
+				UE_LOG(LogSoulsFire, Warning, TEXT("FireDemo: no day/night actor, the night shots are lit as the level is"));
+			}
+			break;
+		}
 	}
 	if (T >= DemoNextLog)
 	{
