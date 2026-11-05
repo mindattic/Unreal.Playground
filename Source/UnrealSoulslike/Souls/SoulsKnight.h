@@ -10,6 +10,7 @@ class USoundBase;
 class UStaticMeshComponent;
 class UInputAction;
 class UShadowMergeComponent;
+class USoulsWallRunComponent;
 class UInputMappingContext;
 class ASiteOfGrace;
 class AGrapplePoint;
@@ -84,6 +85,10 @@ public:
 	// Melt into a shadow that crawls over the ground and up walls (UNR-T71): LT / Q.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Knight")
 	TObjectPtr<UShadowMergeComponent> ShadowMelt;
+
+	// Wall running (UNR-T77): A alongside a wall at speed; A again kicks off it. SoulsWallRun.*.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Knight")
+	TObjectPtr<USoulsWallRunComponent> WallRun;
 
 	// 0 = players, 1 = the island's enemies. Knights never hurt their own team.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Knight")
@@ -462,6 +467,7 @@ protected:
 
 	// The Shade drives the shared kit (actions, sweeps, lock-on, stamina) from SoulsShadowBoss.cpp.
 	friend class ASoulsShadowBoss;
+	friend class USoulsWallRunComponent;
 
 private:
 	// Verification run (-KnightDemo): performs every move and screenshots it.

@@ -11,6 +11,7 @@
 #include "SoulsMech.h"
 #include "SoulsFighter.h"
 #include "Components/ShadowMergeComponent.h"
+#include "SoulsWallRun.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Camera/CameraComponent.h"
@@ -99,6 +100,7 @@ ASoulsKnight::ASoulsKnight()
 	ShadowMelt->BlobBaseMaterial = ShadowBlobMaterial.Object;
 	ShadowMelt->CrawlSpeed = 520.f;
 	ShadowMelt->MinEnergyToEnter = 0.f;
+	WallRun = CreateDefaultSubobject<USoulsWallRunComponent>(TEXT("WallRun"));
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> LineMesh(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
 	if (LineMesh.Succeeded())
 	{
@@ -1968,6 +1970,11 @@ void ASoulsKnight::SprintPressed()
 
 void ASoulsKnight::JumpPressed()
 {
+	// On a wall (UNR-T77), A kicks off it; that comes before the glide.
+	if (WallRun && WallRun->TryWallJump())
+	{
+		return;
+	}
 	if (bGliding)
 	{
 		EndGlide();

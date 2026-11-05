@@ -3539,6 +3539,224 @@ def build_fighter(world, route, pads, start):
     return fighter
 
 
+# ----------------------------------------------------------------------------------------------
+# The wall-run course (UNR-T77): long, tall stone walls on open flat ground near the start, to practise
+# USoulsWallRunComponent (Source/UnrealSoulslike/Souls/SoulsWallRun.*) on. Two parallel pairs to chain
+# wall jumps between, a lone long wall, and a zig-zag line, all reached from one start slab. A TargetPoint
+# tagged "WallRunStart" (on the axis of pair A, facing down it, WALLRUN_LEAD_IN short of it) is where
+# -WallRunDemo starts.
+# ----------------------------------------------------------------------------------------------
+
+WALLRUN_THICK = 80.0       # cm, every wall
+WALLRUN_LEAD_IN = 900.0    # cm of run-up from the start slab to the walls
+WALLRUN_TILE = 300.0       # cm per repeat of the stone texture (world-aligned, so the scaled boxes don't stretch it)
+# (label, (u0, v0), (u1, v1), height above the highest ground under it): u runs down the course from the start
+# line, v to its right. The inner gap of pair A is 4.5 m, of pair B 5 m.
+WALLRUN_ZIG = (math.cos(math.radians(35.0)) * 2000.0, math.sin(math.radians(35.0)) * 2000.0)
+WALLRUN_WALLS = [
+    ("WallRun_PairA_L", (0.0, -265.0), (3000.0, -265.0), 550.0),
+    ("WallRun_PairA_R", (0.0, 265.0), (3000.0, 265.0), 550.0),
+    ("WallRun_PairB_L", (0.0, 1210.0), (4000.0, 1210.0), 500.0),
+    ("WallRun_PairB_R", (0.0, 1790.0), (4000.0, 1790.0), 500.0),
+    ("WallRun_Long", (0.0, -1500.0), (3500.0, -1500.0), 600.0),
+    ("WallRun_Zig_1", (0.0, -2900.0), (WALLRUN_ZIG[0], -2900.0 - WALLRUN_ZIG[1]), 450.0),
+    ("WallRun_Zig_2", (WALLRUN_ZIG[0], -2900.0 - WALLRUN_ZIG[1]), (2 * WALLRUN_ZIG[0], -2900.0), 450.0),
+    ("WallRun_Zig_3", (2 * WALLRUN_ZIG[0], -2900.0), (3 * WALLRUN_ZIG[0], -2900.0 - WALLRUN_ZIG[1]), 450.0),
+]
+WALLRUN_AREA = (-WALLRUN_LEAD_IN - 400.0, max(4300.0, 3 * WALLRUN_ZIG[0] + 300.0),
+                -2900.0 - WALLRUN_ZIG[1] - 400.0, 2200.0)  # u min, u max, v min, v max: the whole course, run-ups included
+
+
+def build_wallrun_material(textures):
+    """Stone for the scaled boxes: the fort's masonry (else the seaside rock), projected in world space from the
+    side each face looks along, so a 40 m box shows the same stone size as a 1 m one."""
+    diffs = [t for t in assets_of(ROOT + "/Models/modular_fort_01", unreal.Texture2D) if t.get_name().endswith("_diff")]
+    base_tex = (sorted(diffs, key=lambda t: ("wall" not in t.get_name().lower(), t.get_name()))[0] if diffs
+                else textures["seaside_rock"]["color"])
+    mat, g = new_material("M_WallRunStone", ROOT + "/Materials")
+    wp = g.world()
+    nrm = g.new(E.MaterialExpressionVertexNormalWS)
+    wx, wy, wz = g.mask(wp, r=True), g.mask(wp, g=True), g.mask(wp, b=True)
+    down = g.mul(wz, -1.0)
+    tile = (WALLRUN_TILE, WALLRUN_TILE)
+    c_x = (g.tex(base_tex, g.div(g.append(wy, down), tile), "color"), "RGB")   # faces looking along +-X
+    c_y = (g.tex(base_tex, g.div(g.append(wx, down), tile), "color"), "RGB")   # faces looking along +-Y
+    c_z = (g.tex(base_tex, g.div(g.append(wx, wy), tile), "color"), "RGB")     # the tops
+    ax, ay, az = g.abs(g.mask(nrm, r=True)), g.abs(g.mask(nrm, g=True)), g.abs(g.mask(nrm, b=True))
+    side = g.lerp(c_y, c_x, g.smooth(-0.15, 0.15, g.sub(ax, ay)))
+    color = g.lerp(side, c_z, g.smooth(0.55, 0.8, az))
+    tint = g.new(E.MaterialExpressionVectorParameter, parameter_name="Tint", default_value=unreal.LinearColor(0.72, 0.72, 0.7, 1.0))
+    g.out(g.mul(color, (tint, "RGB")), E.MaterialProperty.MP_BASE_COLOR)
+    g.out(0.85, E.MaterialProperty.MP_ROUGHNESS)
+    finish_material(mat)
+    log("wall-run stone: %s" % base_tex.get_name())
+    return mat
+
+
+def build_wallrun_course(world, textures, route, pads, start):
+    """Lay the course out on the flattest open ground near the start (off the path, clear of markers, vehicles,
+    pads and biomes), then build it from engine cubes in M_WallRunStone with collision on."""
+    cube = unreal.load_asset("/Engine/BasicShapes/Cube")
+    if cube is None:
+        warn("wall-run course: /Engine/BasicShapes/Cube missing; no course built")
+        return None
+    sx, sy = start
+    u_lo, u_hi, v_lo, v_hi = WALLRUN_AREA
+    keep_names = ("PlayerStart", "TargetPoint", "SoulsMech", "SoulsFighter", "GrapplePoint", "SiteOfGrace", "SoulsPickup",
+                  "SoulsTorch")
+    keep = []
+    for a in actors_sub.get_all_level_actors():
+        cname = a.get_class().get_name()
+        if any(cname.startswith(k) or cname.startswith("BP_" + k) for k in keep_names):
+            p = a.get_actor_location()
+            keep.append((p.x, p.y))
+    avoid = []  # (x, y, r): biomes the course must not sit in
+    for key, r in (("marsh", MARSH_RADIUS), ("clearing", CLEARING_RADIUS), ("wood", 5800.0)):
+        if key in BIOMES:
+            avoid.append((BIOMES[key][0], BIOMES[key][1], r + 800.0))
+    avoid += [(px, py, pr + 600.0) for px, py, pr in pads]
+
+    def frame(cx, cy, yaw):
+        f = (math.cos(math.radians(yaw)), math.sin(math.radians(yaw)))
+        r = (-f[1], f[0])
+        return lambda u, v: (cx + f[0] * u + r[0] * v, cy + f[1] * u + r[1] * v)
+
+    def wall_samples(at):
+        for _, (u0, v0), (u1, v1), _ in WALLRUN_WALLS:
+            n = max(2, int(math.hypot(u1 - u0, v1 - v0) / 250.0))
+            for i in range(n + 1):
+                t = i / float(n)
+                yield at(u0 + (u1 - u0) * t, v0 + (v1 - v0) * t)
+
+    def grid(at, step=400.0):
+        u = u_lo
+        while u <= u_hi:
+            v = v_lo
+            while v <= v_hi:
+                yield at(u, v)
+                v += step
+            u += step
+
+    def terrain(cx, cy, yaw):
+        """Height range over the course, or None when the ground won't do."""
+        at = frame(cx, cy, yaw)
+        lo, hi = 1e9, -1e9
+        for x, y in grid(at):
+            h = height(x, y)
+            if h < 150.0 or normal_z(x, y) < 0.9 or not clear_of(x, y, avoid):
+                return None
+            if any((x - kx) ** 2 + (y - ky) ** 2 < 800.0 ** 2 for kx, ky in keep):
+                return None
+            lo, hi = min(lo, h), max(hi, h)
+            if hi - lo > 450.0:
+                return None
+        for x, y in wall_samples(at):
+            if LIB.get_path_distance(x, y) < 400.0:
+                return None
+        return hi - lo
+
+    def obstacles(cx, cy, yaw):
+        """Props standing where a wall or a run-up goes (things a trace down meets well above the ground)."""
+        at = frame(cx, cy, yaw)
+        count = 0
+        for x, y in list(wall_samples(at)) + list(grid(at, 500.0)):
+            h = height(x, y)
+            hit = trace_down(world, x, y, h + 3000.0, h - 300.0)
+            if hit is not None and hit[0].z > h + 60.0:
+                count += 1
+        return count
+
+    best = None  # (obstacles, range, cx, cy, yaw)
+    tried = 0
+    max_tried = 60  # layouts whose props are counted (traces are slow); then the best so far is taken
+    for radius in (2500.0, 3200.0, 4000.0, 5000.0, 6000.0, 7200.0, 8500.0, 10000.0):
+        for k in range(20):
+            ang = k * math.pi / 10.0
+            cx, cy = sx + math.cos(ang) * radius, sy + math.sin(ang) * radius
+            for yaw in range(0, 180, 30):
+                yaw = float(yaw)
+                rng_h = terrain(cx, cy, yaw)
+                if rng_h is None:
+                    continue
+                if tried >= max_tried:
+                    break
+                tried += 1
+                obs = obstacles(cx, cy, yaw)
+                cand = (obs, rng_h, cx, cy, yaw)
+                if best is None or cand[:2] < best[:2]:
+                    best = cand
+                if obs == 0 and rng_h < 250.0:
+                    break
+            if tried >= max_tried or (best is not None and best[0] == 0 and best[1] < 250.0):
+                break
+        if tried >= max_tried or best is not None and best[0] == 0 and best[1] < 250.0:
+            break
+    if best is None:
+        (bx, by), (dx, dy) = route.at(0.08)
+        best = (-1, -1.0, bx - dy * 3000.0, by + dx * 3000.0, math.degrees(math.atan2(dy, dx)))
+        warn("wall-run course: no open flat ground found; built 30 m off the path at route 0.08 anyway")
+    obs, rng_h, cx, cy, yaw = best
+    at = frame(cx, cy, yaw)
+    stone = build_wallrun_material(textures)
+
+    def box(label, p0, p1, thick, top_above, z_floor=None, folder="WallRun"):
+        """A cube stretched from p0 to p1 (ground points), thick wide, from below the lowest ground under it
+        to top_above over the highest; extended by half its thickness at each end so corners close."""
+        (x0, y0), (x1, y1) = p0, p1
+        length = math.hypot(x1 - x0, y1 - y0)
+        n = max(2, int(length / 100.0))
+        hs = [height(x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n) for i in range(n + 1)]
+        bottom = (min(hs) if z_floor is None else z_floor) - 120.0
+        top = max(hs) + top_above
+        a = spawn_mesh(cube, unreal.Vector((x0 + x1) * 0.5, (y0 + y1) * 0.5, (bottom + top) * 0.5),
+                       unreal.Rotator(yaw=math.degrees(math.atan2(y1 - y0, x1 - x0))))
+        a.set_actor_scale3d(unreal.Vector((length + thick) / 100.0, thick / 100.0, (top - bottom) / 100.0))
+        a.set_actor_label(label)
+        a.set_folder_path(folder)
+        a.set_editor_property("tags", [unreal.Name("WallRun")])
+        smc = a.get_editor_property("static_mesh_component")
+        smc.set_material(0, stone)
+        smc.set_collision_profile_name("BlockAll")
+        smc.set_collision_enabled(unreal.CollisionEnabled.QUERY_AND_PHYSICS)
+        return a
+
+    walls = []
+    for label, (u0, v0), (u1, v1), h_above in WALLRUN_WALLS:
+        walls.append(box(label, at(u0, v0), at(u1, v1), WALLRUN_THICK, h_above))
+    # The start: a low slab across the run-up line and a waymark post beside it, and the demo's marker.
+    su = -WALLRUN_LEAD_IN
+    slab_h = min(height(*at(su, v)) for v in (-500.0, 0.0, 500.0))
+    box("WallRun_StartSlab", at(su, -500.0), at(su, 500.0), 160.0, 6.0, z_floor=slab_h - 30.0)
+    box("WallRun_StartPost", at(su, -1000.0), at(su, -980.0), 30.0, 170.0)
+    mx, my = at(su + 120.0, 0.0)
+    target_point(mx, my, "WallRunStart", "WallRunStart", yaw=yaw)
+
+    # Nothing from the dressing pass may stand inside a wall or on the run-ups.
+    removed = []
+    for a in actors_sub.get_all_level_actors():
+        if not isinstance(a, unreal.StaticMeshActor) or not str(a.get_folder_path()).startswith("Dressing"):
+            continue
+        p = a.get_actor_location()
+        f = (math.cos(math.radians(yaw)), math.sin(math.radians(yaw)))
+        du, dv = (p.x - cx) * f[0] + (p.y - cy) * f[1], -(p.x - cx) * f[1] + (p.y - cy) * f[0]
+        _, extent = a.get_actor_bounds(False)
+        grow = max(extent.x, extent.y)
+        if u_lo - grow < du < u_hi + grow and v_lo - grow < dv < v_hi + grow:
+            removed.append(a.get_actor_label())
+            actors_sub.destroy_actor(a)
+    log("wall-run course at (%.0f, %.0f, %.0f) yaw %.0f, %.0f cm from the start: %d walls, ground range %.0f cm, %d prop hits "
+        "in the footprint (%d layouts tried), removed %d dressing props %s" % (
+            cx, cy, height(cx, cy), yaw, math.hypot(cx - sx, cy - sy), len(walls), rng_h, obs, tried, len(removed), removed[:12]))
+    # A shot for -IslandShots: from behind and above the start, down the course.
+    path = os.path.join(PROJECT, "Saved", "island_shots.txt")
+    if os.path.exists(path):
+        ex, ey = at(su - 1400.0, -1300.0)
+        tx, ty = at(1500.0, -400.0)
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(shot("wallrun_course", ex, ey, height(ex, ey) + 650.0, tx, ty, height(tx, ty) + 200.0, fov=75) + "\n")
+    return walls
+
+
 def build_everything(textures, models):
     route, pads = plan_layout()
     start = route.points[0]
@@ -3581,6 +3799,7 @@ def build_everything(textures, models):
     build_ship_graveyard(models, route, start)
     build_mech(world, route, pads, start)
     build_fighter(world, route, pads, start)
+    build_wallrun_course(world, textures, route, pads, start)
 
     gm = unreal.load_class(None, GAME_MODE)
     if gm:
