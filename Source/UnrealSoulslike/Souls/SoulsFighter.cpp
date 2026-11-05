@@ -3213,7 +3213,7 @@ void UFighterDemoSubsystem::Run()
 				D->StartLocation = F->GetActorLocation();
 				D->Key(EKeys::W, true); // throttle up
 			} },
-		{ 10.4f, [](UFighterDemoSubsystem* D) { D->Key(EKeys::W, false); D->Fighter()->SetStickInput(0.35f, 0.f); } },
+		{ 10.4f, [](UFighterDemoSubsystem* D) { D->Key(EKeys::W, false); D->Fighter()->SetStickInput(0.35f * (D->Fighter()->bInvertPitch ? -1.f : 1.f), 0.f); } }, // climb
 		{ 12.4f, [Shot](UFighterDemoSubsystem* D)
 			{
 				ASoulsFighter* F = D->Fighter();
@@ -3308,7 +3308,7 @@ void UFighterDemoSubsystem::Run()
 				const FTransform Home = F->GetHomeTransform();
 				const FVector At = Home.GetLocation() + Home.GetRotation().GetForwardVector() * -3000.f;
 				F->PlaceInFlight(FVector(At.X, At.Y, GroundZ(D->GetWorld(), At) + 900.f), Home.GetRotation().Rotator().Yaw, 2600.f);
-				F->SetStickInput(-1.f, 0.f);
+				F->SetStickInput(F->bInvertPitch ? 1.f : -1.f, 0.f); // dive
 				D->HitsBefore = F->GetScrapes();
 				D->StartValue = F->GetHull();
 			} },

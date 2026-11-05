@@ -164,8 +164,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fighter|Flight")
 	float AutoLevelDelay = 0.45f;
 
+	// On: stick/mouse back climbs, forward dives, like a flight stick (UNR-T81: the other way read backwards).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fighter|Flight")
-	bool bInvertPitch = false;
+	bool bInvertPitch = true;
 
 	// Land only below this speed (cm/s) and this height over the ground (cm).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fighter|Flight")
