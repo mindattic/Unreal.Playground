@@ -66,6 +66,18 @@ Warden in the stone circle and Morrigan of the Mire, a shade who melts into shad
   stop, R3 / V swaps to the cockpit view, and D-pad up / E climbs out. Every step is procedural and
   shakes the ground. Enemies come for it and hack at its legs; at zero armour it's wrecked, you're
   thrown clear, and it reboots after a while.
+- **Fire.** Torches and grass fires burn with flames rendered from a real fire simulation (Blender
+  Mantaflow, baked to flipbooks by `tools/bake_fire_flipbooks.py`), with embers, smoke, heat haze and
+  flickering light; no fire meshes. A live 3D gas simulation (Unreal's free Niagara Fluids) for the torches
+  nearest the camera is built in but off: on UE 5.8 it corrupts memory within seconds, even Epic's stock
+  fire (`souls.Fire.Fluid 1` turns it on at your own risk; `-TorchDemo -FluidFire` shoots it). A field
+  fire races downwind through grass and heather, jumps ahead on blown embers, climbs into bushes and
+  trees, throws up thick smoke columns and leaves charred ground behind.
+- **Weather.** A prevailing wind veers and gusts, and the clouds drift with it. Every few minutes a rain
+  front rolls in: the clouds thicken and darken, the light dims and rain sweeps round you, splashing on
+  the ground and rippling the water. The ground, rocks and leaves turn dark and glossy, then dry off once
+  it clears. Gusts tear leaves off the trees and tumble them downwind, and the grass and foliage sway with
+  the wind. The rain's hiss and the wind's roar are synthesised in code.
 - **Elden Ring trappings.**
   - Sites of Grace: rest to refill, which also brings the enemies back.
   - Runes, which you lose when you die.
@@ -128,5 +140,16 @@ Run these with `-RenderOffscreen` to check a build without anyone at the control
   alongside. At each stride extreme it shoots from the side (`RangerRun_Side_1..4`), then close on the
   feet (`RangerRun_Feet_1..4`). It logs `RangerRun:` lines with the stride and each foot's distance
   from its shin, ending in `RANGER_RUN_OK` (or `RANGER_RUN_FAIL`), then quits.
+- `-TorchDemo` picks up, swings, drops and throws a torch, sees a torch-bearer fall and takes a wall torch,
+  shooting each beat (`TorchDemo_*`), then shoots a fire close up (with the gas simulation too under
+  `-FluidFire`), by day and at night (`TorchDemo_13_fire_fluid` … `TorchDemo_16_night_wielded`).
+  Logs `Torch check:` PASS/FAIL. Add `-TimeOfDay=21` to shoot the whole demo at night.
+- `-FireDemo` sets a grassy patch alight and shoots the spread from afar and up close at the front, by day
+  and then at night (`FireDemo_NN_XXs[_close][_night]`), logging `FireDemo:` counts and wind, ending in
+  `FIRE_DEMO_DONE`, then quits.
+- `-WeatherShots` (into `Saved/WeatherShots`) shoots a clear sky, the clouds twice 8 s apart (they drift
+  with the wind), a rain front arriving, rain, the wet ground, and leaves blowing off the nearest tree,
+  logging `Weather shot` lines ending in `WEATHER_SHOTS_DONE`, then quits. `-WeatherRain` /
+  `-WeatherClear` hold the weather; `-NoWeather` turns it off.
 
 Screenshots land in `Saved/Screenshots`.

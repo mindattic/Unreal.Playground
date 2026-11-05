@@ -571,6 +571,7 @@ def build_terrain_material(tex, mask_tex, biome_tex, grass_types):
                   g.mul((sand["arm"], "G"), 0.45))
     ao = blend("ao", grass["ao"], (trail["arm"], "R"), (sand["arm"], "R"), (rock["arm"], "R"))
 
+    base, rough = weather_wet(g, base, rough)  # rain-soaked: darker, glossier (UNR-T79)
     g.out(base, E.MaterialProperty.MP_BASE_COLOR)
     g.out(normal, E.MaterialProperty.MP_NORMAL)
     rough = g.lerp(rough, 0.28, g.mul(marsh, g.smooth(0.0, 0.15, g.add(pool, g.mul(g.sub(mid, 0.6), 0.4)))))
@@ -683,16 +684,17 @@ def build_grass_material(name="M_GrassBlades"):
     tip_c = g.lerp(tip_c, dry_c, g.mul(g.smooth(0.56, 0.74, patch), 0.6))
     color = g.lerp(root_c, tip_c, g.op(E.MaterialExpressionPower, {"Base": tip, "Exp": 0.7}))
     # Wind: gusts travel across the island, blades sway by tip^2.
-    t = g.time()
+    t = weather_time(g)  # quickens in the gusts (UNR-T79)
     phase = g.add(g.mul(t, 1.7), g.add(g.div(g.mask(wp, r=True), 420.0), g.div(g.mask(wp, g=True), 650.0)))
     gust = g.add(g.mul(g.sine(phase), 0.5), g.mul(g.sine(g.add(g.mul(phase, 2.3), g.mul(rnd, 6.0))), 0.25))
     sway = g.mul(g.mul(g.mul(tip, tip), g.add(gust, 0.6)), sway_cm)
-    wpo = g.append(g.append(sway, g.mul(sway, 0.35)), 0.0)
+    wpo = weather_sway(g, sway)  # along the wind, scaled by its strength (UNR-T79)
     color, fire_glow, wpo = fire_grass(g, color, wp, tip, wpo)
+    color, grass_rough = weather_wet(g, color, g.lerp(0.75, 0.5, tip), darken=0.8, gloss=0.3)  # UNR-T79
     g.out(color, E.MaterialProperty.MP_BASE_COLOR)
     if fire_glow is not None:
         g.out(fire_glow, E.MaterialProperty.MP_EMISSIVE_COLOR)
-    g.out(g.lerp(0.75, 0.5, tip), E.MaterialProperty.MP_ROUGHNESS)
+    g.out(grass_rough, E.MaterialProperty.MP_ROUGHNESS)
     g.out(0.25, E.MaterialProperty.MP_SPECULAR)
     g.out(g.mul(color, 0.6), E.MaterialProperty.MP_SUBSURFACE_COLOR)
     g.out(g.lerp(0.35, 1.0, tip), E.MaterialProperty.MP_AMBIENT_OCCLUSION)
@@ -738,6 +740,7 @@ def build_prop_master(tex):
     moss_w = g.mul(moss_w, sparam("Moss", 0.6))
     color = g.lerp(color, g.mul(moss_tex, (0.75, 0.82, 0.62)), moss_w)
     color, fire_glow = fire_char(g, color, wp, strength=0.85, glow=0.6)  # soot on trunks and stones
+    color, rough = weather_wet(g, color, rough, gloss=0.2)  # rain-soaked (UNR-T79)
     g.out(color, E.MaterialProperty.MP_BASE_COLOR)
     if fire_glow is not None:
         g.out(fire_glow, E.MaterialProperty.MP_EMISSIVE_COLOR)
@@ -807,19 +810,20 @@ def build_foliage_master(tex):
     tint = g.new(E.MaterialExpressionVectorParameter, parameter_name="Tint", default_value=unreal.LinearColor(1, 1, 1, 1))
     color = g.mul((base, "RGB"), (tint, "RGB"))
     wp = g.world()
+    color, leaf_rough = weather_wet(g, color, g.maxx((arm, "G"), 0.55), darken=0.75, gloss=0.3)  # UNR-T79
     color, fire_glow = fire_char(g, color, wp)
     g.out(color, E.MaterialProperty.MP_BASE_COLOR)
     if fire_glow is not None:
         g.out(fire_glow, E.MaterialProperty.MP_EMISSIVE_COLOR)
     g.out((nrm, "RGB"), E.MaterialProperty.MP_NORMAL)
-    g.out(g.maxx((arm, "G"), 0.55), E.MaterialProperty.MP_ROUGHNESS)
+    g.out(leaf_rough, E.MaterialProperty.MP_ROUGHNESS)
     g.out(g.mul(color, 0.5), E.MaterialProperty.MP_SUBSURFACE_COLOR)
     g.out(fire_dissolve(g, (alpha, "R"), uv, wp), E.MaterialProperty.MP_OPACITY_MASK)
     # Light wind sway growing with height above the plant's pivot.
     above = g.sat(g.div(g.sub(g.mask(wp, b=True), g.mask(g.new(E.MaterialExpressionObjectPositionWS), b=True)), 600.0))
-    phase = g.add(g.mul(g.time(), 1.3), g.div(g.add(g.mask(wp, r=True), g.mask(wp, g=True)), 380.0))
+    phase = g.add(g.mul(weather_time(g), 1.3), g.div(g.add(g.mask(wp, r=True), g.mask(wp, g=True)), 380.0))
     sway = g.mul(g.mul(g.sine(phase), above), 6.0)
-    g.out(g.append(g.append(sway, g.mul(sway, 0.6)), 0.0), E.MaterialProperty.MP_WORLD_POSITION_OFFSET)
+    g.out(weather_sway(g, sway, 0.6), E.MaterialProperty.MP_WORLD_POSITION_OFFSET)  # UNR-T79
     try:
         mat.set_editor_property("max_world_position_offset_displacement", 20.0)
     except Exception:
@@ -1150,6 +1154,214 @@ def place_day_night():
     setp(dn, "star_distance", STAR_DISTANCE)
     log("day/night cycle placed (stars: %s)" % (star_mesh is not None))
     return dn
+
+
+# ----------------------------------------------------------------------------------------------
+# Weather (UNR-T79): AIslandWeather writes MPC_Weather at runtime. Wetness darkens and glosses the terrain, props,
+# foliage and grass (weather_wet); the wind's direction, strength and gusts drive their sway (weather_time,
+# weather_sway). It draws rain streaks, splash rings and blown leaves with the materials built here.
+# ----------------------------------------------------------------------------------------------
+
+WEATHER_MPC = ROOT + "/Materials/MPC_Weather"          # AIslandWeather loads it from here too
+WEATHER_FX = ROOT + "/Materials/Weather"               # M_WeatherRain / M_WeatherSplash / M_WeatherLeaf (paths in IslandWeather.cpp)
+WEATHER_SCALARS = (("Wetness", 0.0), ("Rain", 0.0), ("Overcast", 0.0), ("WindStrength", 1.0), ("Gust", 0.0),
+                   ("WindTime", 0.0), ("RainBrightness", 0.5))
+WEATHER_VECTORS = (("WindDir", (0.6, 0.8, 1.0, 0.0)), ("RainOffset", (0.0, 0.0, 0.0, 0.0)),
+                   ("RainBox", (3000.0, 3000.0, 1400.0, 0.0)), ("RainSlant", (0.0, 0.0, 0.0, 0.0)),
+                   ("RainStreak", (0.0, 27.5, 0.0, 0.0)))
+_weather_mpc = []
+
+
+def weather_mpc():
+    """MPC_Weather, created on first use (kept as it is when its parameters already match)."""
+    if not _weather_mpc:
+        mpc = None
+        try:
+            folder = ROOT + "/Materials"
+            ensure_dir(folder)
+            mpc = eal.load_asset(WEATHER_MPC) if eal.does_asset_exist(WEATHER_MPC) else tools.create_asset(
+                "MPC_Weather", folder, unreal.MaterialParameterCollection, unreal.MaterialParameterCollectionFactoryNew())
+            want = ([n for n, _ in WEATHER_SCALARS], [n for n, _ in WEATHER_VECTORS])
+            have = ([str(p.get_editor_property("parameter_name")) for p in mpc.get_editor_property("scalar_parameters")],
+                    [str(p.get_editor_property("parameter_name")) for p in mpc.get_editor_property("vector_parameters")])
+            if have != want:
+                scalars, vectors = [], []
+                for name, value in WEATHER_SCALARS:
+                    p = unreal.CollectionScalarParameter()  # the constructor gives it a fresh id
+                    p.set_editor_property("parameter_name", name)
+                    p.set_editor_property("default_value", value)
+                    scalars.append(p)
+                for name, v in WEATHER_VECTORS:
+                    p = unreal.CollectionVectorParameter()
+                    p.set_editor_property("parameter_name", name)
+                    p.set_editor_property("default_value", unreal.LinearColor(v[0], v[1], v[2], v[3]))
+                    vectors.append(p)
+                mpc.set_editor_property("scalar_parameters", scalars)
+                mpc.set_editor_property("vector_parameters", vectors)
+            eal.save_loaded_asset(mpc)
+            log("weather MPC %s: %s" % (WEATHER_MPC, ", ".join(want[0] + want[1])))
+        except Exception as exc:
+            warn("weather MPC: %s (no wetness, rain or wind-driven sway)" % exc)
+            mpc = None
+        _weather_mpc.append(mpc)
+    return _weather_mpc[0]
+
+
+def weather_param(g, name):
+    """MPC_Weather.<name> in this graph (float4 for the vectors), or None without the MPC."""
+    mpc = weather_mpc()
+    if mpc is None:
+        return None
+    return g.new(E.MaterialExpressionCollectionParameter, collection=mpc, parameter_name=name)
+
+
+def weather_wet(g, color, rough, darken=0.6, gloss=0.15):
+    """Rain-soaked surfaces: darker, and glossier (most on upward faces, where the water sits)."""
+    wet = weather_param(g, "Wetness")
+    if wet is None:
+        return color, rough
+    up = g.sat(g.mask(g.new(E.MaterialExpressionVertexNormalWS), b=True))
+    color = g.mul(color, g.lerp(1.0, darken, wet))
+    rough = g.lerp(rough, gloss, g.mul(wet, g.lerp(0.5, 1.0, up)))
+    return color, rough
+
+
+def weather_time(g):
+    """The sway clock: Time, run faster in the gusts (AIslandWeather integrates WindTime)."""
+    t = g.time()
+    wt = weather_param(g, "WindTime")
+    return t if wt is None else g.add(t, wt)
+
+
+def weather_sway(g, sway, side=0.35):
+    """Sway (cm, signed) laid along the wind and scaled by its strength, as a WPO vector."""
+    d = weather_param(g, "WindDir")
+    if d is None:
+        return g.append(g.append(sway, g.mul(sway, side)), 0.0)
+    s = g.mul(sway, weather_param(g, "WindStrength"))
+    return g.append(g.append(g.mul(s, g.mask(d, r=True)), g.mul(s, g.mask(d, g=True))), 0.0)
+
+
+def build_rain_material():
+    """Rain streaks: thin cylinders AIslandWeather scatters through a box. The material wraps each one round the
+    camera by world position (so the rain stays put in the world as you move), drops it with RainOffset, slants
+    it along the wind, and shows the fraction of drops the Rain amount asks for."""
+    mat, g = new_material("M_WeatherRain", WEATHER_FX)
+    setp(mat, "shading_model", E.MaterialShadingModel.MSM_UNLIT)
+    setp(mat, "blend_mode", E.BlendMode.BLEND_TRANSLUCENT)
+    setp(mat, "two_sided", True)
+    setp(mat, "used_with_instanced_static_meshes", True)
+    # The drops are moved far from their instances (wrapped round the camera): the GPU culls instances by
+    # their bounds, so grow them by the whole rain box or almost every drop is culled before it moves.
+    setp(mat, "max_world_position_offset_displacement", 60000.0)
+
+    def rgb(name):
+        return g.mask(weather_param(g, name), r=True, g=True, b=True)
+
+    box = rgb("RainBox")
+    # Each drop's own origin: its local (0,0,0) in world space. (Object Position is the whole component's
+    # position on an instanced mesh, so every drop got the same shift and the box slid off screen.)
+    pivot = g.op(E.MaterialExpressionTransformPosition, {"": (0.0, 0.0, 0.0)},
+                 transform_source_type=E.MaterialPositionTransformSource.TRANSFORMPOSSOURCE_LOCAL,
+                 transform_type=E.MaterialPositionTransformSource.TRANSFORMPOSSOURCE_WORLD)
+    cam = g.new(E.MaterialExpressionCameraPositionWS)
+    d = g.sub(pivot, cam)
+    rel = g.add(d, rgb("RainOffset"))
+    wrapped = g.mul(g.sub(g.op(E.MaterialExpressionFrac, {"": g.add(g.div(rel, box), (0.5, 0.5, 0.5))}), (0.5, 0.5, 0.5)), box)
+    local = g.sub(g.world(), pivot)
+    vz = g.mask(local, b=True)
+    slant = g.mask(weather_param(g, "RainSlant"), r=True, g=True)
+    wpo = g.add(g.sub(wrapped, d), g.append(g.mul(slant, vz), 0.0))
+    vis = g.sat(g.mul(g.sub(weather_param(g, "Rain"), g.new(E.MaterialExpressionPerInstanceRandom)), 40.0))
+    wpo = g.sub(wpo, g.mul(local, g.one_minus(vis)))  # the drops not falling collapse to a point
+    g.out(wpo, E.MaterialProperty.MP_WORLD_POSITION_OFFSET)
+
+    along = 1.0
+    try:
+        raw = g.new(E.MaterialExpressionWorldPosition,
+                    world_position_shader_offset=E.WorldPositionIncludedOffsets.WPT_EXCLUDE_ALL_SHADER_OFFSETS)
+        streak = weather_param(g, "RainStreak")
+        pz = g.mask(g.sub(raw, pivot), b=True)
+        along = g.sat(g.mul(g.one_minus(g.sat(g.div(g.abs(g.sub(pz, g.mask(streak, r=True))), g.mask(streak, g=True)))), 2.5))
+    except Exception as exc:
+        warn("rain streak taper: %s" % exc)
+    near = g.smooth(30.0, 160.0, g.depth())
+    flat = g.mask(g.sub(g.world(), cam), r=True, g=True)
+    dist = g.op(E.MaterialExpressionSquareRoot, {"": g.dot(flat, flat)})
+    half = g.mul(g.mask(weather_param(g, "RainBox"), r=True), 0.5)
+    far = g.one_minus(g.smooth(g.mul(half, 0.6), half, dist))
+    g.out(g.mul(g.mul(g.mul(near, far), along), 0.55), E.MaterialProperty.MP_OPACITY)
+    g.out(g.mul((0.78, 0.82, 0.88), weather_param(g, "RainBrightness")), E.MaterialProperty.MP_EMISSIVE_COLOR)
+    finish_material(mat)
+    return mat
+
+
+def build_weather_splash_material():
+    """Where a drop lands: a bright fleck and a ring spreading out and fading (reads as a ripple on water).
+    Per-instance custom data 0 is the splash's age, 0..1."""
+    mat, g = new_material("M_WeatherSplash", WEATHER_FX)
+    setp(mat, "shading_model", E.MaterialShadingModel.MSM_UNLIT)
+    setp(mat, "blend_mode", E.BlendMode.BLEND_TRANSLUCENT)
+    setp(mat, "two_sided", True)
+    setp(mat, "used_with_instanced_static_meshes", True)
+    c = g.sub(g.new(E.MaterialExpressionTextureCoordinate), (0.5, 0.5))
+    r = g.mul(g.op(E.MaterialExpressionSquareRoot, {"": g.dot(c, c)}), 2.0)
+    age = g.new(E.MaterialExpressionPerInstanceCustomData, data_index=0, const_default_value=1.0)
+    ring = g.one_minus(g.smooth(0.0, 0.1, g.abs(g.sub(r, g.add(0.12, g.mul(age, 0.85))))))
+    ring = g.mul(ring, g.one_minus(age))
+    fleck = g.mul(g.one_minus(g.smooth(0.0, 0.2, r)), g.one_minus(g.smooth(0.0, 0.35, age)))
+    alpha = g.mul(g.sat(g.add(g.mul(ring, 0.6), g.mul(fleck, 0.8))), g.one_minus(g.smooth(0.9, 1.0, r)))
+    g.out(alpha, E.MaterialProperty.MP_OPACITY)
+    g.out(g.mul((1.04, 1.09, 1.17), weather_param(g, "RainBrightness")), E.MaterialProperty.MP_EMISSIVE_COLOR)
+    finish_material(mat)
+    return mat
+
+
+def build_leaf_material():
+    """A blown leaf on a quad: pointed oval cut out of the UVs, a midrib, green to autumn brown per instance."""
+    mat, g = new_material("M_WeatherLeaf", WEATHER_FX)
+    setp(mat, "blend_mode", E.BlendMode.BLEND_MASKED)
+    setp(mat, "shading_model", E.MaterialShadingModel.MSM_TWO_SIDED_FOLIAGE)
+    setp(mat, "two_sided", True)
+    setp(mat, "used_with_instanced_static_meshes", True)
+    uv = g.new(E.MaterialExpressionTextureCoordinate)
+    x = g.abs(g.mul(g.sub(g.mask(uv, r=True), 0.5), 2.0))
+    y = g.mask(uv, g=True)
+    width = g.mul(g.op(E.MaterialExpressionPower, {"Base": g.sat(g.sine(g.mul(y, 3.14159265))), "Exp": 0.75}), 0.85)
+    g.out(g.sat(g.mul(g.sub(width, x), 25.0)), E.MaterialProperty.MP_OPACITY_MASK)
+    rnd = g.new(E.MaterialExpressionPerInstanceRandom)
+    color = g.lerp(g.lerp((0.09, 0.15, 0.03), (0.32, 0.28, 0.05), g.sat(g.mul(rnd, 2.0))), (0.24, 0.11, 0.035),
+                   g.sat(g.sub(g.mul(rnd, 2.0), 1.0)))
+    color = g.mul(color, g.lerp(0.65, 1.0, g.smooth(0.0, 0.07, x)))
+    color, rough = weather_wet(g, color, 0.6, darken=0.8, gloss=0.35)
+    g.out(color, E.MaterialProperty.MP_BASE_COLOR)
+    g.out(rough, E.MaterialProperty.MP_ROUGHNESS)
+    g.out(g.mul(color, 0.7), E.MaterialProperty.MP_SUBSURFACE_COLOR)
+    finish_material(mat)
+    return mat
+
+
+def build_weather():
+    """UNR-T79: the weather's materials and the IslandWeather actor (called once, after build_sky)."""
+    mats = (None, None, None)
+    if weather_mpc() is not None:
+        try:
+            ensure_dir(WEATHER_FX)
+            mats = (build_rain_material(), build_weather_splash_material(), build_leaf_material())
+        except Exception as exc:
+            warn("weather materials: %s" % exc)
+    cls = getattr(unreal, "IslandWeather", None)
+    if cls is None:
+        warn("IslandWeather class missing (compile the C++ module first); no weather placed")
+        return None
+    w = spawn(cls, (0, 0, 0), None, "Weather", "Sky")
+    if weather_mpc() is not None:
+        setp(w, "parameter_collection", weather_mpc())
+    for prop, mat in zip(("rain_material", "splash_material", "leaf_material"), mats):
+        if mat is not None:
+            setp(w, prop, mat)
+    log("weather placed (MPC %s, materials %s)" % (weather_mpc() is not None, [m is not None for m in mats]))
+    return w
 
 
 def build_ocean(mat):
@@ -3780,6 +3992,7 @@ def build_everything(textures, models):
     log("landscape: extent %.0f cm, height at start %.0f, at hill %.0f" % (LIB.get_landscape_extent(), height(*start), height(*HILL)))
 
     build_sky()
+    build_weather()  # UNR-T79: rain fronts, wind, wet surfaces, blown leaves
     build_ocean(ocean_mat)
     build_sea_walls(start)
     build_water(world, textures, mask_tex)
