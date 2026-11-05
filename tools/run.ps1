@@ -15,7 +15,8 @@ param(
 # join it on 127.0.0.1.
 #
 # Every run is filmed by MindAttic.Capture (capture.exe, installed by that repo's run.ps1): the
-# game's window is recorded from launch to exit at its own size (1920x1080) and the session lands in
+# game's window is recorded by its handle from launch to exit (its 1920x1080 picture plus the title
+# bar, at the hq tape quality) and the session lands in
 # R:\MindAttic\Capture\Unreal.Soulslike\. With several players, player 1's window is the one filmed.
 
 $ErrorActionPreference = 'Stop'
@@ -80,19 +81,15 @@ while ((Get-Date) -lt `$deadline) {
 }
 if (-not `$p) { exit }
 Start-Sleep -Seconds 4
-# Film exactly the game's client area (its 1920x1080 picture, no title bar or borders).
-Add-Type -Namespace SoulsCap -Name U -MemberDefinition @'
-[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
-[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)] public struct POINT { public int X, Y; }
-[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool GetClientRect(System.IntPtr h, out RECT r);
-[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool ClientToScreen(System.IntPtr h, ref POINT p);
-'@
-`$r = New-Object SoulsCap.U+RECT
-[SoulsCap.U]::GetClientRect(`$p.MainWindowHandle, [ref]`$r) | Out-Null
-`$o = New-Object SoulsCap.U+POINT
-[SoulsCap.U]::ClientToScreen(`$p.MainWindowHandle, [ref]`$o) | Out-Null
-`$region = '{0},{1},{2},{3}' -f `$o.X, `$o.Y, (`$r.R - `$r.L), (`$r.B - `$r.T)
-Start-Process -FilePath '$capture' -ArgumentList @('record', '--region', `$region, '--app', 'Unreal.Soulslike', '--hq') -WindowStyle Minimized | Out-Null
+# Film the game's window itself (Windows.Graphics.Capture by handle), not a rectangle of the desktop:
+# a desktop region films whatever is on top, so a terminal over the game replaced the game in the
+# recording. The window capture includes the title bar.
+`$hwnd = '0x{0:x}' -f `$p.MainWindowHandle.ToInt64()
+# The editor running -game leaves well under the default 2 GB of free RAM (559 and 669 MB were seen),
+# which stopped recordings after 5 s; keep a smaller floor for play sessions.
+`$cfg = Join-Path `$env:TEMP 'unreal-soulslike-capture.json'
+Set-Content -LiteralPath `$cfg -Value '{ "limits": { "minFreeMemoryMB": 384 } }' -Encoding ASCII
+Start-Process -FilePath '$capture' -ArgumentList @('record', '--hwnd', `$hwnd, '--app', 'Unreal.Soulslike', '--hq', '--config', "``"`$cfg``"") -WindowStyle Minimized | Out-Null
 `$p.WaitForExit()
 & '$capture' stop | Out-Null
 "@
