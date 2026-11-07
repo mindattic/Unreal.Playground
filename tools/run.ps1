@@ -8,7 +8,14 @@ param(
   # Skip the MindAttic.Capture recording.
   [switch]$NoCapture,
   [int]$ResX = 1920,
-  [int]$ResY = 1080
+  [int]$ResY = 1080,
+  # UNR-T87: no window, no sound, for scripted/automated testing, through the shared launcher
+  # (..\Unreal.Shared\tools\Start-Headless.ps1, MindAtticShared's --headless). Waits for the
+  # MINDATTIC_HEADLESS_READY line and leaves the game running (its process is returned);
+  # -StopAfterReady stops it once ready (a start-up smoke test).
+  [switch]$Headless,
+  [switch]$StopAfterReady,
+  [int]$TimeoutSeconds = 300
 )
 
 # Launches the game windowed at 1920x1080. Players > 1: instance 1 is a listen server, the rest
@@ -25,6 +32,18 @@ $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $uproject = Join-Path $repo 'UnrealSoulslike.uproject'
 $map = '/Game/Souls/Maps/Lvl_Isle'
+
+if ($Headless) {
+  # The editor's -game on Lvl_Isle, which the game boots straight into (there is no menu to wait at).
+  if ($Players -gt 1 -or $Packaged) { throw '-Headless runs one player from the editor binaries (a Shipping build writes no log for the ready line).' }
+  $launcher = Join-Path $repo '..\Unreal.Shared\tools\Start-Headless.ps1'
+  if (-not (Test-Path -LiteralPath $launcher)) { throw "-Headless needs Unreal.Shared cloned next to this repo ($launcher)." }
+  $gameArgs = @("-ResX=$ResX", "-ResY=$ResY") + @($Extra -split '\s+' | Where-Object { $_ })
+  # -PassThru by name, so the game's own -flags never reach PowerShell's parameter binding.
+  return & $launcher -Project $uproject -EngineRoot (Find-UnrealEngine) -Map $map -Wait -TimeoutSeconds $TimeoutSeconds `
+    -StopAfterReady:$StopAfterReady -PassThru $gameArgs
+}
+
 $capture = Join-Path $env:LOCALAPPDATA 'MindAttic\Capture\bin\capture.exe'
 $useCapture = -not $NoCapture
 if ($useCapture -and -not (Test-Path -LiteralPath $capture)) {

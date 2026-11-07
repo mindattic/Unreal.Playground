@@ -57,6 +57,13 @@
 		{
 			"Name": "OnlineSubsystemSteam",
 			"Enabled": false
+		},
+		{
+			"Name": "MindAtticShared",
+			"Enabled": true
 		}
+	],
+	"AdditionalPluginDirectories": [
+		"../Unreal.Shared/Plugins"
 	]
 }
