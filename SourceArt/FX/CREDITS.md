@@ -8,8 +8,8 @@ noise up-res) in Blender 4.4, rendered with Cycles volumes and packed into loopi
 
 | Asset(s) | Author | Source | License |
 |---|---|---|---|
-| `Fire/T_FireFlipbook.png` (4096x4096, 64 frames of 512: R flame, G hottest gas, B soot, A coverage) | Unreal.Soulslike (generated) | `tools/bake_fire_flipbooks.py --sim fire` | CC0 1.0 (http://creativecommons.org/publicdomain/zero/1.0/) |
-| `Fire/T_SmokeFlipbook.png` (2048x2048, 64 frames of 256: lit grey smoke, A opacity) | Unreal.Soulslike (generated) | `tools/bake_fire_flipbooks.py --sim smoke` | CC0 1.0 |
+| `Fire/T_FireFlipbook.png` (4096x4096, 64 frames of 512: R flame, G hottest gas, B soot, A coverage) | Unreal.Playground (generated) | `tools/bake_fire_flipbooks.py --sim fire` | CC0 1.0 (http://creativecommons.org/publicdomain/zero/1.0/) |
+| `Fire/T_SmokeFlipbook.png` (2048x2048, 64 frames of 256: lit grey smoke, A opacity) | Unreal.Playground (generated) | `tools/bake_fire_flipbooks.py --sim smoke` | CC0 1.0 |
 
 The hero gas fire (`NS_FluidFire`) is a copy of Epic's `Grid3D_Gas_Fire` template from the NiagaraFluids
 plugin that ships with Unreal Engine 5.8 (Engine/Plugins/FX/NiagaraFluids). It is engine content, used

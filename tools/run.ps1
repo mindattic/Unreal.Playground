@@ -24,7 +24,7 @@ param(
 # Every run is filmed by MindAttic.Capture (capture.exe, installed by that repo's run.ps1): the
 # game's window is recorded by its handle from launch to exit (its 1920x1080 picture plus the title
 # bar, at the hq tape quality) and the session lands in
-# R:\MindAttic\Capture\Unreal.Soulslike\. With several players, player 1's window is the one filmed.
+# R:\MindAttic\Capture\Unreal.Playground\. With several players, player 1's window is the one filmed.
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'find-engine.ps1')
@@ -52,7 +52,7 @@ if ($useCapture -and -not (Test-Path -LiteralPath $capture)) {
 }
 
 if ($Packaged) {
-  $exe = Join-Path $repo 'Builds\Cpp\Windows\Unreal.Soulslike.Cpp.exe'
+  $exe = Join-Path $repo 'Builds\Cpp\Windows\Unreal.Playground.Cpp.exe'
   if (-not (Test-Path -LiteralPath $exe)) { throw "No packaged build at $exe; run tools\package.ps1 -Only Cpp." }
   # The packaged exe is a launcher stub: the real window belongs to the Shipping process.
   $realProcess = 'UnrealSoulslike-Win64-Shipping'
@@ -108,11 +108,11 @@ Start-Sleep -Seconds 4
 # which stopped recordings after 5 s; keep a smaller floor for play sessions.
 `$cfg = Join-Path `$env:TEMP 'unreal-soulslike-capture.json'
 Set-Content -LiteralPath `$cfg -Value '{ "limits": { "minFreeMemoryMB": 384 } }' -Encoding ASCII
-Start-Process -FilePath '$capture' -ArgumentList @('record', '--hwnd', `$hwnd, '--app', 'Unreal.Soulslike', '--hq', '--config', "``"`$cfg``"") -WindowStyle Minimized | Out-Null
+Start-Process -FilePath '$capture' -ArgumentList @('record', '--hwnd', `$hwnd, '--app', 'Unreal.Playground', '--hq', '--config', "``"`$cfg``"") -WindowStyle Minimized | Out-Null
 `$p.WaitForExit()
 & '$capture' stop | Out-Null
 "@
-    Write-Output "Recording with MindAttic.Capture -> R:\MindAttic\Capture\Unreal.Soulslike"
+    Write-Output "Recording with MindAttic.Capture -> R:\MindAttic\Capture\Unreal.Playground"
     $watchFile = Join-Path $env:TEMP 'unreal-soulslike-capture-watch.ps1'
     Set-Content -LiteralPath $watchFile -Value $watch -Encoding UTF8
     Start-Process -FilePath 'powershell' -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$watchFile`"") -WindowStyle Hidden | Out-Null

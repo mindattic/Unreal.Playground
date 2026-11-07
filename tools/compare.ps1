@@ -7,8 +7,8 @@ param(
 # Runs both packaged builds (tools/package.ps1) one at a time with the same unattended benchmark,
 # counts gameplay lines of code per language, reads Builds/build-times.json and writes
 # docs/COMPARISON.md (UNR-T8).
-#   Unreal.Soulslike.Cpp.exe    -> benchmark-cpp.json
-#   Unreal.Soulslike.CSharp.exe -> benchmark-csharp.json
+#   Unreal.Playground.Cpp.exe    -> benchmark-cpp.json
+#   Unreal.Playground.CSharp.exe -> benchmark-csharp.json
 
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
@@ -17,8 +17,8 @@ $reportPath = Join-Path $repo 'docs\COMPARISON.md'
 $runArgs = "-DemoBot -Benchmark=$Seconds -windowed -ResX=1280 -ResY=720"
 
 $builds = @(
-  @{ Key = 'cpp'; Label = 'C++'; Exe = 'Unreal.Soulslike.Cpp.exe'; Dir = (Join-Path $BuildsDir 'Cpp') },
-  @{ Key = 'csharp'; Label = 'C# (UnrealSharp)'; Exe = 'Unreal.Soulslike.CSharp.exe'; Dir = (Join-Path $BuildsDir 'CSharp') }
+  @{ Key = 'cpp'; Label = 'C++'; Exe = 'Unreal.Playground.Cpp.exe'; Dir = (Join-Path $BuildsDir 'Cpp') },
+  @{ Key = 'csharp'; Label = 'C# (UnrealSharp)'; Exe = 'Unreal.Playground.CSharp.exe'; Dir = (Join-Path $BuildsDir 'CSharp') }
 )
 
 # Development builds keep Saved next to the game; Shipping builds write to %LOCALAPPDATA%\<Project>\Saved.

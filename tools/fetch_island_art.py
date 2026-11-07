@@ -16,7 +16,7 @@ import urllib.request
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEST = os.path.join(REPO, "SourceArt", "Environment", "PolyHaven")
 API = "https://api.polyhaven.com"
-UA = {"User-Agent": "Unreal.Soulslike island art fetcher (UNR-T12)"}
+UA = {"User-Agent": "Unreal.Playground island art fetcher (UNR-T12)"}
 
 # Terrain / surface texture sets: id -> the Poly Haven maps the terrain material actually samples.
 FULL = ("Diffuse", "nor_gl", "arm", "Displacement")

@@ -1,10 +1,10 @@
 ---
-project: Unreal.Soulslike
+project: Unreal.Playground
 layer: design
 status: living
 ---
 
-# Design: Unreal.Soulslike
+# Design: Unreal.Playground
 
 ## Pitch
 
@@ -101,7 +101,7 @@ can be compared on real numbers (UNR-T8).
    editor, which imports the art, creates the materials (and input assets for the C# twin),
    builds the map and writes `CharacterAssets.json` and `EnvironmentAssets.json`.
 3. `tools/run.ps1 [-Players N]` plays the game, solo or as co-op on one machine.
-4. `tools/package.ps1` produces `Builds/Cpp/Unreal.Soulslike.Cpp.exe` and
-   `Builds/CSharp/Unreal.Soulslike.CSharp.exe`.
+4. `tools/package.ps1` produces `Builds/Cpp/Unreal.Playground.Cpp.exe` and
+   `Builds/CSharp/Unreal.Playground.CSharp.exe`.
 5. `tools/compare.ps1` runs both builds with `-DemoBot -Benchmark=60` and writes
    `docs/COMPARISON.md`.

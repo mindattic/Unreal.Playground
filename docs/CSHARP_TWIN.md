@@ -1,5 +1,5 @@
 ---
-project: Unreal.Soulslike
+project: Unreal.Playground
 layer: research
 status: living
 updated: 2026-11-03
@@ -43,7 +43,7 @@ Known issues:
 
 - [#244](https://github.com/UnrealSharp/UnrealSharp/issues/244): the managed step looks for the
   `<ProjectName>` folder and exe. PR #785 addresses the target-naming part. **Rename the root exe
-  to `Unreal.Soulslike.CSharp.exe` only after step 2.**
+  to `Unreal.Playground.CSharp.exe` only after step 2.**
 - [#786](https://github.com/UnrealSharp/UnrealSharp/issues/786): the managed files aren't part
   of UE staging yet (open). This doesn't affect Windows.
 - [#718](https://github.com/UnrealSharp/UnrealSharp/issues/718): a GC crash in packaged games
@@ -132,7 +132,7 @@ extensions.
    instead of iterating over actors.
 6. **Exe names.** UE target names can't contain dots. Package the targets `UnrealSoulslikeCpp`
    and `UnrealSoulslikeCSharp`, then rename the root launcher exe (it runs whatever is under
-   `Binaries/Win64`) to `Unreal.Soulslike.Cpp.exe` and `Unreal.Soulslike.CSharp.exe`. For the C#
+   `Binaries/Win64`) to `Unreal.Playground.Cpp.exe` and `Unreal.Playground.CSharp.exe`. For the C#
    build, rename only after UnrealSharp's PackageProject step.
 
 ## Recommended setup

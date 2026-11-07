@@ -7,8 +7,8 @@ param(
 )
 
 # Packages both builds of the game for a side-by-side comparison (UNR-T8):
-#   Builds\Cpp\Windows\Unreal.Soulslike.Cpp.exe       - the C++ project (UnrealSoulslike.uproject)
-#   Builds\CSharp\Windows\Unreal.Soulslike.CSharp.exe - the UnrealSharp twin (CSharp\UnrealSoulslikeCSharp.uproject)
+#   Builds\Cpp\Windows\Unreal.Playground.Cpp.exe       - the C++ project (UnrealSoulslike.uproject)
+#   Builds\CSharp\Windows\Unreal.Playground.CSharp.exe - the UnrealSharp twin (CSharp\UnrealSoulslikeCSharp.uproject)
 # and records how long every step took in Builds\build-times.json (merged, so -Only keeps the other side).
 #
 # UE target names can't contain dots, so each build's root launcher exe is renamed after packaging.
@@ -96,7 +96,7 @@ if ($Only -ne 'CSharp') {
   $archiveDir = Join-Path $buildsDir 'Cpp'
   Set-EngineAssociation $uproject
   Invoke-TimedStep 'cpp' 'build_cook_package' { Invoke-BuildCookRun $uproject $archiveDir }
-  $exe = Rename-LauncherExe (Get-ArchiveRoot $archiveDir) 'Unreal.Soulslike.Cpp.exe'
+  $exe = Rename-LauncherExe (Get-ArchiveRoot $archiveDir) 'Unreal.Playground.Cpp.exe'
   Write-Output "C++ build: $exe"
 }
 
@@ -125,7 +125,7 @@ if ($Only -ne 'Cpp') {
     if ($LASTEXITCODE -ne 0) { throw "UnrealSharp PackageProject failed (exit $LASTEXITCODE)." }
   }
 
-  $exe = Rename-LauncherExe $archiveRoot 'Unreal.Soulslike.CSharp.exe'
+  $exe = Rename-LauncherExe $archiveRoot 'Unreal.Playground.CSharp.exe'
   Write-Output "C# build: $exe"
 }
 
