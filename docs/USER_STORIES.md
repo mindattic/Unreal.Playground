@@ -1,6 +1,6 @@
 ---
 codex: 1
-project: Unreal.Soulslike
+project: Unreal.Playground
 code: UNR
 layer: stories
 status: living
@@ -8,7 +8,7 @@ updated: 2026-11-03
 ---
 <!-- GENERATED from MindAttic.Tickets/data/Tickets.db by `tickets db render`. Do not edit: this file is rewritten from the database; change stories and tickets with the tickets CLI. -->
 
-# Unreal.Soulslike — User Stories
+# Unreal.Playground — User Stories
 > ✅ done (shipped & tested) · 🟡 partial · ⬜ planned. Every ✅ cites the test.
 
 ## Priority backlog
@@ -95,9 +95,18 @@ _Nothing recorded yet._
 | UNR-T72 | 2026-11-04 | fix | closed | Ranger: feet detached from the body, run animation barely moves | — |
 | UNR-T73 | 2026-11-04 | fix | closed | Mech: one leg dead, inverted pitch; X/F turns legs to the torso, LT/RT fire, A or X key stops | — |
 | UNR-T74 | 2026-11-04 | fix | closed | Day starts at dawn; a full day takes 5 minutes | — |
-| UNR-T75 | 2026-11-04 | fix | open | Fire looks bad: torches and field fire need convincing flames | — |
+| UNR-T75 | 2026-11-04 | fix | closed | Fire looks bad: torches and field fire need convincing flames | — |
 | UNR-T76 | 2026-11-04 | fix | closed | Glide only after a grapple launch | — |
-| UNR-T77 | 2026-11-04 | feature | open | Wall running (Titanfall-style) plus long practice walls | — |
+| UNR-T77 | 2026-11-04 | feature | closed | Wall running (Titanfall-style) plus long practice walls | — |
 | UNR-T78 | 2026-11-04 | fix | closed | Night never pitch black: at most a dark, perfectly playable purple | — |
-| UNR-T79 | 2026-11-04 | feature | open | Weather: rain clouds that drift across the sky and bring rain; wind that blows leaves from the trees | — |
-| UNR-T80 | 2026-11-04 | fix | open | Dawn was the darkest moment of the day and night was a bright lilac: hold the night lift until the sun is 25 deg up and halve the night boost | — |
+| UNR-T79 | 2026-11-04 | feature | closed | Weather: rain clouds that drift across the sky and bring rain; wind that blows leaves from the trees | — |
+| UNR-T80 | 2026-11-04 | fix | closed | Dawn was the darkest moment of the day and night was a bright lilac: hold the night lift until the sun is 25 deg up and halve the night boost | — |
+| UNR-T81 | 2026-11-04 | fix | closed | Star fighter: up/down pitch controls inverted the wrong way; flip them | — |
+| UNR-T82 | 2026-11-04 | fix | closed | Capture stops after ~1:40: lossless 1080p60 encoder falls 60 s behind; record at hq quality | — |
+| UNR-T83 | 2026-11-04 | fix | closed | Play captures film the desktop region, not the game window, and the 2 GB RAM valve stops them | — |
+| UNR-T84 | 2026-11-05 | feature | open | Add Silver Soldier (Sketchfab CC-BY) as a new bestiary enemy type | — |
+| UNR-T85 | 2026-11-05 | feature | open | Character roster: cycle between melee knight and gun-wielding Ranger with , and . | — |
+| UNR-T86 | 2026-11-05 | feature | open | Mario-style movement moveset for the new bunny-mascot playable character | — |
+| UNR-T87 | 2026-11-06 | feature | closed | Adopt the shared off-by-default --headless launch mode (Unreal.Shared) | — |
+| UNR-T88 | 2026-11-07 | chore | closed | Rename Unreal.Soulslike to Unreal.Playground: it is a testing ground for gameplay mechanics | — |
+| UNR-T89 | 2026-11-10 | chore | open | Sync .agent/ fleet-wide commands and regenerate docs/USER_STORIES.md to catch up with closed tickets | — |
