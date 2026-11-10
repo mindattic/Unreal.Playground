@@ -3505,7 +3505,8 @@ def build_mech_materials(tex):
 
 
 def build_mech(world, route, pads, start):
-    """One parked mech on open, flat ground a little off the route through the dunes, facing the path."""
+    """One parked mech on open, flat ground near the landing beach (UNR-T85), facing the start so it
+    greets the player stepping off the sand."""
     parts, tex = import_mech()
     if parts:
         hull = build_mech_materials(tex)
@@ -3518,12 +3519,16 @@ def build_mech(world, route, pads, start):
         return
     grace = route.offset(0.035, 450.0)
     sx, sy = start
+    others = [a.get_actor_location() for a in actors_sub.get_all_level_actors()
+              if getattr(unreal, "SoulsFighter", None) is not None and isinstance(a, unreal.SoulsFighter)]
 
     def flat_and_clear(x, y):
         h = height(x, y)
         if h < 120.0 or LIB.get_path_distance(x, y) < 650.0 or normal_z(x, y) < 0.965:
             return False
-        if math.hypot(x - sx, y - sy) < 2500.0 or math.hypot(x - grace[0], y - grace[1]) < 1500.0:
+        if math.hypot(x - grace[0], y - grace[1]) < 1500.0:
+            return False
+        if any(math.hypot(x - o.x, y - o.y) < 2600.0 for o in others):
             return False
         if any(math.hypot(x - px, y - py) < pr + 900.0 for px, py, pr in pads):
             return False
@@ -3539,28 +3544,37 @@ def build_mech(world, route, pads, start):
         return hit is None or hit[0].z < h + 60.0
 
     spot = None
-    for t in (0.12, 0.10, 0.14, 0.08, 0.16, 0.18, 0.06):
-        for side in (1100.0, -1100.0, 1500.0, -1500.0, 900.0, -900.0, 1900.0, -1900.0):
-            x, y = route.offset(t, side)
+    for r in (900.0, 1300.0, 1700.0, 2200.0, 2800.0, 3500.0, 4300.0):
+        for k in range(24):
+            a = k * math.pi / 12.0
+            x, y = sx + math.cos(a) * r, sy + math.sin(a) * r
             if flat_and_clear(x, y):
-                spot = (x, y, t)
+                spot = (x, y)
                 break
         if spot:
             break
     if spot is None:
-        x, y = route.offset(0.12, 1100.0)
-        spot = (x, y, 0.12)
-        warn("mech: no clear flat spot found; parked at route 0.12 anyway")
-    x, y, t = spot
-    (px, py), _ = route.at(t)
-    yaw = math.degrees(math.atan2(py - y, px - x))  # facing the path, so it greets the player coming up it
+        for t in (0.06, 0.08, 0.10, 0.12):
+            for side in (1100.0, -1100.0, 1500.0, -1500.0):
+                x, y = route.offset(t, side)
+                if flat_and_clear(x, y):
+                    spot = (x, y)
+                    break
+            if spot:
+                break
+    if spot is None:
+        spot = route.offset(0.08, 1100.0)
+        warn("mech: no clear flat spot found near the beach; parked at route 0.08 anyway")
+    x, y = spot
+    yaw = math.degrees(math.atan2(sy - y, sx - x))  # facing the start, so it greets the player coming off the beach
     mech = spawn(cls, (x, y, height(x, y) + MECH_HALF_HEIGHT + 15.0), unreal.Rotator(yaw=yaw), "Mech_Parked", "Gameplay/Vehicles")
-    log("mech parked at (%.0f, %.0f, %.0f) yaw %.0f, route t=%.2f, %.0f cm off the path" % (
-        x, y, height(x, y), yaw, t, LIB.get_path_distance(x, y)))
-    # A shot for -IslandShots: from the path, looking at it.
+    log("mech parked at (%.0f, %.0f, %.0f) yaw %.0f, %.0f cm from the start, %.0f cm off the path" % (
+        x, y, height(x, y), yaw, math.hypot(x - sx, y - sy), LIB.get_path_distance(x, y)))
+    # A shot for -IslandShots: from the start side, looking at it.
     path = os.path.join(PROJECT, "Saved", "island_shots.txt")
     if os.path.exists(path):
-        cx, cy = px + (px - x) * 0.25, py + (py - y) * 0.25
+        d = math.hypot(sx - x, sy - y) or 1.0
+        cx, cy = x + (sx - x) / d * 1500.0, y + (sy - y) / d * 1500.0
         with open(path, "a", encoding="utf-8") as f:
             f.write(shot("mech_parked", cx, cy, height(cx, cy) + 260.0, x, y, height(x, y) + 380.0, fov=70) + "\n")
     return mech

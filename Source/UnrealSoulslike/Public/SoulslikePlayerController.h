@@ -4,6 +4,8 @@
 #include "GameFramework/PlayerController.h"
 #include "SoulslikePlayerController.generated.h"
 
+class USoulsCharacterRosterComponent;
+
 // Game-only input mode, plus unattended-run switches for verifying and comparing builds:
 //   -AutoShot=<seconds>   take a screenshot every N seconds (Saved/Screenshots)
 //   -QuitAfter=<seconds>  exit the game after N seconds
@@ -18,10 +20,15 @@ class UNREALSOULSLIKE_API ASoulslikePlayerController : public APlayerController
 public:
 	ASoulslikePlayerController();
 
+	// The playable-character roster (UNR-T85): , and . cycle through it.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Soulslike")
+	TObjectPtr<USoulsCharacterRosterComponent> Roster;
+
 	virtual void Tick(float DeltaSeconds) override;
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void SetupInputComponent() override;
 
 private:
 	void TakeAutoShot();

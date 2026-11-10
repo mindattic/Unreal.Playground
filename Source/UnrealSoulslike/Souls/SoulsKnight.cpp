@@ -1211,6 +1211,21 @@ void ASoulsKnight::EnsureKnightInput()
 	KnightMappingContext->MapKey(GrappleAction, EKeys::G);
 }
 
+void ASoulsKnight::OnBecomeActive()
+{
+	SetActorHiddenInGame(false);
+	SetActorEnableCollision(true);
+	GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+}
+
+void ASoulsKnight::OnBecomeInactive()
+{
+	GetCharacterMovement()->StopMovementImmediately();
+	GetCharacterMovement()->DisableMovement();
+	SetActorEnableCollision(false);
+	SetActorHiddenInGame(true);
+}
+
 void ASoulsKnight::NotifyControllerChanged()
 {
 	Super::NotifyControllerChanged();

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "CombatCharacter.h"
+#include "ISoulsPlayableCharacter.h"
 #include "SoulsKnight.generated.h"
 
 class UAnimMontage;
@@ -65,12 +66,18 @@ enum class EGrappleMode : uint8
 // - flasks, hitstop and camera kick on impact
 // The player additionally gets lock-on, Sites of Grace and the HUD.
 UCLASS()
-class UNREALSOULSLIKE_API ASoulsKnight : public ACombatCharacter
+class UNREALSOULSLIKE_API ASoulsKnight : public ACombatCharacter, public ISoulsPlayableCharacter
 {
 	GENERATED_BODY()
 
 public:
 	ASoulsKnight();
+
+	// ISoulsPlayableCharacter (UNR-T85): the character roster's hide-and-park swap, same calls
+	// ASoulsMech::Board()/Disembark() already use on this knight while it rides along piloting a
+	// vehicle.
+	virtual void OnBecomeActive() override;
+	virtual void OnBecomeInactive() override;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Knight")
 	TObjectPtr<UStaticMeshComponent> Sword;
@@ -465,6 +472,10 @@ protected:
 	virtual void NotifyControllerChanged() override;
 	virtual bool CanJumpInternal_Implementation() const override;
 
+	// Drives the action/busy state machine and plays its montage (or none); a roster sibling like
+	// ASoulsRanger uses this to register its own non-sword "attacks" the same way.
+	void PlayAction(EKnightAction NewAction, UAnimMontage* Montage, float Duration, float StartFraction = 0.f);
+
 	// The Shade drives the shared kit (actions, sweeps, lock-on, stamina) from SoulsShadowBoss.cpp.
 	friend class ASoulsShadowBoss;
 	friend class USoulsWallRunComponent;
@@ -516,7 +527,6 @@ private:
 	bool SpendStamina(float Cost);
 	void StartSwing(int32 Index);
 	void StartHeavy();
-	void PlayAction(EKnightAction NewAction, UAnimMontage* Montage, float Duration, float StartFraction = 0.f);
 	void EndAction();
 	void SwingHit();
 	void FinishHeal();

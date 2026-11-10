@@ -320,6 +320,25 @@ SWORD_TRANSFORM = {"location": (-8.0, 3.0, 41.0), "rotation": (0.0, 0.0, 0.0), "
 # Rotations are (roll, pitch, yaw), unreal.Rotator's positional order. Pitched over so the kite's point hangs
 # down and its face looks out (at 0 it sat upside down).
 SHIELD_TRANSFORM = {"location": (0.0, 0.0, 0.0), "rotation": (0.0, 180.0, 0.0), "scale": 1.25}
+# ASoulsRanger (UNR-T85): the blaster takes the knight's sword socket. Kenney's GLB is already in
+# real-world metres (so the importer's metre->cm conversion needs no extra scale compensation like the
+# sword/shield's OBJ/FBX sources do) - starting guess at scale 1.0, grip at the mesh origin; both the
+# offset and scale are a first pass and want an eyeball check once BP_SoulsRanger is in the editor/game.
+RANGER_WEAPON_TRANSFORM = {"location": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": 1.0}
+BLASTER_SRC = os.path.join(PROJECT, "SourceArt", "Weapons", "Blaster", "Source", "blaster-h.glb")
+
+
+def import_blaster():
+    """The Ranger's sidearm (UNR-T85): a single CC0 GLB, materials and all - no separate texture/
+    material build needed the way the sword/shield's bare OBJ/FBX sources require."""
+    dest = SOULS + "/Weapons/blaster"
+    paths = import_file_keep(BLASTER_SRC, dest)
+    mesh = next((eal.load_asset(p) for p in paths if isinstance(eal.load_asset(p), unreal.StaticMesh)), None)
+    if mesh is None:
+        mesh = (assets_of(dest, unreal.StaticMesh) or [None])[0]
+    if mesh is None:
+        warn("no static mesh from " + BLASTER_SRC)
+    return mesh
 
 
 def place(component, mesh, spec):
@@ -542,6 +561,24 @@ def build_blueprints(montages, weapons, armour, sounds):
     knight = duplicate_blueprint(template, "BP_SoulsKnight", script("SoulsKnight"))
     configure_knight(knight, montages, weapons, sounds, armour.get("player"))
     log("BP_SoulsKnight ready")
+
+    # The character roster's gun-wielding sibling (UNR-T85): same template, mesh, animations and
+    # sounds as the knight (configure_knight is generic over any ASoulsKnight-derived CDO), just
+    # reparented to ASoulsRanger and carrying a blaster instead of a sword, no shield.
+    ranger_class = script("SoulsRanger")
+    if ranger_class is None:
+        warn("ASoulsRanger not found (compile the C++ first); no BP_SoulsRanger built")
+    else:
+        ranger = duplicate_blueprint(template, "BP_SoulsRanger", ranger_class)
+        configure_knight(ranger, montages, weapons, sounds, armour.get("player"))
+        cdo = unreal.get_default_object(ranger.generated_class())
+        blaster = import_blaster()
+        if blaster is not None:
+            place(cdo.get_editor_property("Sword"), blaster, RANGER_WEAPON_TRANSFORM)
+        cdo.get_editor_property("Shield").set_editor_property("static_mesh", None)
+        unreal.BlueprintEditorLibrary.compile_blueprint(ranger)
+        eal.save_loaded_asset(ranger)
+        log("BP_SoulsRanger ready")
 
     enemy = duplicate_blueprint(template, "BP_SoulsEnemy", script("SoulsEnemy"))
     cdo = configure_knight(enemy, montages, weapons, sounds, armour.get("enemy"))

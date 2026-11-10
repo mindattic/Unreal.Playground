@@ -1,4 +1,5 @@
 #include "SoulslikePlayerController.h"
+#include "SoulsCharacterRoster.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "RenderCore.h"
@@ -37,6 +38,16 @@ namespace
 ASoulslikePlayerController::ASoulslikePlayerController()
 {
 	PrimaryActorTick.bCanEverTick = true;
+	Roster = CreateDefaultSubobject<USoulsCharacterRosterComponent>(TEXT("Roster"));
+}
+
+void ASoulslikePlayerController::SetupInputComponent()
+{
+	Super::SetupInputComponent();
+	if (Roster)
+	{
+		Roster->BindInput(InputComponent);
+	}
 }
 
 void ASoulslikePlayerController::BeginPlay()
