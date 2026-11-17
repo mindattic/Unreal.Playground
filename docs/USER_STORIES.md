@@ -105,8 +105,10 @@ _Nothing recorded yet._
 | UNR-T82 | 2026-11-04 | fix | closed | Capture stops after ~1:40: lossless 1080p60 encoder falls 60 s behind; record at hq quality | — |
 | UNR-T83 | 2026-11-04 | fix | closed | Play captures film the desktop region, not the game window, and the 2 GB RAM valve stops them | — |
 | UNR-T84 | 2026-11-05 | feature | open | Add Silver Soldier (Sketchfab CC-BY) as a new bestiary enemy type | — |
-| UNR-T85 | 2026-11-05 | feature | open | Character roster: cycle between melee knight and gun-wielding Ranger with , and . | — |
+| UNR-T85 | 2026-11-05 | feature | closed | Character roster: cycle between melee knight and gun-wielding Ranger with , and . | — |
 | UNR-T86 | 2026-11-05 | feature | open | Mario-style movement moveset for the new bunny-mascot playable character | — |
 | UNR-T87 | 2026-11-06 | feature | closed | Adopt the shared off-by-default --headless launch mode (Unreal.Shared) | — |
 | UNR-T88 | 2026-11-07 | chore | closed | Rename Unreal.Soulslike to Unreal.Playground: it is a testing ground for gameplay mechanics | — |
-| UNR-T89 | 2026-11-10 | chore | open | Sync .agent/ fleet-wide commands and regenerate docs/USER_STORIES.md to catch up with closed tickets | — |
+| UNR-T89 | 2026-11-10 | chore | closed | Sync .agent/ fleet-wide commands and regenerate docs/USER_STORIES.md to catch up with closed tickets | — |
+| UNR-T90 | 2026-11-10 | chore | closed | Adopt the shared docs-site pipeline: turn on GitHub Pages | — |
+| UNR-T91 | 2026-11-17 | docs | closed | Update USER_STORIES.md | — |
