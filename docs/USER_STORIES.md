@@ -112,3 +112,4 @@ _Nothing recorded yet._
 | UNR-T89 | 2026-11-10 | chore | closed | Sync .agent/ fleet-wide commands and regenerate docs/USER_STORIES.md to catch up with closed tickets | — |
 | UNR-T90 | 2026-11-10 | chore | closed | Adopt the shared docs-site pipeline: turn on GitHub Pages | — |
 | UNR-T91 | 2026-11-17 | docs | closed | Update USER_STORIES.md | — |
+| UNR-T92 | 2026-11-18 | chore | closed | Add SilverSoldier | — |
