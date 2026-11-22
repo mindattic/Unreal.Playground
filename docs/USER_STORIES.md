@@ -113,3 +113,25 @@ _Nothing recorded yet._
 | UNR-T90 | 2026-11-10 | chore | closed | Adopt the shared docs-site pipeline: turn on GitHub Pages | — |
 | UNR-T91 | 2026-11-17 | docs | closed | Update USER_STORIES.md | — |
 | UNR-T92 | 2026-11-18 | chore | closed | Add SilverSoldier | — |
+| UNR-T93 | 2026-11-22 | feature | open | Build terrain-shaped Hebrides island surrounded by water with free meshes. | — |
+| UNR-T94 | 2026-11-22 | feature | open | Add skeleton perception: vision cone, hearing, unaware/suspicious/alerted states. | — |
+| UNR-T95 | 2026-11-22 | feature | open | Attacking an unaware skeleton from behind executes it instantly. | — |
+| UNR-T96 | 2026-11-22 | feature | open | Premade buildings and brick walls half-buried in sand that are merge-able. | — |
+| UNR-T97 | 2026-11-22 | feature | open | Build the game as C++ target Unreal.Soulslike.Cpp.exe. | — |
+| UNR-T98 | 2026-11-22 | feature | open | Mech actor with legs driven by left stick, interact to climb in and out. | — |
+| UNR-T99 | 2026-11-22 | feature | open | Blender bone rename to UE5 Manny convention and anim strip via convert pipeline. | — |
+| UNR-T100 | 2026-11-22 | feature | open | Become shadow splotch crawling along walls, ground and ceilings while in shadow. | — |
+| UNR-T101 | 2026-11-22 | feature | open | Shadow energy cost and ejection in light, plus UI/feedback. | — |
+| UNR-T102 | 2026-11-22 | feature | open | Implement working player battle system. | — |
+| UNR-T103 | 2026-11-22 | feature | open | Skeleton enemies that attack the player, placed on the island. | — |
+| UNR-T104 | 2026-11-22 | feature | open | Skeleton-guarded bridge over sea loch crossable unseen by merging as shadow blob. | — |
+| UNR-T105 | 2026-11-22 | feature | open | Build identical gameplay in C# via UnrealSharp as Unreal.Soulslike.CSharp.exe. | — |
+| UNR-T106 | 2026-11-22 | feature | open | Add -Benchmark run comparing frame time, memory, build/iteration time and code size. | — |
+| UNR-T107 | 2026-11-22 | feature | open | Independently rotating torso aimed by player. | — |
+| UNR-T108 | 2026-11-22 | feature | open | Weapons, cockpit/third-person camera, footstep weight and shake. | — |
+| UNR-T109 | 2026-11-22 | feature | open | IK Retargeter and BP_SoulsEnemy_SilverSoldier build. | — |
+| UNR-T110 | 2026-11-22 | feature | open | New subclass with tuned stats, Bestiary_SilverSoldier tag wiring, CC-BY credit in CREDITS.md. | — |
+| UNR-T111 | 2026-11-22 | feature | open | Add bunny mascot character to roster with Quaternius mesh/rig and locomotion animations. | — |
+| UNR-T112 | 2026-11-22 | feature | open | Long jump, backflip, triple jump and dive jump abilities. | — |
+| UNR-T113 | 2026-11-22 | feature | open | Vertical tree/wall climbing extending SoulsWallRun.cpp and belly slide. | — |
+| UNR-T114 | 2026-11-22 | docs | closed | 2026-11-22 morning | — |
