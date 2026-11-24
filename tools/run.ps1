@@ -61,7 +61,7 @@ else {
 
 for ($i = 0; $i -lt $Players; $i++) {
   if ($Players -eq 1) { $target = $map }
-  elseif ($i -eq 0) { $target = "$map?listen" }
+  elseif ($i -eq 0) { $target = "${map}?listen" }
   else { $target = '127.0.0.1' }
 
   $winX = 40 + 80 * $i
