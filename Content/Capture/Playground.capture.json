@@ -1,0 +1,7 @@
+{
+  "replay": { "armed": true, "seconds": 30 },
+  "rules": [
+    { "on": "player-died", "action": "replay", "before": "20s", "after": "5s", "tag": "you-died", "cooldown": "10s" },
+    { "on": "*", "action": "marker" }
+  ]
+}

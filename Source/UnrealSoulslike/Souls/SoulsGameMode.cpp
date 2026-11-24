@@ -16,6 +16,7 @@
 #include "EngineUtils.h"
 #include "GameFramework/PlayerStart.h"
 #include "Kismet/GameplayStatics.h"
+#include "MindAtticCapture.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "TimerManager.h"
@@ -276,6 +277,9 @@ void ASoulsGameMode::KnightDied(ASoulsKnight* Knight)
 	UE_LOG(LogUnrealSoulslike, Log, TEXT("Knight died: %s (team %d) at %s"), *Knight->GetName(), Knight->Team, *Knight->GetActorLocation().ToString());
 	if (Knight->Team == 0)
 	{
+		MindAttic::Media::Capture::Raise(TEXT("player-died"), MindAttic::Media::Capture::Data()
+			.Str(TEXT("knight"), Knight->GetName())
+			.Bool(TEXT("bossFight"), bBossFightActive));
 		// YOU DIED: the runes are lost and the island resets once the player is back at grace.
 		ShowBanner(NSLOCTEXT("Souls", "YouDied", "YOU DIED"), FLinearColor(0.62f, 0.03f, 0.02f), 4.6f);
 		if (DiedSound)
@@ -318,6 +322,9 @@ void ASoulsGameMode::KnightDied(ASoulsKnight* Knight)
 	const ASoulsEnemy* Enemy = Cast<ASoulsEnemy>(Knight);
 	if (Enemy && Enemy->bIsBoss)
 	{
+		MindAttic::Media::Capture::Raise(TEXT("boss-defeated"), MindAttic::Media::Capture::Data()
+			.Str(TEXT("boss"), Enemy->GetName())
+			.Bool(TEXT("ambush"), bAmbush));
 		for (FSoulsSpawn& Spawn : Spawns)
 		{
 			if (Spawn.bBoss && Spawn.Actor.Get() == Enemy)

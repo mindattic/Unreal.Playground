@@ -29,6 +29,7 @@ public class UnrealSoulslike : ModuleRules
 			"AssetRegistry",
 			"MeshDescription",       // blood FX quad, built at runtime (UNR-T56)
 			"StaticMeshDescription",
+			"MindAtticMediaCapture", // capture events (UNR-T121)
 		});
 		if (Target.bBuildEditor)
 		{
