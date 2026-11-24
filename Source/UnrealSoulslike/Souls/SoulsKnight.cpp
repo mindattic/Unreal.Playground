@@ -45,6 +45,7 @@
 #include "Sound/SoundWaveProcedural.h"
 #include "TimerManager.h"
 #include "UnrealClient.h"
+#include "PlaygroundShots.h"
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
 #include "UnrealSoulslike.h"
@@ -1133,7 +1134,7 @@ void ASoulsKnight::RunChainShots()
 
 void ASoulsKnight::Shot(const TCHAR* Name)
 {
-	FScreenshotRequest::RequestScreenshot(FString::Printf(TEXT("Knight_%s"), Name), true, false);
+	PlaygroundShots::Take(FString::Printf(TEXT("Knight_%s"), Name), true);
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -22,6 +22,7 @@
 #include "StaticMeshAttributes.h"
 #include "UObject/ConstructorHelpers.h"
 #include "UnrealClient.h"
+#include "PlaygroundShots.h"
 
 #if WITH_EDITOR
 #include "ShaderCompiler.h"
@@ -769,7 +770,7 @@ void USoulsBloodSubsystem::DemoFrame(const FVector& From, const FVector& At, flo
 void USoulsBloodSubsystem::DemoShot(const TCHAR* Name)
 {
 	const FString Path = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("Screenshots") / (FString(Name) + TEXT(".png")));
-	FScreenshotRequest::RequestScreenshot(Path, false, false);
+	PlaygroundShots::Take(Path, false);
 	UE_LOG(LogSoulsBlood, Display, TEXT("BloodDemo: shot %s -> %s (live bits %d, decals %d)"), Name, *Path,
 		Pool ? Pool->NumLiveParticles() : 0, Pool ? Pool->NumLiveDecals() : 0);
 }

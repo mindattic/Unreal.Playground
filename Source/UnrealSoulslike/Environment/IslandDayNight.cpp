@@ -24,6 +24,7 @@
 #include "Misc/Paths.h"
 #include "Net/UnrealNetwork.h"
 #include "UnrealClient.h"
+#include "PlaygroundShots.h"
 #include "UnrealSoulslike.h"
 
 #if WITH_EDITOR
@@ -468,7 +469,7 @@ void AIslandDayNight::TickShots(float DeltaSeconds)
 	if (!bShotTaken && ShotClock - ShotPhaseStart >= IslandDN::ShotSettle && !IslandDN::ShadersCompiling())
 	{
 		const FString Path = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("DayNightShots") / (FString(Shot.Name) + TEXT(".png")));
-		FScreenshotRequest::RequestScreenshot(Path, false, false);
+		PlaygroundShots::Take(Path, false);
 		UE_LOG(LogUnrealSoulslike, Display, TEXT("DayNight shot %s at %.2f h (sun elevation %.1f, night %.2f) -> %s"),
 			Shot.Name, Shot.Hours, SunElevation, GetNightAmount(), *Path);
 		bShotTaken = true;

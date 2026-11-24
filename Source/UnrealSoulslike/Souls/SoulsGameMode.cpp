@@ -21,6 +21,7 @@
 #include "Misc/Parse.h"
 #include "TimerManager.h"
 #include "UnrealClient.h"
+#include "PlaygroundShots.h"
 #include "UnrealSoulslike.h"
 
 ASoulsGameMode::ASoulsGameMode()
@@ -483,7 +484,7 @@ void ASoulsGameMode::RunVerificationTour()
 		}, Time, false);
 		FTimerHandle Shot;
 		const FString Name = FString::Printf(TEXT("Tour_%02d"), Index++);
-		GetWorldTimerManager().SetTimer(Shot, [Name]() { FScreenshotRequest::RequestScreenshot(Name, true, false); }, Time + 2.5f, false);
+		GetWorldTimerManager().SetTimer(Shot, [Name]() { PlaygroundShots::Take(Name, true); }, Time + 2.5f, false);
 		Time += 4.f;
 	}
 }

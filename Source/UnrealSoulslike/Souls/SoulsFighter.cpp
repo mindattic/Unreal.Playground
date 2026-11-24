@@ -38,6 +38,7 @@
 #include "Sound/SoundWaveProcedural.h"
 #include "TimerManager.h"
 #include "UnrealClient.h"
+#include "PlaygroundShots.h"
 #include "UnrealSoulslike.h"
 
 // ---------------------------------------------------------------------------------------------
@@ -3114,7 +3115,7 @@ void UFighterDemoSubsystem::Run()
 	DemoFighter = Found;
 
 	struct FStep { float Time; TFunction<void(UFighterDemoSubsystem*)> Do; };
-	auto Shot = [](const TCHAR* Name) { FScreenshotRequest::RequestScreenshot(FString::Printf(TEXT("Fighter_%s"), Name), true, false); };
+	auto Shot = [](const TCHAR* Name) { PlaygroundShots::Take(FString::Printf(TEXT("Fighter_%s"), Name), true); };
 	auto GroundZ = [](UWorld* W, const FVector& At) -> float
 	{
 		FHitResult Hit;

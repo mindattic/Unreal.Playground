@@ -12,6 +12,7 @@
 #include "Misc/Parse.h"
 #include "Misc/Paths.h"
 #include "UnrealClient.h"
+#include "PlaygroundShots.h"
 
 #if WITH_EDITOR
 #include "ShaderCompiler.h"
@@ -167,7 +168,7 @@ void UIslandShotSubsystem::Tick(float DeltaTime)
 	if (!bRequested && Clock - PhaseStart >= Settle && !bCompiling)
 	{
 		const FString Path = FPaths::ConvertRelativePathToFull(ShotDir / (Shot.Name + TEXT(".png")));
-		FScreenshotRequest::RequestScreenshot(Path, false, false);
+		PlaygroundShots::Take(Path, false);
 		const float AvgMs = Frames > 0 ? 1000.f * FrameTime / Frames : 0.f;
 		UE_LOG(LogIslandShots, Display, TEXT("Shot %s -> %s (avg %.2f ms, %.1f fps over %d frames)"), *Shot.Name, *Path, AvgMs,
 			AvgMs > 0.f ? 1000.f / AvgMs : 0.f, Frames);

@@ -41,6 +41,7 @@
 #include "Sound/SoundWaveProcedural.h"
 #include "TimerManager.h"
 #include "UnrealClient.h"
+#include "PlaygroundShots.h"
 #include "UnrealSoulslike.h"
 
 // ---------------------------------------------------------------------------------------------
@@ -2427,7 +2428,7 @@ void UMechDemoSubsystem::Run()
 	DemoMech = Found;
 
 	struct FStep { float Time; TFunction<void(UMechDemoSubsystem*)> Do; };
-	auto Shot = [](const TCHAR* Name) { FScreenshotRequest::RequestScreenshot(FString::Printf(TEXT("Mech_%s"), Name), true, false); };
+	auto Shot = [](const TCHAR* Name) { PlaygroundShots::Take(FString::Printf(TEXT("Mech_%s"), Name), true); };
 	auto AimAt = [](ASoulsMech* M, const FVector& Where)
 	{
 		// Twist so the chase camera's ray (the reticle) runs through Where.

@@ -8,6 +8,7 @@
 #include "HAL/PlatformMemory.h"
 #include "HAL/PlatformTime.h"
 #include "UnrealClient.h"
+#include "PlaygroundShots.h"
 #include "TimerManager.h"
 
 namespace
@@ -133,7 +134,7 @@ void ASoulslikePlayerController::WriteBenchmark()
 
 void ASoulslikePlayerController::TakeAutoShot()
 {
-	FScreenshotRequest::RequestScreenshot(FString::Printf(TEXT("AutoShot_%03d"), ShotIndex++), true, false);
+	PlaygroundShots::Take(FString::Printf(TEXT("AutoShot_%03d"), ShotIndex++), true);
 }
 
 void ASoulslikePlayerController::QuitGame()

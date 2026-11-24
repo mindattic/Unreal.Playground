@@ -17,6 +17,7 @@
 #include "PhysicsEngine/PhysicsAsset.h"
 #include "TimerManager.h"
 #include "UnrealClient.h"
+#include "PlaygroundShots.h"
 #include "UnrealSoulslike.h"
 
 namespace
@@ -613,12 +614,12 @@ void USoulsBestiaryShots::Stage(int32 Index)
 	const TWeakObjectPtr<ASoulsEnemy> WeakFoe(Current);
 	FTimerManager& Timers = World->GetTimerManager();
 	FTimerHandle H1, H2, H3, H4, H5, H6, H7;
-	Timers.SetTimer(H1, [Base]() { FScreenshotRequest::RequestScreenshot(Base + TEXT("_1_Idle"), false, false); }, 2.f, false);
+	Timers.SetTimer(H1, [Base]() { PlaygroundShots::Take(Base + TEXT("_1_Idle"), false); }, 2.f, false);
 	Timers.SetTimer(H2, [WeakFoe]() { if (WeakFoe.IsValid()) { WeakFoe->DoComboAttackStart(); } }, 2.4f, false);
-	Timers.SetTimer(H3, [Base]() { FScreenshotRequest::RequestScreenshot(Base + TEXT("_2_Windup"), false, false); }, 2.85f, false);
-	Timers.SetTimer(H4, [Base]() { FScreenshotRequest::RequestScreenshot(Base + TEXT("_3_Strike"), false, false); }, 3.35f, false);
+	Timers.SetTimer(H3, [Base]() { PlaygroundShots::Take(Base + TEXT("_2_Windup"), false); }, 2.85f, false);
+	Timers.SetTimer(H4, [Base]() { PlaygroundShots::Take(Base + TEXT("_3_Strike"), false); }, 3.35f, false);
 	Timers.SetTimer(H5, [WeakFoe]() { if (WeakFoe.IsValid()) { WeakFoe->DoChargedAttackStart(); } }, 4.4f, false);
-	Timers.SetTimer(H6, [Base]() { FScreenshotRequest::RequestScreenshot(Base + TEXT("_4_Heavy"), false, false); }, 5.4f, false);
+	Timers.SetTimer(H6, [Base]() { PlaygroundShots::Take(Base + TEXT("_4_Heavy"), false); }, 5.4f, false);
 	Timers.SetTimer(H7, Next, KBestiaryShotSpacing, false);
 }
 
@@ -771,7 +772,7 @@ void USoulsRunShots::Step()
 		const FString Name = FString::Printf(TEXT("RangerRun_%s_%d"), bFeet ? TEXT("Feet") : TEXT("Side"), (Shots % KRunShotsPerView) + 1);
 		UE_LOG(LogUnrealSoulslike, Log, TEXT("RangerRun: %s stride %.0f cm (%s foot ahead), speed %.0f, foot-to-calf L %.1f (ref %.1f) R %.1f (ref %.1f)"),
 			*Name, FMath::Abs(Spread), Spread > 0.f ? TEXT("left") : TEXT("right"), Runner->GetVelocity().Size2D(), ShinL, RefShinL, ShinR, RefShinR);
-		FScreenshotRequest::RequestScreenshot(Name, false, false);
+		PlaygroundShots::Take(Name, false);
 		++Shots;
 	}
 	PrevDelta = Delta;

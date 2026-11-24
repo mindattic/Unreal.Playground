@@ -27,6 +27,7 @@
 #include "ShaderCompiler.h"
 #endif
 #include "UnrealClient.h"
+#include "PlaygroundShots.h"
 #include "UnrealSoulslike.h"
 
 namespace
@@ -975,7 +976,7 @@ void ASoulsShadowBoss::StartDemoTimeline()
 			}
 		}, Time, false);
 	};
-	auto Shot = [](const FString& Name) { FScreenshotRequest::RequestScreenshot(TEXT("Shade_") + Name, true, false); };
+	auto Shot = [](const FString& Name) { PlaygroundShots::Take(TEXT("Shade_") + Name, true); };
 
 	// A melt, screenshotted at each beat: melting, pool, sliding, bubbling, erupting, rising slash.
 	auto Run = [At, Shot](float Start, EShadeMelt Kind, const FString& Tag)

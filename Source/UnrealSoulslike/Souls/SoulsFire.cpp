@@ -26,6 +26,7 @@
 #include "NiagaraSystem.h"
 #include "RenderingThread.h"
 #include "UnrealClient.h"
+#include "PlaygroundShots.h"
 
 #if WITH_EDITOR
 #include "AssetRegistry/AssetRegistryModule.h"
@@ -1366,7 +1367,7 @@ void USoulsFireSubsystem::TickDemo(float DeltaTime)
 			const FString Name = FString::Printf(TEXT("FireDemo_%02d_%02ds%s%s"), DemoShot + 1, FMath::RoundToInt(Event.Time),
 				bClose ? TEXT("_close") : TEXT(""), bNight ? TEXT("_night") : TEXT(""));
 			const FString Path = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("Screenshots") / (Name + TEXT(".png")));
-			FScreenshotRequest::RequestScreenshot(Path, false, false);
+			PlaygroundShots::Take(Path, false);
 			Counts(*Name);
 			++DemoShot;
 			break;

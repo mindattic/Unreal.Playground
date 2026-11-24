@@ -36,6 +36,7 @@
 #include "NiagaraSystem.h"
 #include "TimerManager.h"
 #include "UnrealClient.h"
+#include "PlaygroundShots.h"
 #include "UObject/ConstructorHelpers.h"
 
 // ---------------------------------------------------------------------------------------------
@@ -1452,7 +1453,7 @@ namespace
 
 	void TorchDemoShot(const TCHAR* Name)
 	{
-		FScreenshotRequest::RequestScreenshot(FString::Printf(TEXT("TorchDemo_%s"), Name), true, false);
+		PlaygroundShots::Take(FString::Printf(TEXT("TorchDemo_%s"), Name), true);
 	}
 
 	void TorchDemoView(ASoulsKnight* Knight, float YawOffset, float Distance, float Pitch)

@@ -34,6 +34,7 @@
 #include "Sound/SoundWaveProcedural.h"
 #include "UObject/ConstructorHelpers.h"
 #include "UnrealClient.h"
+#include "PlaygroundShots.h"
 #include "UnrealSoulslike.h"
 
 #if WITH_EDITOR
@@ -1365,7 +1366,7 @@ void AIslandWeather::TickShots(float DeltaSeconds)
 	if (!bShotTaken && ShotClock - ShotPhaseStart >= Shot.Settle && !IslandWX::ShadersCompiling())
 	{
 		const FString Path = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("WeatherShots") / (FString(Shot.Name) + TEXT(".png")));
-		FScreenshotRequest::RequestScreenshot(Path, false, false);
+		PlaygroundShots::Take(Path, false);
 		float Coverage = 0.f;
 		if (CloudMID && !CoverageParam.IsNone())
 		{

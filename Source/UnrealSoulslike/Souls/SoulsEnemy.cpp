@@ -10,6 +10,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
 #include "UnrealClient.h"
+#include "PlaygroundShots.h"
 
 // ---------------------------------------------------------------------------------------------
 // Enemy knight
@@ -304,11 +305,11 @@ void ASoulsEnemyController::StartChat(ASoulsEnemyController* Other, float Now)
 				PC->SetControlRotation(FRotator(-6.f, Look.Yaw - 20.f, 0.f));
 			}
 			FTimerHandle Handle;
-			GetWorldTimerManager().SetTimer(Handle, []() { FScreenshotRequest::RequestScreenshot(TEXT("Patrol_1_chat"), true, false); }, 2.f, false);
+			GetWorldTimerManager().SetTimer(Handle, []() { PlaygroundShots::Take(TEXT("Patrol_1_chat"), true); }, 2.f, false);
 			FTimerHandle Handle2;
-			GetWorldTimerManager().SetTimer(Handle2, []() { FScreenshotRequest::RequestScreenshot(TEXT("Patrol_2_chat"), true, false); }, 3.4f, false);
+			GetWorldTimerManager().SetTimer(Handle2, []() { PlaygroundShots::Take(TEXT("Patrol_2_chat"), true); }, 3.4f, false);
 			FTimerHandle Handle3;
-			GetWorldTimerManager().SetTimer(Handle3, []() { FScreenshotRequest::RequestScreenshot(TEXT("Patrol_3_parted"), true, false); }, Length + 4.f, false);
+			GetWorldTimerManager().SetTimer(Handle3, []() { PlaygroundShots::Take(TEXT("Patrol_3_parted"), true); }, Length + 4.f, false);
 		}
 	}
 }

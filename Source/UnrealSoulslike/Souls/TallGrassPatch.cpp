@@ -14,6 +14,7 @@
 #include "Misc/Paths.h"
 #include "TimerManager.h"
 #include "UnrealClient.h"
+#include "PlaygroundShots.h"
 #include "UnrealSoulslike.h"
 
 ATallGrassPatch::ATallGrassPatch()
@@ -153,7 +154,7 @@ void UTallGrassSubsystem::ShotTake()
 		Patches.Num(), Pawn ? *Pawn->GetActorLocation().ToString() : TEXT("?"), Cover ? *Cover->GetName() : TEXT("no patch"),
 		Concealment, Cover && Concealment < 1.f ? TEXT("PASS") : TEXT("FAIL"));
 	const FString Path = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("TallGrassShots") / TEXT("TallGrass_Inside.png"));
-	FScreenshotRequest::RequestScreenshot(Path, false, false);
+	PlaygroundShots::Take(Path, false);
 	World->GetTimerManager().SetTimer(ShotTimer, FTimerDelegate::CreateUObject(this, &UTallGrassSubsystem::ShotQuit), 3.f, false);
 }
 
