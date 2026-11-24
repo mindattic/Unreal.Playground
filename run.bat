@@ -2,7 +2,7 @@
 rem Desktop shortcut target (Prose\src\tools\install-shortcuts.ps1, "Soulslike").
 rem 1) Build & Run: compile, import content, then play (run.ps1).
 rem 2) Run: play the current build without building (tools\run.ps1).
-rem Both film the game window with MindAttic.Media.Capture into R:\MindAttic\Capture\Unreal.Playground.
+rem Both record in-game (-capture video hq, the MindAttic.Media.Capture.Unreal plugin) into R:\MindAttic\Capture\Unreal.Playground.
 cd /d "%~dp0"
 echo.
 echo   Unreal.Playground
