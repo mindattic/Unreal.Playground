@@ -5,7 +5,7 @@ param(
   [int]$ClientDelaySeconds = 10,
   # Play the packaged Shipping build (Builds\Cpp\Windows) instead of the editor's -game.
   [switch]$Packaged,
-  # Skip the MindAttic.Capture recording.
+  # Skip the MindAttic.Media.Capture recording.
   [switch]$NoCapture,
   [int]$ResX = 1920,
   [int]$ResY = 1080,
@@ -21,7 +21,7 @@ param(
 # Launches the game windowed at 1920x1080. Players > 1: instance 1 is a listen server, the rest
 # join it on 127.0.0.1.
 #
-# Every run is filmed by MindAttic.Capture (capture.exe, installed by that repo's run.ps1): the
+# Every run is filmed by MindAttic.Media.Capture (capture.exe, installed by that repo's run.ps1): the
 # game's window is recorded by its handle from launch to exit (its 1920x1080 picture plus the title
 # bar, at the hq tape quality) and the session lands in
 # R:\MindAttic\Capture\Unreal.Playground\. With several players, player 1's window is the one filmed.
@@ -47,7 +47,7 @@ if ($Headless) {
 $capture = Join-Path $env:LOCALAPPDATA 'MindAttic\Capture\bin\capture.exe'
 $useCapture = -not $NoCapture
 if ($useCapture -and -not (Test-Path -LiteralPath $capture)) {
-  Write-Warning "MindAttic.Capture isn't installed ($capture); run D:\Projects\MindAttic\MindAttic.Capture\run.ps1. Playing without recording."
+  Write-Warning "MindAttic.Media.Capture isn't installed ($capture); run D:\Projects\MindAttic\MindAttic.Media.Capture\run.ps1. Playing without recording."
   $useCapture = $false
 }
 
@@ -112,7 +112,7 @@ Start-Process -FilePath '$capture' -ArgumentList @('record', '--hwnd', `$hwnd, '
 `$p.WaitForExit()
 & '$capture' stop | Out-Null
 "@
-    Write-Output "Recording with MindAttic.Capture -> R:\MindAttic\Capture\Unreal.Playground"
+    Write-Output "Recording with MindAttic.Media.Capture -> R:\MindAttic\Capture\Unreal.Playground"
     $watchFile = Join-Path $env:TEMP 'unreal-soulslike-capture-watch.ps1'
     Set-Content -LiteralPath $watchFile -Value $watch -Encoding UTF8
     Start-Process -FilePath 'powershell' -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$watchFile`"") -WindowStyle Hidden | Out-Null
