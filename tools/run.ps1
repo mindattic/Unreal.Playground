@@ -7,6 +7,10 @@ param(
   [switch]$Packaged,
   # Skip the MindAttic.Media.Capture recording.
   [switch]$NoCapture,
+  # UNR-T124: wait for player 1 to quit, then gather the run's screenshots and clips into a preview set
+  # (tools\preview.ps1) and open it in MindAttic.Media.Viewer; -Ticket files the set under a ticket.
+  [switch]$Preview,
+  [string]$Ticket = '',
   [int]$ResX = 1920,
   [int]$ResY = 1080,
   # UNR-T87: no window, no sound, for scripted/automated testing, through the shared launcher
@@ -34,6 +38,7 @@ $uproject = Join-Path $repo 'UnrealSoulslike.uproject'
 $map = '/Game/Souls/Maps/Lvl_Isle'
 
 if ($Headless) {
+  if ($Preview) { throw '-Preview waits for a windowed run; -Headless has its own -StopAfterReady.' }
   # The editor's -game on Lvl_Isle, which the game boots straight into (there is no menu to wait at).
   if ($Players -gt 1 -or $Packaged) { throw '-Headless runs one player from the editor binaries (a Shipping build writes no log for the ready line).' }
   $launcher = Join-Path $repo '..\Unreal.Shared\tools\Start-Headless.ps1'
@@ -59,6 +64,7 @@ else {
   $exe = Join-Path (Find-UnrealEngine) 'Engine\Binaries\Win64\UnrealEditor.exe'
 }
 
+$runStart = Get-Date
 for ($i = 0; $i -lt $Players; $i++) {
   if ($Players -eq 1) { $target = $map }
   elseif ($i -eq 0) { $target = "${map}?listen" }
@@ -79,5 +85,18 @@ for ($i = 0; $i -lt $Players; $i++) {
   }
   Write-Output "Player $($i + 1): $target ($ResX x $ResY, windowed)"
   if ($useCapture -and $i -eq 0) { Write-Output "Recording in-game with MindAttic.Media.Capture -> R:\MindAttic\Capture\Unreal.Playground" }
-  Start-Process -FilePath $exe -ArgumentList $gameArgs | Out-Null
+  $proc = Start-Process -FilePath $exe -ArgumentList $gameArgs -PassThru
+  if ($i -eq 0) { $host1 = $proc }
+}
+
+if ($Preview) {
+  # Named after the demo mode in -Extra (-KnightDemo, -IslandTour, -WeatherShots, ...), else a plain run.
+  $mode = @($Extra -split '\s+' | Where-Object { $_ -match '^-\w*(Demo|Tour|Shots|Test)$' } | ForEach-Object { $_.TrimStart('-') }) | Select-Object -First 1
+  if (-not $mode) { $mode = 'Playground run' }
+  $title = "$mode $(Get-Date -Format 'yyyy-MM-dd HH.mm')"
+  $savedDir = Join-Path $repo 'Saved'
+  if ($Packaged) { $savedDir = Join-Path (Split-Path -Parent $exe) 'UnrealSoulslike\Saved' }
+  Write-Output "Waiting for player 1 to quit, then opening a preview set ($title)..."
+  $host1.WaitForExit()
+  & (Join-Path $PSScriptRoot 'preview.ps1') -Since $runStart -Title $title -Ticket $Ticket -SavedDir $savedDir -Recorded:$useCapture
 }

@@ -160,3 +160,37 @@ Run these with `-RenderOffscreen` to check a build without anyone at the control
   `-WeatherClear` hold the weather; `-NoWeather` turns it off.
 
 Screenshots land in `Saved/Screenshots`.
+
+## Capture
+
+Runs record themselves through [MindAttic.Media.Capture](https://github.com/mindattic/MindAttic.Media.Capture)
+and its Unreal plugin, which the game loads from `../MindAttic.Media.Capture/unreal`. How the plugin
+drives the capture agent is in its
+[engine-host design](https://github.com/mindattic/MindAttic.Media.Capture/blob/main/docs/design/engine-host.md).
+
+Prerequisites: clone MindAttic.Media.Capture next to this repo, run its `run.ps1` once to install the
+agent (`%LOCALAPPDATA%\MindAttic\Capture\bin\capture.exe`), and have `ffmpeg` on the PATH.
+
+- `run.bat` and `./tools/run.ps1` record player 1 in-game (`-capture video hq`); with several players
+  only player 1 records. `-NoCapture` plays without recording.
+- Launching the game by hand, add `-capture video` (or `-capture screen N` for monitor N) to record.
+- While a recording runs, every demo screenshot (`PlaygroundShots::Take`) is also a capture screenshot
+  with a marker of the same name on the video's timeline.
+- `-Preview` waits for player 1 to quit, then gathers the run's screenshots and clips into a preview set
+  and opens it in MindAttic.Media.Viewer. `-Ticket ID` files the set under a ticket. It works with any
+  demo mode passed through `-Extra`, and the demo mode names the set:
+
+  ```powershell
+  ./tools/run.ps1 -Extra '-KnightDemo' -Preview
+  ./tools/run.ps1 -Extra '-WeatherShots' -Preview -Ticket UNR-T124
+  ```
+
+  `./tools/preview.ps1 -Since <time> -Title <title> -SavedDir Saved` makes a set from an earlier run.
+
+Where files land:
+- Recordings and capture screenshots: `R:\MindAttic\Media\Capture\Unreal.Playground`.
+- Preview sets: `R:\MindAttic\Media\Preview\Unreal.Playground\<date>_<title>`.
+- The engine's own screenshots: `Saved/Screenshots` (and `Saved/WeatherShots`).
+
+The scripts take both folders from the agent (`capture set new --json`), so they follow it if its roots
+move.
