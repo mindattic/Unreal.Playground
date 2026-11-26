@@ -1,19 +1,18 @@
 @echo off
-rem Desktop shortcut target (Prose\src\tools\install-shortcuts.ps1, "Soulslike").
-rem 1) Build & Run: compile, import content, then play (run.ps1).
-rem 2) Run: play the current build without building (tools\run.ps1).
-rem Both record in-game (-capture video hq, the MindAttic.Media.Capture.Unreal plugin) into R:\MindAttic\Media\Capture\Unreal.Playground.
-cd /d "%~dp0"
-echo.
-echo   Unreal.Playground
-echo.
-echo   1) Build ^& Run
-echo   2) Run
-echo.
-choice /c 12 /n /m "  Choose 1 or 2: "
-if errorlevel 2 (
-  powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\run.ps1"
-) else (
-  powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0run.ps1"
+rem The MindAttic standard run.bat (MAT-T279), written by deploy-lib.ps1's Write-RunBat - edits here are overwritten.
+rem Double-click: the run.ps1 menu (1 Redeploy, 2 Run Debug, 3 Run Release). Arguments pass through to run.ps1.
+title Unreal.Playground
+set "RUN_PS1=%~dp0run.ps1"
+if not exist "%RUN_PS1%" (
+    echo run.ps1 not found at "%RUN_PS1%".
+    pause
+    exit /b 1
 )
-if errorlevel 1 pause
+powershell -NoProfile -ExecutionPolicy Bypass -File "%RUN_PS1%" %*
+if errorlevel 1 (
+    echo.
+    echo run.ps1 failed ^(exit %errorlevel%^).
+    pause
+    exit /b 1
+)
+exit /b 0

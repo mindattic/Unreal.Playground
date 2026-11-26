@@ -2,8 +2,12 @@
 param(
   [ValidateSet('Both', 'Cpp', 'CSharp')]
   [string]$Only = 'Both',
-  [ValidateSet('Shipping', 'Development')]
-  [string]$Config = 'Shipping'
+  [ValidateSet('Shipping', 'Development', 'DebugGame')]
+  [Alias('Config')]
+  [string]$Configuration = 'Shipping',
+  # Also copy the C++ build (the one tools\run.ps1 -Packaged plays) into this folder; run.ps1's Redeploy passes
+  # R:\MindAttic\Apps\Unreal.Playground's staging folder. With -Out, -Only defaults to Cpp.
+  [string]$Out
 )
 
 # Packages both builds of the game for a side-by-side comparison (UNR-T8):
@@ -17,6 +21,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'find-engine.ps1')
+if ($Out -and -not $PSBoundParameters.ContainsKey('Only')) { $Only = 'Cpp' }
+if ($Out -and $Only -eq 'CSharp') { throw '-Out deploys the C++ build; -Only CSharp packages none.' }
 
 $repo = Split-Path -Parent $PSScriptRoot
 $engine = Find-UnrealEngine
@@ -25,7 +31,7 @@ $runUat = Join-Path $engine 'Engine\Build\BatchFiles\RunUAT.bat'
 $buildsDir = Join-Path $repo 'Builds'
 $timesPath = Join-Path $buildsDir 'build-times.json'
 New-Item -ItemType Directory -Force -Path $buildsDir | Out-Null
-Write-Output "Engine: $engine (UE $version), config $Config"
+Write-Output "Engine: $engine (UE $version), config $Configuration"
 
 $times = [ordered]@{}
 if (Test-Path -LiteralPath $timesPath) {
@@ -64,7 +70,7 @@ function Set-EngineAssociation([string]$Uproject) {
 }
 
 function Invoke-BuildCookRun([string]$Uproject, [string]$ArchiveDir) {
-  & $runUat BuildCookRun "-project=$Uproject" -noP4 -utf8output -platform=Win64 "-clientconfig=$Config" -build -cook -stage -pak -archive "-archivedirectory=$ArchiveDir"
+  & $runUat BuildCookRun "-project=$Uproject" -noP4 -utf8output -platform=Win64 "-clientconfig=$Configuration" -build -cook -stage -pak -archive "-archivedirectory=$ArchiveDir"
   if ($LASTEXITCODE -ne 0) { throw "BuildCookRun failed for $(Split-Path -Leaf $Uproject) (exit $LASTEXITCODE)." }
 }
 
@@ -98,6 +104,11 @@ if ($Only -ne 'CSharp') {
   Invoke-TimedStep 'cpp' 'build_cook_package' { Invoke-BuildCookRun $uproject $archiveDir }
   $exe = Rename-LauncherExe (Get-ArchiveRoot $archiveDir) 'Unreal.Playground.Cpp.exe'
   Write-Output "C++ build: $exe"
+  if ($Out) {
+    New-Item -ItemType Directory -Force -Path $Out | Out-Null
+    Copy-Item -Path (Join-Path (Get-ArchiveRoot $archiveDir) '*') -Destination $Out -Recurse -Force
+    Write-Output "Copied to $Out"
+  }
 }
 
 if ($Only -ne 'Cpp') {
@@ -121,7 +132,7 @@ if ($Only -ne 'Cpp') {
 
   $archiveRoot = Get-ArchiveRoot $archiveDir
   Invoke-TimedStep 'csharp' 'package_managed' {
-    & $runUat PackageProject "-ScriptDir=$csharpDir" "-ScriptsForProject=$uproject" "-Project=$uproject" "-ArchiveDirectory=$archiveRoot" -UETargetType=Game "-UEBuildConfig=$Config"
+    & $runUat PackageProject "-ScriptDir=$csharpDir" "-ScriptsForProject=$uproject" "-Project=$uproject" "-ArchiveDirectory=$archiveRoot" -UETargetType=Game "-UEBuildConfig=$Configuration"
     if ($LASTEXITCODE -ne 0) { throw "UnrealSharp PackageProject failed (exit $LASTEXITCODE)." }
   }
 
@@ -130,7 +141,7 @@ if ($Only -ne 'Cpp') {
 }
 
 $times['engine'] = "UE $version"
-$times['config'] = $Config
+$times['config'] = $Configuration
 $times['updated'] = (Get-Date).ToString('s')
 [IO.File]::WriteAllText($timesPath, ($times | ConvertTo-Json -Depth 4), [Text.UTF8Encoding]::new($false))
 Write-Output "Build times: $timesPath"
