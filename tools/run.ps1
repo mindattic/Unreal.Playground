@@ -27,7 +27,7 @@ param(
 #
 # Every run records itself: player 1's game gets -capture video hq, and the
 # MindAttic.Media.Capture.Unreal plugin inside it drives capture.exe (installed by that repo's
-# run.ps1) from launch to exit, so the session lands in R:\MindAttic\Capture\Unreal.Playground\.
+# run.ps1) from launch to exit, so the session lands in R:\MindAttic\Media\Capture\Unreal.Playground\.
 # With several players, only player 1 records.
 
 $ErrorActionPreference = 'Stop'
@@ -84,7 +84,7 @@ for ($i = 0; $i -lt $Players; $i++) {
     Start-Sleep -Seconds $ClientDelaySeconds
   }
   Write-Output "Player $($i + 1): $target ($ResX x $ResY, windowed)"
-  if ($useCapture -and $i -eq 0) { Write-Output "Recording in-game with MindAttic.Media.Capture -> R:\MindAttic\Capture\Unreal.Playground" }
+  if ($useCapture -and $i -eq 0) { Write-Output "Recording in-game with MindAttic.Media.Capture -> R:\MindAttic\Media\Capture\Unreal.Playground" }
   $proc = Start-Process -FilePath $exe -ArgumentList $gameArgs -PassThru
   if ($i -eq 0) { $host1 = $proc }
 }
